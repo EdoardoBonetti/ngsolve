@@ -1,6 +1,8 @@
 from netgen.meshing import *
 from netgen.csg import *
 import ngsolve
+from itertools import combinations
+from collections import defaultdict
 
 def Make1DMesh(n, mapping = None, periodic=False):
     """
@@ -747,6 +749,74 @@ def MakeStructuredSurfaceMesh(quads=True, nx=10, ny=10, mapping = None, secondor
         mesh.Add(Element0D(indbbbpts[i], index=i+1))
         mesh.SetCD3Name(i+1, bbbnames[i])
 
-    mesh.Compress()       
+    mesh.Compress()
     ngsmesh = ngsolve.Mesh(mesh)
     return ngsmesh
+
+def MarkForRefinement(mesh, vb, names):
+    """
+    Mark elements for local refinement by the name of a region/boundary item.
+
+    NGSolve distinguishes mesh items by codimension: VOL (regions/materials),
+    BND (co-dim 1: edges in 2D, surfaces in 3D), BBND (co-dim 2: points in 2D,
+    edges in 3D), and BBBND (co-dim 3: points in 3D, does not exist in 2D). This
+    function marks every VOL element associated with a named item of any of
+    these types, so that a subsequent mesh.Refine() only refines there.
+
+    For vb=VOL, the VOL elements themselves are matched directly by material
+    name. For vb in {BND, BBND, BBBND}, a VOL element is marked whenever it
+    shares all of a lower-dimensional item's vertices, i.e. it touches that
+    named edge/surface/point (assuming a simplex mesh: triangles in 2D,
+    tetrahedra in 3D, so a codim-k facet has mesh.dim - k + 1 vertices).
+
+    Parameters
+    ----------
+    mesh : ngsolve.Mesh
+      The mesh whose refinement flags are set. All existing refinement flags
+      are cleared first.
+
+    vb : ngsolve.VorB
+      One of VOL, BND, BBND, BBBND - the codimension to mark by.
+
+    names : str or iterable of str
+      Name (or names) of the material/boundary/edge/point to mark. A single
+      string is treated as one name.
+
+    Returns
+    -------
+    (int, int)
+      Number of matching `vb` items found, and number of VOL elements marked.
+
+    """
+    if isinstance(names, str):
+        names = {names}
+
+    for el in mesh.Elements(ngsolve.VOL):
+        mesh.SetRefinementFlag(el, False)
+
+    if vb == ngsolve.VOL:
+        n = 0
+        for el in mesh.Elements(ngsolve.VOL):
+            flag = el.mat in names
+            mesh.SetRefinementFlag(el, flag)
+            n += flag
+        return n, n
+
+    codim = {ngsolve.VOL: 0, ngsolve.BND: 1, ngsolve.BBND: 2, ngsolve.BBBND: 3}[vb]
+    k = mesh.dim - codim + 1  # vertices of the target facet (simplex mesh)
+    vset_to_vol = defaultdict(list)
+    for el in mesh.Elements(ngsolve.VOL):
+        vnrs = [v.nr for v in el.vertices]
+        for combo in combinations(vnrs, k):
+            vset_to_vol[frozenset(combo)].append(el)
+
+    n_items, marked_ids = 0, set()
+    for facet_el in mesh.Elements(vb):
+        if facet_el.mat in names:
+            n_items += 1
+            key = frozenset(v.nr for v in facet_el.vertices)
+            for vol_el in vset_to_vol.get(key, []):
+                if vol_el.nr not in marked_ids:
+                    marked_ids.add(vol_el.nr)
+                    mesh.SetRefinementFlag(vol_el, True)
+    return n_items, len(marked_ids)

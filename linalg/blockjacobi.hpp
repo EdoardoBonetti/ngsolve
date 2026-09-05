@@ -51,11 +51,13 @@ namespace ngla
 
     
     /// performs steps Gauss-Seidel steps for the equation A x = b
+    /// if patches is given (one bit per block, size == number of blocks), only
+    /// the marked blocks are updated, all others are left untouched
     virtual void GSSmooth (BaseVector & x, const BaseVector & b,
-			   int steps = 1) const = 0;
+			   int steps = 1, shared_ptr<BitArray> patches = nullptr) const = 0;
 
     /// performs steps Gauss-Seidel steps for the equation A x = b with partial residual y
-    virtual void GSSmoothPartial (BaseVector & x, const BaseVector & b, BaseVector & y) const 
+    virtual void GSSmoothPartial (BaseVector & x, const BaseVector & b, BaseVector & y) const
     {
       GSSmooth (x, b, 1);
     }
@@ -67,11 +69,12 @@ namespace ngla
 
     /// does smoothing in reversed order
     virtual void GSSmoothBack (BaseVector & x, const BaseVector & b,
-			       int steps = 1) const = 0;
+			       int steps = 1, shared_ptr<BitArray> patches = nullptr) const = 0;
 
-    virtual void GSSmoothBackPartial (BaseVector & x, const BaseVector & b, BaseVector & y) const 
+    virtual void GSSmoothBackPartial (BaseVector & x, const BaseVector & b, BaseVector & y,
+                                       shared_ptr<BitArray> patches = nullptr) const
     {
-      GSSmoothBack (x, b, 1);
+      GSSmoothBack (x, b, 1, patches);
     }
 
 
@@ -157,11 +160,11 @@ namespace ngla
 
     ///
     void GSSmooth (BaseVector & x, const BaseVector & b,
-                   int steps = 1) const override;
+                   int steps = 1, shared_ptr<BitArray> patches = nullptr) const override;
 
     void GSSmoothBack (BaseVector & x, const BaseVector & b,
-                       int steps = 1) const override;
-  
+                       int steps = 1, shared_ptr<BitArray> patches = nullptr) const override;
+
     void GSSmoothResiduum (BaseVector & x, const BaseVector & b,
                            BaseVector & res, int steps = 1) const  override
     {
@@ -267,25 +270,25 @@ namespace ngla
 
     ///
     void GSSmooth (BaseVector & x, const BaseVector & b,
-                   int steps = 1) const override;
-  
+                   int steps = 1, shared_ptr<BitArray> patches = nullptr) const override;
+
     void GSSmoothPartial (BaseVector & x, const BaseVector & b,
                           BaseVector & y) const override;
-  
+
 
 
     ///
     void GSSmoothResiduum (BaseVector & x, const BaseVector & b,
                            BaseVector & res, int steps = 1) const override;
 
-  
+
     ///
     void GSSmoothBack (BaseVector & x, const BaseVector & b,
-                       int steps = 1) const override;
- 
+                       int steps = 1, shared_ptr<BitArray> patches = nullptr) const override;
+
 
     void GSSmoothBackPartial (BaseVector & x, const BaseVector & b,
-                              BaseVector & y) const override;
+                              BaseVector & y, shared_ptr<BitArray> patches = nullptr) const override;
  
 
 

@@ -1809,12 +1809,21 @@ inverse : string
   py::class_<BaseBlockJacobiPrecond, shared_ptr<BaseBlockJacobiPrecond>, BaseMatrix>
     (m, "BlockSmoother",
      "block Jacobi and block Gauss-Seidel smoothing")
-    .def("Smooth", &BaseBlockJacobiPrecond::GSSmooth, py::call_guard<py::gil_scoped_release>(),
-         py::arg("x"), py::arg("b"), py::arg("steps")=1,
-         "performs steps block-Gauss-Seidel iterations for the linear system A x = b")
-    .def("SmoothBack", &BaseBlockJacobiPrecond::GSSmoothBack,
-         py::arg("x"), py::arg("b"), py::arg("steps")=1, py::call_guard<py::gil_scoped_release>(),
-         "performs steps block-Gauss-Seidel iterations for the linear system A x = b in reverse order")
+    .def("Smooth", [](BaseBlockJacobiPrecond & jac, BaseVector & x, const BaseVector & b,
+                       int steps, shared_ptr<BitArray> patches)
+         { jac.GSSmooth (x, b, steps, patches); },
+         py::call_guard<py::gil_scoped_release>(),
+         py::arg("x"), py::arg("b"), py::arg("steps")=1, py::arg("patches")=shared_ptr<BitArray>(),
+         "performs steps block-Gauss-Seidel iterations for the linear system A x = b.\n"
+         "If patches is given (BitArray, one bit per block, size == number of blocks),\n"
+         "only the marked blocks are updated; all other blocks are left untouched.")
+    .def("SmoothBack", [](BaseBlockJacobiPrecond & jac, BaseVector & x, const BaseVector & b,
+                           int steps, shared_ptr<BitArray> patches)
+         { jac.GSSmoothBack (x, b, steps, patches); },
+         py::call_guard<py::gil_scoped_release>(),
+         py::arg("x"), py::arg("b"), py::arg("steps")=1, py::arg("patches")=shared_ptr<BitArray>(),
+         "performs steps block-Gauss-Seidel iterations for the linear system A x = b in reverse order.\n"
+         "Same patches semantics as Smooth.")
     ;
 
   py::class_<BaseJacobiPrecond, shared_ptr<BaseJacobiPrecond>, BaseMatrix>

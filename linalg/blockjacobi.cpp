@@ -684,13 +684,16 @@ namespace ngla
   template <class TM, class TV_ROW, class TV_COL>
   void BlockJacobiPrecond<TM, TV_ROW, TV_COL> ::
   GSSmooth (BaseVector & x, const BaseVector & b,
-	    int steps) const 
+	    int steps, shared_ptr<BitArray> patches) const
   {
     static Timer timer ("BlockJacobiPrecond::GSSmooth");
     RegionTimer reg(timer);
     timer.AddFlops (nze);
-    
-    FlatVector<TVX> fb = b.FV<TVX> (); 
+
+    if (patches && patches->Size() != blocktable->Size())
+      throw Exception ("BlockJacobiPrecond::GSSmooth: patches size does not match number of blocks");
+
+    FlatVector<TVX> fb = b.FV<TVX> ();
     FlatVector<TVX> fx = x.FV<TVX> ();
 
 #ifdef OLD
@@ -780,10 +783,11 @@ namespace ngla
                   for (auto mynr : loops[c])
                     {
                       size_t i = col[mynr];
+                      if (patches && !patches->Test(i)) continue;
                       FlatArray<int> block = (*blocktable)[i];
                       size_t bs = block.Size();
                       if (!bs) continue;
-                      
+
                       FlatVector<TVX> hx = hxmax.Range(0,bs);
                       FlatVector<TVX> hy = hymax.Range(0,bs);
                       
@@ -807,26 +811,30 @@ namespace ngla
   template <class TM, class TV_ROW, class TV_COL>
   void BlockJacobiPrecond<TM, TV_ROW, TV_COL> ::
   GSSmoothBack (BaseVector & x, const BaseVector & b,
-		int steps) const 
+		int steps, shared_ptr<BitArray> patches) const
   {
     static Timer timer ("BlockJacobiPrecond::GSSmoothBack");
     RegionTimer reg(timer);
     timer.AddFlops (nze);
 
-    const FlatVector<TVX> fb = b.FV<TVX> (); 
+    if (patches && patches->Size() != blocktable->Size())
+      throw Exception ("BlockJacobiPrecond::GSSmoothBack: patches size does not match number of blocks");
+
+    const FlatVector<TVX> fb = b.FV<TVX> ();
     FlatVector<TVX> fx = x.FV<TVX> ();
 
     for (int k = 0; k < steps; k++)
-      for (int c = block_coloring.Size()-1; c >=0; c--) 
+      for (int c = block_coloring.Size()-1; c >=0; c--)
         {
           ParallelForRange
             (color_balance[c], [&] (IntRange r)
              {
                VectorMem<100,TVX> hxmax(maxbs);
                VectorMem<100,TVX> hymax(maxbs);
-               
+
                for (size_t i : block_coloring[c].Range(r))
                  {
+                   if (patches && !patches->Test(i)) continue;
                    FlatArray<int> block = (*blocktable)[i];
                    size_t bs = block.Size();
                    if (!bs) continue;
@@ -1122,11 +1130,14 @@ namespace ngla
 
 
   template <class TM, class TV>
-  void BlockJacobiPrecondSymmetric<TM,TV> :: 
-  GSSmooth (BaseVector & x, const BaseVector & b, int steps) const 
+  void BlockJacobiPrecondSymmetric<TM,TV> ::
+  GSSmooth (BaseVector & x, const BaseVector & b, int steps, shared_ptr<BitArray> patches) const
   {
     static Timer timer ("BlockJacobiPrecondSymmetric::GSSmooth (parallel)");
     RegionTimer reg(timer);
+
+    if (patches && patches->Size() != blocktable->Size())
+      throw Exception ("BlockJacobiPrecondSymmetric::GSSmooth: patches size does not match number of blocks");
 
     FlatVector<TVX> fb = b.FV<TVX> ();
     FlatVector<TVX> fx = x.FV<TVX> ();
@@ -1134,28 +1145,35 @@ namespace ngla
     Vector<TVX> fy(fx.Size());
 
     // y = b - (D L^T) x
+    // NOTE: this residual sweep always touches the full matrix (O(nnz)),
+    // regardless of patches - masking below only skips the per-block solves
     fy = fb;
     for (int j = 0; j < mat->Height(); j++)
       mat->AddRowTransToVector (j, -fx(j), fy);
 
-    
+
     if (GetTaskManager())
-      
+
       for (int k = 1; k <= steps; k++)
         for (size_t c = 0; c < block_coloring.Size(); c++)
           ParallelFor (color_balance[c], [&] (int bi)
                        {
-                         SmoothBlock (block_coloring[c][bi], fx, fy);
+                         size_t blocknr = block_coloring[c][bi];
+                         if (patches && !patches->Test(blocknr)) return;
+                         SmoothBlock (blocknr, fx, fy);
                        });
-    
+
     else
-      
+
       for (int k = 1; k <= steps; k++)
         for (size_t i = 0; i < blocktable->Size(); i++)
-          SmoothBlock (i, fx, fy);
+          {
+            if (patches && !patches->Test(i)) continue;
+            SmoothBlock (i, fx, fy);
+          }
   }
 
-  
+
   template <class TM, class TV>
   void BlockJacobiPrecondSymmetric<TM,TV> :: 
   GSSmoothPartial (BaseVector & x, const BaseVector & b,
@@ -1209,12 +1227,15 @@ namespace ngla
   
   ///
   template <class TM, class TV>
-  void BlockJacobiPrecondSymmetric<TM,TV> :: 
+  void BlockJacobiPrecondSymmetric<TM,TV> ::
   GSSmoothBack (BaseVector & x, const BaseVector & b,
-		int steps) const 
+		int steps, shared_ptr<BitArray> patches) const
   {
     static Timer timer ("BlockJacobiPrecondSymmetric::SmoothBack");
     RegionTimer reg(timer);
+
+    if (patches && patches->Size() != blocktable->Size())
+      throw Exception ("BlockJacobiPrecondSymmetric::GSSmoothBack: patches size does not match number of blocks");
 
     VVector<TVX> y(x.Size());
 
@@ -1223,33 +1244,41 @@ namespace ngla
     mat->MultAdd2 (-1, x, y);
 
     for (int k = 1; k <= steps; k++)
-      GSSmoothBackPartial (x, b, y);
+      GSSmoothBackPartial (x, b, y, patches);
   }
 
 
   template <class TM, class TV>
-  void BlockJacobiPrecondSymmetric<TM,TV> :: 
+  void BlockJacobiPrecondSymmetric<TM,TV> ::
   GSSmoothBackPartial (BaseVector & x, const BaseVector & b,
-		       BaseVector & y) const 
+		       BaseVector & y, shared_ptr<BitArray> patches) const
   {
     static Timer timer ("BlockJacobiPrecondSymmetric::GSSmoothBack - partial res");
     RegionTimer reg(timer);
+
+    if (patches && patches->Size() != blocktable->Size())
+      throw Exception ("BlockJacobiPrecondSymmetric::GSSmoothBackPartial: patches size does not match number of blocks");
 
     FlatVector<TVX> fx = x.FV<TVX> ();
     FlatVector<TVX> fy = y.FV<TVX> ();
 
 
     if (GetTaskManager())
-      
+
       for (int c = block_coloring.Size()-1; c >= 0; c--)
         ParallelFor (color_balance[c], [&] (int bi)
                      {
-                       SmoothBlock (block_coloring[c][bi], fx, /* fb, */ fy);
+                       size_t blocknr = block_coloring[c][bi];
+                       if (patches && !patches->Test(blocknr)) return;
+                       SmoothBlock (blocknr, fx, /* fb, */ fy);
                      });
     else
 
       for (int i = blocktable->Size()-1; i >= 0; i--)
-        SmoothBlock (i, fx, fy);
+        {
+          if (patches && !patches->Test(i)) continue;
+          SmoothBlock (i, fx, fy);
+        }
 
   }
 
