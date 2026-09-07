@@ -705,6 +705,13 @@ namespace ngcomp
         }
     }
 
+    /// element-element adjacency graph (dual graph): row i lists the VOL
+    /// elements sharing a facet with element i. Symmetric, no self-loops.
+    /// Suitable as-is for graph partitioners (e.g. pymetis.part_graph's
+    /// 'adjacency' argument expects exactly this: len(.) == nr of vertices,
+    /// each row an iterable of neighbour ids, both directions stored).
+    shared_ptr<Table<int>> GetElementAdjacency () const;
+
     void CalcIdentifiedFacets();
     int GetPeriodicFacet(int fnr) const
     {

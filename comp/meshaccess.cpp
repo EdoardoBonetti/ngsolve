@@ -1488,6 +1488,24 @@ namespace ngcomp
   }
 
 
+  shared_ptr<Table<int>> MeshAccess :: GetElementAdjacency () const
+  {
+    TableCreator<int> creator(GetNE(VOL));
+    Array<int> elnums;
+    for ( ; !creator.Done(); creator++)
+      for (size_t fnr : Range(GetNFacets()))
+        {
+          GetFacetElements (fnr, elnums);
+          if (elnums.Size() == 2)
+            {
+              creator.Add (elnums[0], elnums[1]);
+              creator.Add (elnums[1], elnums[0]);
+            }
+        }
+    return make_shared<Table<int>> (creator.MoveTable());
+  }
+
+
   void MeshAccess :: GetFaceSurfaceElements (int fnr, Array<int> & elnums) const
   {
     /*

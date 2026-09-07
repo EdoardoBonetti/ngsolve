@@ -583,6 +583,11 @@ mesh (netgen.Mesh): a mesh generated from Netgen
                                       MeshNode(NodeId(nt, mesh->GetNNodes(nt)), *mesh));
           }, "iterable of mesh facets")
 
+    .def ("AdjMatrix", &MeshAccess::GetElementAdjacency,
+          "Element-adjacency graph (dual graph): row i lists the VOL elements\n"
+          "sharing a facet with element i. Directly usable as pymetis.part_graph's\n"
+          "'adjacency' argument, e.g. pymetis.part_graph(ndom, adjacency=mesh.AdjMatrix())")
+
     .def("nodes", [] (shared_ptr<MeshAccess> mesh, NODE_TYPE type)
          {
            return T_Range<MeshNode> (MeshNode(NodeId(type, 0), *mesh),
