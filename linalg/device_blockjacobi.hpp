@@ -11,13 +11,14 @@
 /*
   Backend-independent block-Jacobi preconditioner on the gpu. The block
   inverses are computed on the host by BlockJacobiPrecond, this class
-  only applies them: y += s * sum_blocks P_b^T inv_b P_b x.
+  only applies them: y += s * sum_blocks P_b^T inv_b P_b x, by the
+  batched block gemv of DeviceBlockGemv. Symmetric inverses make the
+  transpose the operator itself.
 
-  Created by BlockJacobiPrecond::CreateDeviceMatrix. Overlapping blocks
-  accumulate with atomic adds, disjoint blocks with plain stores.
+  Created by BlockJacobiPrecond::CreateDeviceMatrix.
 */
 
-#include "devicevector.hpp"
+#include "device_blockgemv.hpp"
 #include "blockjacobi.hpp"
 
 namespace ngla
@@ -30,20 +31,14 @@ namespace ngla
     size_t height, width, nblocks;
     MemType memtype;
     shared_ptr<ngs_gpu::Device> device;
-    shared_ptr<ngs_gpu::Queue> queue;
-
-    ngs_gpu::TypedBuffer<int> dev_blockfirst;   // nblocks+1, into dev_indices
-    ngs_gpu::TypedBuffer<int> dev_indices;      // dofs of all blocks
-    ngs_gpu::TypedBuffer<int> dev_matfirst;     // nblocks+1, into dev_mats
-    ngs_gpu::TypedBuffer<T> dev_mats;           // inverses, row-major, block after block
-    int lanes;                                  // work-items per block
-    bool overlapping;                           // a dof in more than one block
-
-    void Launch (const BaseVector & x, BaseVector & y, T s, bool trans) const;
+    shared_ptr<DeviceBlockGemv<T>> gemv, gemv_trans;   // same object if symmetric
+    bool symmetric;
 
   public:
     template <typename TM>
     DeviceBlockJacobi (const BlockJacobiPrecond<TM> & pre);
+    template <typename TM, typename TV>
+    DeviceBlockJacobi (const BlockJacobiPrecondSymmetric<TM,TV> & pre);
     virtual ~DeviceBlockJacobi () { }
 
     virtual int VHeight() const override { return height; }

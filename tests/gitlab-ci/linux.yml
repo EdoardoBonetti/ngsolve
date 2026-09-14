@@ -44,6 +44,8 @@
     when: always
     paths:
       - logs/
+  after_script:
+    - docker run --rm -v "$PWD:/w" alpine chown -R $(id -u):$(id -g) /w/logs || true
 
 ubuntu_avx_build:
   <<: *ubuntu_avx
@@ -71,4 +73,5 @@ docu_test:
     RUN_TESTS_AFTER_BUILD: "0"
   when: manual
   after_script:
+    - docker run --rm -v "$PWD:/w" alpine chown -R $(id -u):$(id -g) /w/logs || true
     - /home/gitlab-runner/deploy/deploy_docu_test.sh $CI_PIPELINE_ID

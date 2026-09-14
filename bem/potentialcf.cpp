@@ -14,10 +14,10 @@ namespace ngsbem
                VorB _source_vb,
                optional<Region> _definedon,
                shared_ptr<DifferentialOperator> _evaluator,
-               KERNEL _kernel, int _intorder, bool _nearfield,
+               KERNEL _kernel, int _intorder,
                IntOp_Parameters _io_params)
     : BasePotentialCF(_gf, _source_vb, _definedon, _evaluator, std::is_same<typename KERNEL::value_type,Complex>()),
-      kernel(_kernel), intorder(_intorder), nearfield(_nearfield)
+      kernel(_kernel), intorder(_intorder)
   {
     io_params = _io_params;
     IVec<2> shape = kernel.Shape();
@@ -231,69 +231,91 @@ namespace ngsbem
   }
 
 
+  // IntegrationPoint ProjectPointToReference(Vec<3> x, const ElementTransformation & trafo)
+  // {
+  //   auto et = trafo.GetElementType();
+  //   IntegrationPoint ip = et == ET_TRIG ?
+  //     IntegrationPoint(1./3, 1./3) : IntegrationPoint(1./2, 1./2);
+  //   constexpr double reference_step_tolerance = 1e-12;
+  //   for (int j = 0; j < 5; j++) // SQP steps
+  //     {
+  //       MappedIntegrationPoint<2,3> mip(ip, trafo);
+  //       Mat<3,2> jac = mip.GetJacobian();
+  //       Vec<2> ipvec { ip(0), ip(1) };
+  //       auto Hesse = mip.CalcHesse();
+  //       Vec<3> r = mip.GetPoint()-x;
+
+  //       // Newton model of 1/2 ||F(uv)-x||^2, with a*ipvec+b = J^T*r.
+  //       Mat<2,2> a = Trans(jac)*jac;
+  //       for (int k = 0; k < 3; k++)
+  //         a += r(k)*Hesse[k];
+  //       // CalcHesse uses finite differences; enforce symmetry for the minimizer.
+  //       a(0,1) = a(1,0) = 0.5*(a(0,1)+a(1,0));
+  //       Vec<2> b = Trans(jac)*r-a*ipvec;
+  //       Vec<2> uv = et == ET_TRIG ? MinimizeOnTrig(a, b, 0) : MinimizeOnQuad(a, b, 0);
+  //       ip = IntegrationPoint(uv(0), uv(1));
+  //       if (L2Norm(uv-ipvec) <= reference_step_tolerance)
+  //         break;
+  //     }
+  //   return ip;
+  // }
+
+
   IntegrationPoint ProjectPointToReference(Vec<3> x, const ElementTransformation & trafo)
   {
     auto et = trafo.GetElementType();
     IntegrationPoint ip = et == ET_TRIG ?
       IntegrationPoint(1./3, 1./3) : IntegrationPoint(1./2, 1./2);
-    for (int j = 0; j < 5; j++) // SQP steps
+    constexpr int max_iterations = 5;
+    constexpr double reference_step_tolerance = 1e-12;
+    for (int j = 0; j < max_iterations; j++) // Gauss-newton steps
       {
         MappedIntegrationPoint<2,3> mip(ip, trafo);
-        // dist = || x - (mip+Jac*(uv-ip) + 1/2*Hesse(uv-ip, uv-ip)) ||
         Mat<3,2> jac = mip.GetJacobian();
         Vec<2> ipvec { ip(0), ip(1) };
-        auto Hesse = mip.CalcHesse();
-        Vec<3,Vec<2>> Hesseip
-          {
-            Hesse[0]*ipvec,
-            Hesse[1]*ipvec,
-            Hesse[2]*ipvec
-          };
-        Vec<3> Hesseipip
-          {
-            InnerProduct(Hesseip(0), ipvec),
-            InnerProduct(Hesseip(1), ipvec),
-            InnerProduct(Hesseip(2), ipvec)
-          };
-        Mat<3,2> jacphip = jac;
-        jacphip.Row(0) -= Hesseip(0);
-        jacphip.Row(1) -= Hesseip(1);
-        jacphip.Row(2) -= Hesseip(2);
+
         Mat<2,2> a = Trans(jac)*jac;
-        Vec<2> b = -Trans(jacphip) * (x-mip.GetPoint()+jac*ipvec + 0.5*Hesseipip);
+        Vec<2> b = -Trans(jac) * (x-mip.GetPoint()+jac*ipvec);
         Vec<2> uv = et == ET_TRIG ? MinimizeOnTrig(a, b, 0) : MinimizeOnQuad(a, b, 0);
+
+        double reference_step = L2Norm(uv-ipvec);
         ip = IntegrationPoint(uv(0), uv(1));
+        if (reference_step <= reference_step_tolerance)
+          break;
       }
     return ip;
   }
 
 
-  IntegrationRule GetIntegrationRule(Vec<3> x, const ElementTransformation & trafo, int intorder, bool nearfield)
+  IntegrationRule GetIntegrationRule(Vec<3> x, const ElementTransformation & trafo, int intorder)
   {
-    if (!nearfield || trafo.GetElementType() != ET_TRIG)
-      return IntegrationRule(trafo.GetElementType(), intorder);
+    auto et = trafo.GetElementType();
+    if (et != ET_TRIG && et != ET_QUAD)
+      return IntegrationRule(et, intorder);
 
 
-    IntegrationPoint ip(1.0/3, 1.0/3);
+    IntegrationPoint ip = et == ET_TRIG ? IntegrationPoint(1./3, 1./3) : IntegrationPoint(1./2, 1./2);
     MappedIntegrationPoint<2,3>  mip(ip, trafo);
     double elsize = L2Norm(mip.GetJacobian());
     double dist = L2Norm(x-mip.GetPoint());
 
     if (dist < elsize)
       {
-        // use SQP to find projection of x onto (curved) triangle
+        // Find the projection of x onto the curved triangle/quad.
         IntegrationPoint ip = ProjectPointToReference(x, trafo);
 
-        // generate Duffy integration rules on split triangles
+        // Split the reference element into triangles meeting at the projection.
         IntegrationRule irsegm(ET_SEGM, intorder);
-        IntegrationRule irtrig(trafo.GetElementType(), intorder);
         IntegrationRule ir;
 
-        Vec<2> corners[] = { Vec<2>(0,0), Vec<2>(1,0), Vec<2>(0,1) };
-        for (int j = 0; j < 3; j++)
+        Vec<2> corners[] = {Vec<2>(0,0), Vec<2>(1,0), Vec<2>(1,1), Vec<2>(0,1)};
+        int ncorners = et == ET_TRIG ? 3 : 4;
+        if (et == ET_TRIG)
+          corners[2] = Vec<2>(0,1);
+        for (int j = 0; j < ncorners; j++)
           {
             Vec<2> v0 = corners[j];
-            Vec<2> v1 = corners[(j+1)%3];
+            Vec<2> v1 = corners[(j+1)%ncorners];
             Vec<2> v2 { ip(0), ip(1) };
             Mat<2,2> sides;
             sides.Col(0) = v0-v2;
@@ -311,7 +333,7 @@ namespace ngsbem
           }
         return ir;
       }
-    return IntegrationRule(trafo.GetElementType(), intorder);
+    return IntegrationRule(et, intorder);
   }
 
 
@@ -397,6 +419,7 @@ namespace ngsbem
   void PotentialCF<KERNEL> ::
   AddTangentCorrection(const BaseMappedIntegrationPoint & mip,
                        ElementId ei,
+                       const IntegrationRule & ir,
                        FlatVector<T> result,
                        LocalHeap & lh) const
   {
@@ -439,7 +462,7 @@ namespace ngsbem
     double scalar_correction = 0.0;
     Vec<3> grad_correction { 0.0, 0.0, 0.0 };
     double measure0 = mip0.GetMeasure();
-    IntegrationRule ir(et, intorder);
+    // Subtract the tangent kernel using the same rule as the curved kernel.
     Vec<3> nx{0.0};
     Vec<3> ny = mip0.GetNV();
 
@@ -532,21 +555,14 @@ namespace ngsbem
             if (!IsPotentialNearfieldSourceElement(x, trafo))
               continue;
 
-            if constexpr (KERNEL::analytic_triangle_formula != AnalyticTriangleFormula::none)
-              {
-                AddTangentCorrection(mip, ei, row, lh);
-                continue;
-              }
-
-            // Duffy if kernel has no analytic formula (only for trigs)
-            if (trafo.GetElementType() != ET_TRIG)
-              continue;
-
+            IntegrationRule near_ir = GetIntegrationRule(x, trafo, intorder);
+            // Replace the expansion's standard source quadrature by Duffy.
             IntegrationRule standard_ir(trafo.GetElementType(), intorder);
-            IntegrationRule near_ir = GetIntegrationRule(x, trafo, intorder, true);
-
             AddSourceElementContribution(mip, ei, standard_ir, row, T(-1.0), lh);
             AddSourceElementContribution(mip, ei, near_ir, row, T(1.0), lh);
+
+            if constexpr (KERNEL::analytic_triangle_formula != AnalyticTriangleFormula::none)
+              AddTangentCorrection(mip, ei, near_ir, row, lh);
           }
       }
   }
@@ -583,15 +599,9 @@ namespace ngsbem
 
           bool use_tangent_correction = false;
           if constexpr (KERNEL::analytic_triangle_formula != AnalyticTriangleFormula::none)
-            use_tangent_correction =
-              nearfield &&
-              IsPotentialNearfieldSourceElement(mip.GetPoint(), trafo);
+            use_tangent_correction = IsPotentialNearfieldSourceElement(mip.GetPoint(), trafo);
 
-          // IntegrationRule ir(fel.ElementType(), intorder);
-          IntegrationRule ir =
-            use_tangent_correction ?
-            IntegrationRule(trafo.GetElementType(), intorder) :
-            GetIntegrationRule(mip.GetPoint(), trafo, intorder, nearfield);
+          IntegrationRule ir = GetIntegrationRule(mip.GetPoint(), trafo, intorder);
 
           SIMD_IntegrationRule simd_ir(ir);
 
@@ -630,7 +640,7 @@ namespace ngsbem
             }
           if constexpr (KERNEL::analytic_triangle_formula != AnalyticTriangleFormula::none)
             if (use_tangent_correction)
-              AddTangentCorrection(mip, ei, correction_result, lh);
+              AddTangentCorrection(mip, ei, ir, correction_result, lh);
         }
     for (int i = 0; i < Dimension(); i++)
       result(i) = HSum(simd_result(i)) + correction_result(i);
@@ -661,81 +671,8 @@ namespace ngsbem
           return;
         }
 
-    if (nearfield)
-      {
-        for (int i = 0; i < bmir.Size(); i++)
-          T_Evaluate(bmir[i], result.Row(i).Range(0,Dimension()));
-        return;
-      }
-
-    try
-      {
-        static Timer t("ngbem evaluate potential (bmir)"); RegionTimer reg(t);
-        LocalHeapMem<100000> lh("Potential::Eval");
-        auto space = this->gf->GetFESpace();
-        auto mesh = space->GetMeshAccess();
-        const MappedIntegrationRule<2,3> * mirx23 = nullptr;
-        if constexpr (KERNEL::target_type::needs_normal)
-          mirx23 = &dynamic_cast<const MappedIntegrationRule<2,3>&>(bmir);
-
-        Matrix<SIMD<T>> simd_result(Dimension(), bmir.Size());
-        simd_result = SIMD<T>(0.0);
-        if constexpr (std::is_same<typename KERNEL::value_type,T>())
-          for (size_t i = 0; i < mesh->GetNE(source_vb); i++)
-            {
-              HeapReset hr(lh);
-              ElementId ei(source_vb, i);
-              if (!space->DefinedOn(ei)) continue;
-              if (definedon && !(*definedon).Mask().Test(mesh->GetElIndex(ei))) continue;
-
-              const FiniteElement &fel = space->GetFE(ei, lh);
-              const ElementTransformation &trafo = mesh->GetTrafo(ei, lh);
-
-              Array<DofId> dnums(fel.GetNDof(), lh);
-              space->GetDofNrs(ei, dnums);
-              FlatVector<T> elvec(fel.GetNDof(), lh);
-              gf->GetElementVector(dnums, elvec);
-
-              IntegrationRule ir(fel.ElementType(), intorder);
-              SIMD_IntegrationRule simd_ir(ir);
-              auto & miry = trafo(simd_ir, lh);
-              FlatMatrix<SIMD<T>> vals(evaluator->Dim(), miry.Size(), lh);
-
-              evaluator->Apply (fel, miry, elvec, vals);
-              for (int ix = 0; ix < bmir.Size(); ix++)
-                for (int iy = 0; iy < miry.Size(); iy++)
-                  {
-                    Vec<3,SIMD<double>> x = bmir[ix].GetPoint();
-                    Vec<3,SIMD<double>> y = miry[iy].GetPoint();
-
-                    Vec<3,SIMD<double>> nx{0.0};
-                    if constexpr (KERNEL::target_type::needs_normal)
-                      nx = (*mirx23)[ix].GetNV();
-                    Vec<3,SIMD<double>> ny{0.0};
-                    if constexpr (KERNEL::source_type::needs_normal)
-                      {
-                        if (source_vb != BND)
-                          throw Exception("kernel requires boundary source normals");
-                        ny = static_cast<const SIMD<MappedIntegrationPoint<2,3>>&>(miry[iy]).GetNV();
-                      }
-
-                    auto eval = kernel.Evaluate(x, y, nx, ny);
-                    for (auto term : kernel.terms)
-                      {
-                        auto kernel_ = term.fac * eval(term.kernel_comp);
-                        simd_result(term.test_comp, ix) += miry[iy].GetWeight()*kernel_ * vals(term.trial_comp,iy);
-                      }
-                  }
-            }
-        for (int i = 0; i < Dimension(); i++)
-          for (int j = 0; j < bmir.Size(); j++)
-            result(j, i) = HSum(simd_result(i,j));
-      }
-    catch (ExceptionNOSIMD & e)
-      {
-        e.Append ("\nin PotentialCF::Evaluate(mir)");
-        throw e;
-      }
+    for (int i = 0; i < bmir.Size(); i++)
+      T_Evaluate(bmir[i], result.Row(i).Range(0,Dimension()));
   }
 
 
@@ -768,12 +705,10 @@ namespace ngsbem
   template class PotentialCF<HelmholtzDLKernel<3,3>>;
   template class PotentialCF<HelmholtzDLKernel<3,1,Complex>>;
   template class PotentialCF<HelmholtzDLKernel<3,3,Complex>>;
-  template class PotentialCF<HelmholtzHSKernel<3>>;
   template class PotentialCF<CombinedFieldKernel<3>>;
   template class PotentialCF<CombinedFieldKernel<3,3>>;
   template class PotentialCF<CombinedFieldKernel<3,1,Complex>>;
   template class PotentialCF<CombinedFieldKernel<3,3,Complex>>;
-  template class PotentialCF<MaxwellSLKernel<3>>;
   template class PotentialCF<MaxwellDLKernel<3>>;
   template class PotentialCF<MaxwellDLKernel<3,Complex>>;
 

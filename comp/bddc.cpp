@@ -1,4 +1,3 @@
-// #include <comp.hpp>
 // #include <solve.hpp>
 #include "preconditioner.hpp"
 #include "hypre_precond.hpp"
@@ -85,8 +84,6 @@ namespace ngcomp
       Array<int> ifcnt(ma->GetNE()+ma->GetNSE()+ma->GetNCD2E()+bfa->GetSpecialElements().Size());
       wbdcnt = 0;
       ifcnt = 0;
-      // const BitArray & freedofs = *fes->GetFreeDofs();
-      
 
       LocalHeap lh(10000, "BDDC-constr, dummy heap");
       
@@ -194,11 +191,6 @@ namespace ngcomp
 	if (fes->GetDofCouplingType(i) == WIREBASKET_DOF)
 	  wb_free_dofs -> SetBit(i);
 
-
-      /*
-      if (fes->GetFreeDofs())
-	wb_free_dofs -> And (*fes->GetFreeDofs());
-      */
       wb_free_dofs -> And (*freedofs);
       
       if (!bfa->SymmetricStorage()) 
@@ -311,16 +303,10 @@ namespace ngcomp
           RegionTimer regcompute (timer3);
           regcompute.AddFlops (sizei*sizei*sizei + 2*sizei*sizei*sizew);
 
-          CalcInverse (d);  // , INVERSE_LIB::INV_NGBLA);
+          CalcInverse (d);
           
 	  if (sizew)
 	    {
-              /*
-	      he = SCAL(0.0);
-
-	      he -= d*c   | Lapack;
-	      a += b*he   | Lapack;
-              */
               he = -d*c;
               a += b*he;
 	      //R * E
@@ -329,10 +315,6 @@ namespace ngcomp
 
 	      if (!bfa->SymmetricStorage())
 		{
-                  /*
-		  het = SCAL(0.0);
-		  het -= b*d  | Lapack;
-		  */
                   het = -b*d;
                   
 		  //E * R^T

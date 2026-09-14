@@ -71,6 +71,8 @@
   #define SIMD_SUM(x)            ngs_simd_sum(x)
   // value of lane src, all lanes of the warp must call it
   #define SIMD_BROADCAST(x,src)  __shfl_sync(0xffffffff, x, src)
+  // value of lane (mylane ^ mask), all lanes of the warp must call it
+  #define SIMD_SHUFFLE_XOR(x,mask)  __shfl_xor_sync(0xffffffff, x, mask)
 
   #define NGS_CPLX_FUNC          __host__ __device__ inline
   #define NGS_CPLX_SQRT          sqrt
@@ -105,6 +107,7 @@
   #include <atomic>
   #include <cmath>
   #include <cstddef>
+  #include <cstring>
   #include <deque>
   #include <thread>
   #include <vector>
@@ -141,20 +144,45 @@
     {
       Barrier barrier;
       std::deque<Barrier> rowbarriers;   // one per (y,z) row of x-lanes
+      std::deque<Barrier> quadbarriers, warpbarriers;   // 4 / 32 consecutive work-items
       std::vector<double> rowscratch;    // SIMD_SUM / SIMD_BROADCAST slots, one per work-item
+      std::vector<double> subscratch;    // quad / warp shuffle slots, one per work-item
       std::vector<char> arena;
       std::size_t used = 0;
       void * last = nullptr;
       Group (unsigned sx, unsigned sy, unsigned sz, std::size_t sh)
-        : barrier(sx*sy*sz), rowscratch(sx*sy*sz), arena(sh)
+        : barrier(sx*sy*sz), rowscratch(sx*sy*sz), subscratch(sx*sy*sz), arena(sh)
       {
+        unsigned n = sx*sy*sz;
         for (unsigned i = 0; i < sy*sz; i++) rowbarriers.emplace_back (sx);
+        for (unsigned i = 0; i < n; i += 4) quadbarriers.emplace_back (std::min(4u, n-i));
+        for (unsigned i = 0; i < n; i += 32) warpbarriers.emplace_back (std::min(32u, n-i));
       }
     };
 
     thread_local unsigned lid[3] = {0,0,0}, gid[3] = {0,0,0};
     thread_local unsigned gsz[3] = {1,1,1}, ngr[3] = {1,1,1};
     thread_local Group * group = nullptr;
+
+    // value of lane src of the quad (W=4) / warp (W=32) of consecutive
+    // work-items, the tinybla quad_broadcast / simd_shuffle; all lanes call it
+    inline unsigned LaneId () { return lid[0] + gsz[0]*(lid[1] + gsz[1]*lid[2]); }
+
+    template <unsigned W, typename T> inline T SubgroupShuffle (T x, unsigned src)
+    {
+      static_assert (sizeof(T) <= sizeof(double), "shuffle of a scalar");
+      unsigned t = LaneId();
+      unsigned base = t - t%W;
+      auto & bars = (W == 4) ? group->quadbarriers : group->warpbarriers;
+      Barrier & b = bars[t/W];
+      double * slots = group->subscratch.data() + base;
+      std::memcpy (&slots[t-base], &x, sizeof(T));
+      b.Wait();
+      T v;
+      std::memcpy (&v, &slots[src], sizeof(T));
+      b.Wait();    // slots free for the next call
+      return v;
+    }
 
     // all work-items reach this in the same order, so one of them bumps
     inline void * SharedAlloc (std::size_t bytes)
@@ -304,9 +332,22 @@
       b.Wait();
       return T(v);
     }
+    // value of lane (mylane ^ mask) of the row, all lanes must call it
+    template <typename T> inline T SimdShuffleXor (T x, int mask)
+    {
+      unsigned row = lid[1] + gsz[1]*lid[2], sx = gsz[0];
+      double * slots = group->rowscratch.data() + row*sx;
+      Barrier & b = group->rowbarriers[row];
+      slots[lid[0]] = double(x);
+      b.Wait();
+      double v = slots[(lid[0] ^ mask) % sx];
+      b.Wait();
+      return T(v);
+    }
   }
   #define SIMD_SUM(x)            ngs_cpu::SimdSum(x)
   #define SIMD_BROADCAST(x,src)  ngs_cpu::SimdBroadcast(x, src)
+  #define SIMD_SHUFFLE_XOR(x,mask)  ngs_cpu::SimdShuffleXor(x, mask)
 
   #define NGS_CPLX_FUNC          inline
   #define NGS_CPLX_SQRT          std::sqrt
@@ -371,6 +412,7 @@
   #define DEVICE_FENCE()         atomic_thread_fence(mem_flags::mem_device, metal::memory_order_seq_cst, metal::thread_scope_device)
   #define SIMD_SUM(x)            metal::simd_sum(x)
   #define SIMD_BROADCAST(x,src)  metal::simd_broadcast(x, ushort(src))
+  #define SIMD_SHUFFLE_XOR(x,mask)  metal::simd_shuffle_xor(x, ushort(mask))
 
   #define NGS_CPLX_FUNC          inline
   #define NGS_CPLX_SQRT          sqrt
@@ -488,6 +530,16 @@ template <typename T> NGS_CPLX_FUNC Complex<T> fma (Complex<T> a, NGS_CPLX_SCAL(
   { a.re /= b; a.im /= b; return a; }
 
 NGS_CPLX_ADDRSPACES(NGS_CPLX_COMPOUND)
+
+// SIMD_SUM for real and complex alike, all lanes must call it
+#ifdef __CUDACC__
+  #define NGS_DEV_FUNC __device__ inline
+#else
+  #define NGS_DEV_FUNC inline
+#endif
+template <typename T> NGS_DEV_FUNC T SimdSum (T x) { return SIMD_SUM(x); }
+template <typename T> NGS_DEV_FUNC Complex<T> SimdSum (Complex<T> z)
+{ return Complex<T>(SIMD_SUM(z.re), SIMD_SUM(z.im)); }
 
 #ifdef __CUDACC__
 template <typename T> __device__ inline void atomicAdd (Complex<T> * p, Complex<T> v)

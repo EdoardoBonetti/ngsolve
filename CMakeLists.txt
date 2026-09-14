@@ -18,6 +18,12 @@ option( USE_HYPRE        "enable HYPRE support")
 option( USE_MUMPS        "enable sparse direct solver MUMPS")
 option( USE_PARDISO      "enable pardiso sparse direct solver")
 option( USE_UMFPACK      "enable umfpack sparse direct solver" ON)
+if(APPLE)
+  set(USE_ACCELERATE_SPARSE_DEFAULT ON)
+else()
+  set(USE_ACCELERATE_SPARSE_DEFAULT OFF)
+endif()
+option( USE_ACCELERATE_SPARSE "enable Apple Accelerate sparse direct solver" ${USE_ACCELERATE_SPARSE_DEFAULT})
 option( INTEL_MIC        "cross compile for intel xeon phi")
 option( USE_VTUNE        "include vtune pause/resume numproc")
 option( USE_CCACHE       "use ccache")
@@ -235,6 +241,14 @@ endif(EMSCRIPTEN)
 if(APPLE)
     list(APPEND NGSOLVE_COMPILE_DEFINITIONS MSG_NOSIGNAL=0)
 endif(APPLE)
+
+if(USE_ACCELERATE_SPARSE)
+    if(NOT APPLE)
+        message(FATAL_ERROR "USE_ACCELERATE_SPARSE is available on Apple platforms only")
+    endif()
+    find_library(ACCELERATE_FRAMEWORK Accelerate REQUIRED)
+    list(APPEND NGSOLVE_COMPILE_DEFINITIONS USE_ACCELERATE_SPARSE)
+endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     list(APPEND NGSOLVE_COMPILE_OPTIONS $<$<COMPILE_LANGUAGE:CXX>:-Wno-undefined-var-template -Wno-vla-extension>)
@@ -669,6 +683,7 @@ message("
     MPI: ............... ${NETGEN_USE_MPI}
     CUDA: .............. ${USE_CUDA}
     MUMPS: ............. ${USE_MUMPS}
+    Accelerate Sparse: . ${USE_ACCELERATE_SPARSE}
     PARDISO: ........... ${USE_PARDISO}
     INTEL_MIC: ......... ${INTEL_MIC}
     VTUNE: ............. ${USE_VTUNE}
@@ -701,5 +716,4 @@ message("
 if (ADDITIONAL_PATHS)
   message(WARNING "The use of ADDITIONAL_PATHS is deprecated, use CMAKE_PREFIX_PATH instead.")
 endif (ADDITIONAL_PATHS)
-
 

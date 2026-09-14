@@ -84,6 +84,10 @@ namespace ngla
 		 LocalHeap & lh);
 
     auto GetBlockTable() const { return blocktable; } 
+    const Table<int> & GetBlockColoring() const { return block_coloring; }
+
+    // gpu Gauss-Seidel smoother for the same blocks, nullptr if not available
+    virtual shared_ptr<BaseMatrix> CreateDeviceGaussSeidel () const { return nullptr; }
   };
 
 
@@ -106,6 +110,13 @@ namespace ngla
     
     VecFormat RowFormat () const override { return jac->RowFormat(); }
     VecFormat ColFormat () const override { return jac->ColFormat(); }
+
+    shared_ptr<BaseMatrix> CreateDeviceMatrix () const override
+    {
+      if (auto dev = jac->CreateDeviceGaussSeidel())
+        return dev;
+      return BaseMatrix::CreateDeviceMatrix();
+    }
   };
 
   
@@ -194,6 +205,8 @@ namespace ngla
     virtual shared_ptr<BaseSparseMatrix> CreateSparseMatrix() const override;
     // a DeviceBlockJacobi for scalar TM if a gpu backend is registered
     virtual shared_ptr<BaseMatrix> CreateDeviceMatrix() const override;
+    shared_ptr<BaseMatrix> CreateDeviceGaussSeidel() const override;
+    shared_ptr<const SparseMatrix<TM,TV_ROW,TV_COL>> GetMatrix() const { return mat; }
     const Array<FlatMatrix<TM>> & GetInverses() const { return invdiag; }
     const Array<TM> & MatrixData() const { return bigmem; } 
   };
@@ -203,6 +216,11 @@ namespace ngla
 
 
   /* **************** SYMMETRIC ****************** */
+
+
+  // in device_blockgs.cpp; nullptr if no gpu backend with simd width 32 is registered
+  NGS_DLL_HEADER shared_ptr<BaseMatrix> CreateDeviceBlockGaussSeidel (const BlockJacobiPrecond<double> & pre);
+  NGS_DLL_HEADER shared_ptr<BaseMatrix> CreateDeviceBlockGaussSeidel (const BlockJacobiPrecond<float> & pre);
 
 
   ///
@@ -250,6 +268,7 @@ namespace ngla
     }
 
     void ComputeBlockFactor (FlatArray<int> block, int bw, FlatBandCholeskyFactors<TM> & inv) const;
+    shared_ptr<BaseMatrix> CreateDeviceMatrix () const override;
   
     ///
     void MultAdd (TSCAL64 s, const BaseVector & x, BaseVector & y) const override;

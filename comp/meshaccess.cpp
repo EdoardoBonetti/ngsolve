@@ -16,7 +16,6 @@
 #include <ngstd.hpp>
 #include <nginterface.h>
 
-// #include <comp.hpp>
 #include "meshaccess.hpp"
 #include "gridfunction.hpp"
 #include "pmltrafo.hpp"
@@ -2496,6 +2495,24 @@ namespace ngcomp
         }
 
       return false;
+    }
+
+    shared_ptr<CoefficientFunction> Diff (const CoefficientFunction * var,
+                                          shared_ptr<CoefficientFunction> dir) const override
+    {
+      if (this == var) return dir;
+      auto d = vol_cf->Diff(var, dir);
+      if (d->IsZeroCF()) return d;
+      return make_shared<BoundaryFromVolumeCoefficientFunction> (d);
+    }
+
+    shared_ptr<CoefficientFunction> DiffJacobi (const CoefficientFunction * var,
+                                                T_DJC & cache) const override
+    {
+      if (this == var) return IdentityCF(Dimensions());
+      auto d = vol_cf->DiffJacobi(var, cache);
+      if (d->IsZeroCF()) return d;
+      return make_shared<BoundaryFromVolumeCoefficientFunction> (d);
     }
 
     using BASE::Evaluate;

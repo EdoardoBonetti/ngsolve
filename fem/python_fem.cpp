@@ -8,8 +8,6 @@
 #include "l2hofe.hpp"
 #include "hdivfe.hpp"
 #include "hdivdivfe.hpp"
-// #include <fem.hpp>
-// #include <comp.hpp>
 #include "meshaccess.hpp"
 #include <mutex>
 #include <meshing/fieldlines.hpp>
@@ -596,6 +594,7 @@ direction : int
   py::class_<CoordinateTrafo>(m, "CoordinateTrafo")
     .def(py::init<shared_ptr<CoefficientFunction>, ngcomp::Region>());
 
+  RegisterPyArchiveCaster<CoefficientFunction>();
   auto cf_class = py::class_<CoefficientFunction, shared_ptr<CoefficientFunction>>
     (m, "CoefficientFunction",
 R"raw(A CoefficientFunction (CF) is some function defined on a mesh.

@@ -282,8 +282,6 @@ void NGS_DLL_HEADER ExportNgsbem(py::module &m)
   py::class_<IntegralOperator,shared_ptr<IntegralOperator>> (m, "IntegralOperator")
     .def_property_readonly("mat", &IntegralOperator::GetMatrix)
     .def("NearFieldMatrix", &IntegralOperator::GetNearFieldMatrix)
-    .def("GetPotential", &IntegralOperator::GetPotential,
-         py::arg("gf"), py::arg("intorder")=nullopt, py::arg("nearfield_experimental")=false)
 
     .def("GetFMMInfo", [](shared_ptr<IntegralOperator> iop) {
       return FMMInfoToDict(iop->GetFMMInfo());
@@ -445,164 +443,59 @@ void NGS_DLL_HEADER ExportNgsbem(py::module &m)
     })
     ;
 
-  m.def("SingleLayerPotentialOperator", [](shared_ptr<FESpace> space, int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("SingleLayerPotentialOperator", "LaplaceSL");
-    return make_unique<GenericIntegralOperator<LaplaceSLKernel<3>>>(space, space, nullopt, nullopt,
-                                                                    space->GetEvaluator(BND), space->GetEvaluator(BND),
-                                                                    LaplaceSLKernel<3>(), intorder);
-    
-  }, py::arg("space"), py::arg("intorder")=3);
-
-  m.def("SingleLayerPotentialOperator", [](shared_ptr<FESpace> trial_space, shared_ptr<FESpace> test_space,
-                                           optional<Region> trial_definedon, optional<Region> test_definedon,
-                                           int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("SingleLayerPotentialOperator", "LaplaceSL");
-    return make_unique<GenericIntegralOperator<LaplaceSLKernel<3>>>(trial_space, test_space,
-                                                                    trial_definedon, test_definedon,
-                                                                    trial_space -> GetEvaluator(BND),
-                                                                    test_space -> GetEvaluator(BND), LaplaceSLKernel<3>(), intorder);
-    
-  }, py::arg("trial_space"), py::arg("test_space"),
-        py::arg("trial_definedon")=nullopt, py::arg("test_definedon")=nullopt,
-        py::arg("intorder")=3);
-  
-  
-
-  m.def("DoubleLayerPotentialOperator", [](shared_ptr<FESpace> trial_space, shared_ptr<FESpace> test_space,
-                                           optional<Region> trial_definedon, optional<Region> test_definedon,
-                                           int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("DoubleLayerPotentialOperator", "LaplaceDL");
-    return make_unique<GenericIntegralOperator<LaplaceDLKernel<3>>>(trial_space, test_space,
-                                                                    trial_definedon, test_definedon,
-                                                                    trial_space -> GetEvaluator(BND),
-                                                                    test_space -> GetEvaluator(BND),
-                                                                    LaplaceDLKernel<3>(), intorder);    
-  }, py::arg("trial_space"), py::arg("test_space"),
-        py::arg("trial_definedon")=nullopt, py::arg("test_definedon")=nullopt,
-        py::arg("intorder")=3);
-
-
-  m.def("HypersingularOperator", [](shared_ptr<FESpace> space, optional<Region> definedon,
-                                    int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("HypersingularOperator", "LaplaceSL");
-    return make_unique<GenericIntegralOperator<LaplaceSLKernel<3,3>>>(space, space, definedon, definedon,
-                                                                    make_shared<T_DifferentialOperator<DiffOpBoundaryRot>>(),
-                                                                    make_shared<T_DifferentialOperator<DiffOpBoundaryRot>>(),
-                                                                    LaplaceSLKernel<3,3>(), intorder);
-    
-  }, py::arg("space"), py::arg("definedon")=nullopt,
-        py::arg("intorder")=3);
-  
-  
-
-  m.def("HelmholtzSingleLayerPotentialOperator", [](shared_ptr<FESpace> trial_space, shared_ptr<FESpace> test_space, double kappa,
-                                                    int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("HelmholtzSingleLayerPotentialOperator", "HelmholtzSL");
-    return make_unique<GenericIntegralOperator<HelmholtzSLKernel<3>>>(trial_space, test_space, nullopt, nullopt,
-                                                                      trial_space -> GetEvaluator(BND),
-                                                                      test_space -> GetEvaluator(BND),
-                                                                      HelmholtzSLKernel<3>(kappa), intorder);
-    
-  }, py::arg("trial_space"), py::arg("test_space")=nullptr, py::arg("kappa"), py::arg("intorder")=3);
-
-
-
-  m.def("HelmholtzDoubleLayerPotentialOperator", [](shared_ptr<FESpace> trial_space, shared_ptr<FESpace> test_space, double kappa,
-                                                    int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("HelmholtzDoubleLayerPotentialOperator", "HelmholtzDL");
-    return make_unique<GenericIntegralOperator<HelmholtzDLKernel<3>>>(trial_space, test_space, nullopt, nullopt,
-                                                                      trial_space -> GetEvaluator(BND),
-                                                                      test_space -> GetEvaluator(BND),
-                                                                      HelmholtzDLKernel<3>(kappa), intorder);
-    
-  }, py::arg("trial_space"), py::arg("test_space")=nullptr, py::arg("kappa"), py::arg("intorder")=3);
-
-
-  m.def("HelmholtzCombinedFieldOperator", [](shared_ptr<FESpace> trial_space, shared_ptr<FESpace> test_space,
-                                             optional<Region> trial_definedon, optional<Region> test_definedon,
-                                             double kappa,
-                                             int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("HelmholtzCombinedFieldOperator", "HelmholtzCF");
-    return make_unique<GenericIntegralOperator<CombinedFieldKernel<3>>>(trial_space, test_space, trial_definedon, test_definedon,
-                                                                        trial_space -> GetEvaluator(BND),
-                                                                        test_space -> GetEvaluator(BND),
-                                                                        CombinedFieldKernel<3>(kappa), intorder);
-    
-  }, py::arg("trial_space"), py::arg("test_space")=nullptr,
-        py::arg("trial_definedon")=nullopt, py::arg("test_definedon")=nullopt,        
-        py::arg("kappa"), py::arg("intorder")=3);
-
-
-    m.def("HelmholtzHypersingularOperator", [](shared_ptr<FESpace> trial_space, shared_ptr<FESpace> test_space, double kappa,  int intorder) -> shared_ptr<IntegralOperator>
-  {
-    return make_unique<GenericIntegralOperator<HelmholtzHSKernel<3>>>(trial_space, test_space, nullopt, nullopt,
-                                                                      make_shared<T_DifferentialOperator<DiffOpHelmholtz>>(),
-                                                                      make_shared<T_DifferentialOperator<DiffOpHelmholtz>>(),
-                                                                      HelmholtzHSKernel<3>(kappa), intorder);
-    
-  }, py::arg("trial_space"), py::arg("test_space")=nullptr, py::arg("kappa"), py::arg("intorder")=3);
-
-
-  m.def("MaxwellSingleLayerPotentialOperator", [](shared_ptr<FESpace> space, double kappa, optional<Region> definedon,
-                                                  int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("MaxwellSingleLayerPotentialOperator", "HelmholtzSL");
-    return make_unique<GenericIntegralOperator<MaxwellSLKernel<3>>>(space, space, definedon, definedon,
-                                                                    make_shared<T_DifferentialOperator<DiffOpMaxwellNew>>(),
-                                                                    make_shared<T_DifferentialOperator<DiffOpMaxwellNew>>(), 
-                                                                    MaxwellSLKernel<3>(kappa), intorder);
-    
-  }, py::arg("space"), py::arg("kappa"), py::arg("definedon")=nullopt,
-        py::arg("intorder")=3);
-
-  
-  m.def("MaxwellSingleLayerPotentialOperatorCurl", [](shared_ptr<FESpace> space, double kappa, optional<Region> definedon,
-                                                      int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("MaxwellSingleLayerPotentialOperatorCurl", "HelmholtzSL");
-    return make_unique<GenericIntegralOperator<MaxwellSLKernel<3>>>(space, space, definedon, definedon,
-                                                                    make_shared<T_DifferentialOperator<DiffOpMaxwell>>(),
-                                                                    make_shared<T_DifferentialOperator<DiffOpMaxwell>>(), 
-                                                                    MaxwellSLKernel<3>(kappa), intorder);
-    
-  }, py::arg("space"), py::arg("kappa"), py::arg("definedon")=nullopt,
-        py::arg("intorder")=3);
-  
-  
-
-  
-  m.def("MaxwellDoubleLayerPotentialOperator", [](shared_ptr<FESpace> trial_space, shared_ptr<FESpace> test_space,
-                                                  double kappa, 
-                                                  optional<Region> trial_definedon, optional<Region> test_definedon,
-                                                  int intorder) -> shared_ptr<IntegralOperator>
-  {
-    WarnDeprecated("MaxwellDoubleLayerPotentialOperator", "MaxwellDL");
-    return make_unique<GenericIntegralOperator<MaxwellDLKernel<3>>>(trial_space, test_space,
-                                                                    trial_definedon, test_definedon,
-                                                                    make_shared<T_DifferentialOperator<DiffOpRotatedTrace>>(),
-                                                                    test_space->GetEvaluator(BND),
-                                                                    MaxwellDLKernel<3>(kappa), intorder);
-  }, py::arg("trial_space"), py::arg("test_space"), py::arg("kappa"),
-        py::arg("trial_definedon")=nullopt, py::arg("test_definedon")=nullopt,        
-        py::arg("intorder")=3);
-  
-
-
-
-
-
   // ******************** Potential operators ************************************
 
 
   
   py::class_<BasePotentialCF, CoefficientFunction, shared_ptr<BasePotentialCF>> (m, "PotentialCF")
+    .def("__call__", [](shared_ptr<BasePotentialCF> self, py::args args, py::kwargs kwargs) -> py::object
+    {
+      auto base_call = py::type::of<CoefficientFunction>().attr("__call__");
+      if (args.size() != 1 || !kwargs.empty())
+        return base_call(self, *args, **kwargs);
+
+      // Keep structured mesh-point arrays on the inherited call path.
+      bool coordinate_array = py::isinstance<py::array>(args[0]) &&
+        py::cast<py::array>(args[0]).dtype().kind() != 'V';
+      if (!(py::isinstance<py::tuple>(args[0]) || py::isinstance<py::list>(args[0]) || coordinate_array))
+        return base_call(self, *args, **kwargs);
+
+      auto coordinates = py::reinterpret_borrow<py::sequence>(args[0]);
+      if ((coordinate_array && py::cast<py::array>(args[0]).ndim() != 1) || coordinates.size() != 3)
+        throw py::value_error("Potential evaluation requires one point with 3 coordinates");
+      Vec<3> point;
+      for (int i = 0; i < 3; i++)
+        {
+          point(i) = py::cast<double>(coordinates[i]);
+          if (!std::isfinite(point(i)))
+            throw py::value_error("Potential evaluation requires finite coordinates");
+        }
+
+      // Only the physical target coordinates are needed for a potential.
+      FE_ElementTransformation<3,3> trafo(ET_TET);
+      MappedIntegrationPoint<3,3> mip(IntegrationPoint(0,0,0), trafo, point, Id<3>());
+      auto evaluate = [&](auto values) -> py::object
+        {
+          self->Evaluate(mip, values);
+          if (self->Dimensions().Size() == 0)
+            return py::cast(values(0));
+          py::tuple result(self->Dimension());
+          for (int i = 0; i < self->Dimension(); i++)
+            result[i] = py::cast(values(i));
+          return result;
+        };
+      if (self->IsComplex())
+        return evaluate(Vector<Complex>(self->Dimension()));
+      return evaluate(Vector<double>(self->Dimension()));
+    }, "Evaluate the potential at a physical coordinate tuple, list or NumPy array of length 3, "
+       "without a target mesh. Mapped-point and mesh-point-array evaluation are also supported.")
+    .def("Operator", [](shared_ptr<BasePotentialCF> self, string name) -> py::object
+    {
+      auto result = self->Operator(name);
+      if (auto potential = dynamic_pointer_cast<BasePotentialCF>(result))
+        return py::cast(potential);
+      return py::cast(result);
+    })
     .def("BuildLocalExpansion", [](shared_ptr<BasePotentialCF> potcf, const Region & region)
     {
       potcf->BuildLocalExpansion(region);

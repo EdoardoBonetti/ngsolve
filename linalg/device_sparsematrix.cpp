@@ -43,6 +43,46 @@ namespace ngla
         STORE_ROW(row, sum);
       }
 
+      KERNEL(scale_vec, GLOBAL(SCAL,y), VALUE(SCAL,beta), VALUE(int,n))
+      {
+        int i = int(GLOBAL_ID_X);
+        if (i >= n) return;
+        y[i] = (beta == SCAL(0)) ? SCAL(0) : beta*y[i];
+      }
+
+      KERNEL(spmv_sym, GLOBAL_IN(int,firsti), GLOBAL_IN(int,colnr), GLOBAL_IN(SCAL,val),
+                       GLOBAL_IN(SCAL,x), GLOBAL_ATOMIC(SCAL,y), VALUE(SCAL,s), VALUE(int,h))
+      {
+        int row = int(GLOBAL_ID_X);
+        if (row >= h) return;
+        SCAL xr = x[row];
+        SCAL sum = 0;
+        int last = firsti[row+1];
+        for (int j = firsti[row]; j < last; j++)
+          {
+            int c = colnr[j];
+            SCAL v = val[j];
+            sum += v*x[c];
+            if (c != row) ATOMIC_ADD (&y[c], s*v*xr);
+          }
+        ATOMIC_ADD (&y[row], s*sum);
+      }
+
+      // transposed product by scattering: y[colnr[j]] += s*val[j]*x[row],
+      // lanes consecutive work-items share a row
+      KERNEL(spmvT_lanes, GLOBAL_IN(int,firsti), GLOBAL_IN(int,colnr), GLOBAL_IN(SCAL,val),
+                          GLOBAL_IN(SCAL,x), GLOBAL_ATOMIC(SCAL,y), VALUE(SCAL,s),
+                          VALUE(int,lanes), VALUE(int,h))
+      {
+        int lane = int(LOCAL_ID_X) & (lanes-1);
+        int row = int(GLOBAL_ID_X) / lanes;
+        if (row >= h) return;
+        SCAL xr = s*x[row];
+        int last = firsti[row+1];
+        for (int j = firsti[row]+lane; j < last; j += lanes)
+          ATOMIC_ADD (&y[colnr[j]], val[j]*xr);
+      }
+
       // lanes consecutive work-items share a row (lanes a power of two
       // dividing the group size), partial sums reduced in group memory
       KERNEL(spmv_lanes, GLOBAL_IN(int,firsti), GLOBAL_IN(int,colnr), GLOBAL_IN(SCAL,val),
@@ -121,10 +161,8 @@ namespace ngla
     public:
       shared_ptr<Device> device;
       shared_ptr<ngs_gpu::Queue> queue;
-      shared_ptr<Kernel> spmv_row, spmv_lanes, spmv_rows2u2;
+      shared_ptr<Kernel> spmv_row, spmv_lanes, spmv_rows2u2, spmv_sym, spmvT_lanes, scale_vec;
       unsigned groupsize;
-      string forced_variant;     // NGS_GPU_SPMV=lanes|rows2u2 skips the timing
-      int forced_lanes = 0;      // NGS_GPU_SPMV_LANES
 
       DeviceSparseKernels (shared_ptr<Device> adevice)
         : device(adevice)
@@ -140,13 +178,13 @@ namespace ngla
         spmv_row     = library->GetKernel ("spmv_row");
         spmv_lanes   = library->GetKernel ("spmv_lanes");
         spmv_rows2u2 = library->GetKernel ("spmv_rows2u2");
+        spmv_sym     = library->GetKernel ("spmv_sym");
+        spmvT_lanes  = library->GetKernel ("spmvT_lanes");
+        scale_vec    = library->GetKernel ("scale_vec");
         queue = device->DefaultQueue();
         // the cpu reference backend runs one OS thread per work-item
         groupsize = (device->SimdWidth() > 1) ? 256 : 64;
-        if (getenv("NGS_GPU_SPMV_GROUP")) groupsize = atoi (getenv("NGS_GPU_SPMV_GROUP"));
         groupsize = min<size_t> (groupsize, device->MaxThreadsPerGroup());
-        forced_variant = getenv("NGS_GPU_SPMV") ? getenv("NGS_GPU_SPMV") : "";
-        forced_lanes = getenv("NGS_GPU_SPMV_LANES") ? atoi (getenv("NGS_GPU_SPMV_LANES")) : 0;
       }
 
       static const DeviceSparseKernels & Get()
@@ -167,8 +205,9 @@ namespace ngla
 
   template <typename T>
   template <typename TM>
-  DeviceSparseMatrix<T> :: DeviceSparseMatrix (const SparseMatrixTM<TM> & mat)
+  DeviceSparseMatrix<T> :: DeviceSparseMatrix (const SparseMatrixTM<TM> & mat, bool asymmetric)
   {
+    symmetric = asymmetric;
     height = mat.Height();
     width = mat.Width();
     nze = mat.NZE();
@@ -180,125 +219,128 @@ namespace ngla
     queue = kern.queue;
     memtype = PreferredMemType();
 
-    // row starts to int32, values to T
-    Array<int> firsti (height+1);
+    static Timer tup("DeviceSparseMatrix ctor upload");
     auto hfirsti = mat.GetFirstArray();
-    for (size_t i = 0; i <= height; i++) firsti[i] = int(hfirsti[i]);
-
-    Array<T> values (nze);
+    auto hcolnr = mat.GetColIndices();
     auto hvalues = mat.GetValues();
-    for (size_t j = 0; j < nze; j++) values[j] = T(hvalues(j));
 
-    // the index buffers are never written by a kernel, keep them off the host
-    dev_firsti = device->NewBuffer<int> (height+1, MemType::Device);
-    dev_colnr  = device->NewBuffer<int> (max<size_t>(nze,1), MemType::Device);
-    dev_values = device->NewBuffer<T> (max<size_t>(nze,1), MemType::Device);
+    // converted straight into the buffer (unified memory) or into the
+    // backend's pinned staging chunks, no host temporary
+    tup.Start();
+    dev_firsti = device->NewBuffer<int> (height+1, memtype);
+    dev_colnr  = device->NewBuffer<int> (max<size_t>(nze,1), memtype);
+    dev_values = device->NewBuffer<T> (max<size_t>(nze,1), memtype);
 
-    dev_firsti.H2D (firsti.Data(), height+1);
-    dev_colnr.H2D (mat.GetColIndices().Data(), nze);
-    dev_values.H2D (values.Data(), nze);
+    dev_firsti.Fill (height+1, [&] (int * dst, size_t off, size_t n)
+      { ParallelFor (n, [&] (size_t i) { dst[i] = int(hfirsti[off+i]); }); });
+    dev_colnr.H2D (hcolnr.Data(), nze);
+    dev_values.Fill (nze, [&] (T * dst, size_t off, size_t n)
+      { ParallelFor (n, [&] (size_t j) { dst[j] = T(hvalues(off+j)); }); });
+    tup.Stop();
 
-    choice = AutoTune (dev_firsti, dev_colnr, dev_values, height, width);
+    if (symmetric)
+      {
+        choice.kernel = kern.spmv_sym;
+        cout << IM(7) << "DeviceSparseMatrix<" << (is_same_v<T,double> ? "double" : "float")
+             << "> symmetric storage, height = " << height << ", nze = " << nze << endl;
+        return;
+      }
+    choice = ChooseKernel (height);
+    lanes_trans = ChooseLanesTrans (height);
     cout << IM(7) << "DeviceSparseMatrix<" << (is_same_v<T,double> ? "double" : "float")
          << "> height = " << height << ", width = " << width << ", nze = " << nze
-         << ", kernel " << choice.kernel->Name() << ", lanes = " << choice.lanes << endl;
+         << ", kernel " << choice.kernel->Name() << ", lanes = " << choice.lanes
+         << ", transposed lanes = " << lanes_trans << endl;
+  }
+
+
+  template <typename T>
+  void DeviceSparseMatrix<T> :: LaunchSym (KernelArg x, KernelArg y, T s, T beta) const
+  {
+    const auto & kern = DeviceSparseKernels<T>::Get();
+    unsigned groups = (height + kern.groupsize-1) / kern.groupsize;
+    if (beta != T(1))
+      queue->Launch (*kern.scale_vec, Dim3(groups), Dim3(kern.groupsize),
+                     { y, KernelArg(beta), KernelArg(int(height)) });
+    queue->Launch (*kern.spmv_sym, Dim3(groups), Dim3(kern.groupsize),
+                   { KernelArg(dev_firsti), KernelArg(dev_colnr), KernelArg(dev_values),
+                     x, y, KernelArg(s), KernelArg(int(height)) });
   }
 
 
   /*
-    The best kernel and lane count differ between gpus: a discrete card
-    hides the gather latency by occupancy and wants more lanes per row,
-    unified-memory gpus want few lanes and several rows in flight per
-    lane. Timing the candidates on the matrix itself costs a few solves
-    once and decides it for this matrix.
+    Fixed choice, from sweeps on an M4 Pro and an RTX 5090 (2026-09-10):
+    a discrete card hides the gather latency by occupancy and wants
+    spmv_lanes with lanes growing with the row length (4 / 8 / 16 for
+    average rows below 16 / 48 / above); unified-memory gpus want few
+    lanes and two rows in flight per lane (spmv_rows2u2, 4 lanes, 8 for
+    rows of 48+). Timing the candidates per matrix was tried and dropped:
+    it cost a few solves per matrix and mis-picked on a cold or busy gpu.
   */
   template <typename T>
   typename DeviceSparseMatrix<T>::SpMVChoice
-  DeviceSparseMatrix<T> :: AutoTune (const TypedBuffer<int> & firsti, const TypedBuffer<int> & colnr,
-                                     const TypedBuffer<T> & values, size_t rows, size_t cols) const
+  DeviceSparseMatrix<T> :: ChooseKernel (size_t rows) const
   {
     const auto & kern = DeviceSparseKernels<T>::Get();
-    SpMVChoice best;
-    best.kernel = kern.spmv_row;
-    if (device->SimdWidth() <= 1 || rows == 0 || nze == 0) return best;
+    SpMVChoice ch;
+    ch.kernel = kern.spmv_row;
+    if (device->SimdWidth() <= 1 || rows == 0 || nze == 0) return ch;
 
-    std::vector<SpMVChoice> candidates;
-    std::vector<int> lanes_list;
-    for (int l = 4; l <= 32 && size_t(l) <= device->SimdWidth() && size_t(l) <= kern.groupsize; l *= 2)
-      lanes_list.push_back (l);
-    if (kern.forced_lanes) lanes_list = { kern.forced_lanes };
-    for (int l : lanes_list)
-      {
-        if (kern.forced_variant != "rows2u2") candidates.push_back ({ kern.spmv_lanes, l, 1 });
-        if (kern.forced_variant != "lanes")   candidates.push_back ({ kern.spmv_rows2u2, l, 2 });
-      }
-    if (candidates.size() == 1) return candidates[0];
+    double avg = double(nze) / rows;
+    bool unified = device->IsUnifiedMemory();
+    int lanes;
+    if (unified)
+      lanes = avg < 48 ? 4 : 8;
+    else
+      lanes = avg < 16 ? 4 : avg < 48 ? 8 : 16;
+    lanes = int(min<size_t> (lanes, min (device->SimdWidth(), size_t(kern.groupsize))));
 
-    auto x = device->NewBuffer<T> (cols, MemType::Device);
-    auto y = device->NewBuffer<T> (rows, MemType::Device);
-    {
-      Array<T> zeros(max(rows, cols)); zeros = T(0);
-      x.H2D (zeros.Data(), cols); y.H2D (zeros.Data(), rows);
-    }
-    double best_time = 1e300;
-    for (auto & c : candidates)
-      {
-        LaunchSpMV (firsti, colnr, values, c, rows, KernelArg(x), KernelArg(y), T(1), T(1));
-        queue->Finish();
-        auto t0 = std::chrono::steady_clock::now();
-        for (int i = 0; i < 3; i++)
-          LaunchSpMV (firsti, colnr, values, c, rows, KernelArg(x), KernelArg(y), T(1), T(1));
-        queue->Finish();
-        double t = std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();
-        if (t < best_time) { best_time = t; best = c; }
-      }
-    return best;
+    ch.kernel = unified ? kern.spmv_rows2u2 : kern.spmv_lanes;
+    ch.lanes = lanes;
+    ch.rows_per_group = unified ? 2 : 1;
+    return ch;
   }
 
 
+  /*
+    Scatter lanes from the same sweep (2026-09-10): the atomic traffic
+    favours more lanes per row on a discrete card (4 / 16 / 32 for
+    average rows below 16 / 48 / above), few on unified memory (4, 8 for
+    rows of 48+). The scatter costs 1.4-2x a forward product; a caller
+    who needs many transposed products uploads the host transpose.
+  */
   template <typename T>
-  void DeviceSparseMatrix<T> :: BuildTranspose() const
+  int DeviceSparseMatrix<T> :: ChooseLanesTrans (size_t rows) const
   {
-    lock_guard<mutex> lock(trans_mutex);
-    if (devt_firsti) return;
+    const auto & kern = DeviceSparseKernels<T>::Get();
+    if (device->SimdWidth() <= 1 || rows == 0 || nze == 0) return 1;
+    double avg = double(nze) / rows;
+    int lanes;
+    if (device->IsUnifiedMemory())
+      lanes = avg < 48 ? 4 : 8;
+    else
+      lanes = avg < 16 ? 4 : avg < 48 ? 16 : 32;
+    return int(min<size_t> (lanes, min (device->SimdWidth(), size_t(kern.groupsize))));
+  }
 
-    static Timer t("DeviceSparseMatrix::BuildTranspose"); RegionTimer reg(t);
 
-    Array<int> firsti(height+1), colnr(nze);
-    Array<T> values(nze);
-    queue->Finish();
-    dev_firsti.D2H (firsti.Data(), height+1);
-    dev_colnr.D2H (colnr.Data(), nze);
-    dev_values.D2H (values.Data(), nze);
-
-    // csr of the transpose: count per column, prefix sum, scatter
-    Array<int> tfirsti(width+1);
-    tfirsti = 0;
-    for (size_t j = 0; j < nze; j++) tfirsti[colnr[j]+1]++;
-    for (size_t c = 0; c < width; c++) tfirsti[c+1] += tfirsti[c];
-
-    Array<int> pos(width), tcolnr(nze);
-    Array<T> tvalues(nze);
-    for (size_t c = 0; c < width; c++) pos[c] = tfirsti[c];
-    for (size_t i = 0; i < height; i++)
-      for (int j = firsti[i]; j < firsti[i+1]; j++)
-        {
-          int k = pos[colnr[j]]++;
-          tcolnr[k] = int(i);
-          tvalues[k] = values[j];
-        }
-
-    auto tf = device->NewBuffer<int> (width+1, MemType::Device);
-    auto tc = device->NewBuffer<int> (max<size_t>(nze,1), MemType::Device);
-    auto tv = device->NewBuffer<T> (max<size_t>(nze,1), MemType::Device);
-    tf.H2D (tfirsti.Data(), width+1);
-    tc.H2D (tcolnr.Data(), nze);
-    tv.H2D (tvalues.Data(), nze);
-
-    choice_trans = AutoTune (tf, tc, tv, width, height);
-    devt_colnr = tc;
-    devt_values = tv;
-    devt_firsti = tf;    // last: its presence marks the transpose as ready
+  // y = beta*y + s*A^T x
+  template <typename T>
+  void DeviceSparseMatrix<T> :: LaunchSpMVT (KernelArg x, KernelArg y, T s, T beta) const
+  {
+    const auto & kern = DeviceSparseKernels<T>::Get();
+    if (beta != T(1))
+      {
+        unsigned groups = (width + kern.groupsize-1) / kern.groupsize;
+        queue->Launch (*kern.scale_vec, Dim3(groups), Dim3(kern.groupsize),
+                       { y, KernelArg(beta), KernelArg(int(width)) });
+      }
+    if (height == 0) return;
+    size_t items = height * lanes_trans;
+    unsigned groups = (items + kern.groupsize-1) / kern.groupsize;
+    queue->Launch (*kern.spmvT_lanes, Dim3(groups), Dim3(kern.groupsize),
+                   { KernelArg(dev_firsti), KernelArg(dev_colnr), KernelArg(dev_values),
+                     x, y, KernelArg(s), KernelArg(int(lanes_trans)), KernelArg(int(height)) });
   }
 
 
@@ -336,6 +378,7 @@ namespace ngla
       throw Exception("DeviceSparseMatrix::Mult - size mismatch");
     DeviceVectorWrapper<T> ux(x, memtype);
     DeviceVectorWrapper<T> uy(y, memtype);
+    if (symmetric) { LaunchSym (ux.DevArgRO(), uy.DevArgW(), T(1), T(0)); return; }
     LaunchSpMV (dev_firsti, dev_colnr, dev_values, choice, height,
                 ux.DevArgRO(), uy.DevArgW(), T(1), T(0));
   }
@@ -346,11 +389,10 @@ namespace ngla
     static Timer t("DeviceSparseMatrix::MultTrans"); RegionTimer reg(t);
     if (x.Size() != height || y.Size() != width)
       throw Exception("DeviceSparseMatrix::MultTrans - size mismatch");
-    BuildTranspose();
     DeviceVectorWrapper<T> ux(x, memtype);
     DeviceVectorWrapper<T> uy(y, memtype);
-    LaunchSpMV (devt_firsti, devt_colnr, devt_values, choice_trans, width,
-                ux.DevArgRO(), uy.DevArgW(), T(1), T(0));
+    if (symmetric) { LaunchSym (ux.DevArgRO(), uy.DevArgW(), T(1), T(0)); return; }
+    LaunchSpMVT (ux.DevArgRO(), uy.DevArgW(), T(1), T(0));
   }
 
 
@@ -363,6 +405,7 @@ namespace ngla
 
     DeviceVectorWrapper<T> ux(x, memtype);
     DeviceVectorWrapper<T> uy(y, memtype);
+    if (symmetric) { LaunchSym (ux.DevArgRO(), uy.DevArgRW(), T(s), T(1)); return; }
     LaunchSpMV (dev_firsti, dev_colnr, dev_values, choice, height,
                 ux.DevArgRO(), uy.DevArgRW(), T(s), T(1));
   }
@@ -375,12 +418,10 @@ namespace ngla
     if (x.Size() != height || y.Size() != width)
       throw Exception("DeviceSparseMatrix::MultTransAdd - size mismatch");
 
-    if (!devt_firsti) BuildTranspose();
-
     DeviceVectorWrapper<T> ux(x, memtype);
     DeviceVectorWrapper<T> uy(y, memtype);
-    LaunchSpMV (devt_firsti, devt_colnr, devt_values, choice_trans, width,
-                ux.DevArgRO(), uy.DevArgRW(), T(s), T(1));
+    if (symmetric) { LaunchSym (ux.DevArgRO(), uy.DevArgRW(), T(s), T(1)); return; }
+    LaunchSpMVT (ux.DevArgRO(), uy.DevArgRW(), T(s), T(1));
   }
 
 
@@ -390,7 +431,7 @@ namespace ngla
   BaseMatrix::OperatorInfo DeviceSparseMatrix<T> :: GetOperatorInfo () const
   {
     return { string("DeviceSparseMatrix<") + (is_same_v<T,double> ? "double" : "float")
-             + "> (nze=" + ToString(nze) + ")", height, width };
+             + (symmetric ? "> symmetric (nze=" : "> (nze=") + ToString(nze) + ")", height, width };
   }
 
   template <typename T>
@@ -405,8 +446,8 @@ namespace ngla
 
   template class DeviceSparseMatrix<double>;
   template class DeviceSparseMatrix<float>;
-  template DeviceSparseMatrix<double>::DeviceSparseMatrix (const SparseMatrixTM<double> &);
-  template DeviceSparseMatrix<double>::DeviceSparseMatrix (const SparseMatrixTM<float> &);
-  template DeviceSparseMatrix<float>::DeviceSparseMatrix (const SparseMatrixTM<double> &);
-  template DeviceSparseMatrix<float>::DeviceSparseMatrix (const SparseMatrixTM<float> &);
+  template DeviceSparseMatrix<double>::DeviceSparseMatrix (const SparseMatrixTM<double> &, bool);
+  template DeviceSparseMatrix<double>::DeviceSparseMatrix (const SparseMatrixTM<float> &, bool);
+  template DeviceSparseMatrix<float>::DeviceSparseMatrix (const SparseMatrixTM<double> &, bool);
+  template DeviceSparseMatrix<float>::DeviceSparseMatrix (const SparseMatrixTM<float> &, bool);
 }

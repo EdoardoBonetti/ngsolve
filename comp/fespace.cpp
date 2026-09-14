@@ -9,7 +9,6 @@
    Finite Element Space
 */
 
-// #include <comp.hpp>
 #include "fespace.hpp"
 #include <multigrid.hpp>
 #include <diagonalmatrix.hpp>
@@ -3564,6 +3563,8 @@ lot of new non-zero entries in the matrix!\n" << endl;
         for (size_t i = 0; i < spaces.Size(); i++)
           {
             auto emb_i = spaces[i]->LowOrderEmbedding();
+            if (!emb_i)  // component space has no embedding
+              { sum_emb.reset(); break; }
             auto hi_range = GetRange(i);
             auto lo_range = dynamic_pointer_cast<CompoundFESpace>(low_order_space)->GetRange(i);
             emb_i = make_shared<EmbeddedMatrix> (GetNDof(), hi_range, emb_i);

@@ -9,6 +9,7 @@
 #include <atomic>
 #include <stdexcept>
 #include <cctype>
+#include <cstdio>
 
 namespace ngs_gpu
 {
@@ -320,6 +321,37 @@ namespace ngs_gpu
     if (IsRecording())
       throw std::runtime_error ("device-to-host transfer inside a device recording");
     DoD2H (dst, bytes, offset);
+  }
+
+  void Buffer :: H2D (size_t bytes, size_t offset, const FillFunc & fill)
+  {
+    if (IsRecording())
+      throw std::runtime_error ("host-to-device transfer inside a device recording");
+    if (offset+bytes > size)
+      throw std::runtime_error ("Buffer::H2D: fill out of range");
+    if (void * host = DoHostPtr())      // host visible: produce in place
+      fill ((char*)host+offset, 0, bytes);
+    else
+      DoFill (bytes, offset, fill);
+  }
+
+  void Buffer :: DoFill (size_t bytes, size_t offset, const FillFunc & fill)
+  {
+    std::vector<char> tmp (bytes);
+    fill (tmp.data(), 0, bytes);
+    DoH2D (tmp.data(), bytes, offset);
+  }
+
+  string TransferLabel (const char * dir, size_t bytes)
+  {
+    char buf[64];
+    if (bytes >= 1u<<20)
+      snprintf (buf, sizeof(buf), "%s %.1f MB", dir, bytes/double(1u<<20));
+    else if (bytes >= 1u<<10)
+      snprintf (buf, sizeof(buf), "%s %.1f kB", dir, bytes/double(1u<<10));
+    else
+      snprintf (buf, sizeof(buf), "%s %zu B", dir, bytes);
+    return buf;
   }
 
   void Queue :: NoteWrites (const Kernel & kernel, const std::vector<KernelArg> & args)

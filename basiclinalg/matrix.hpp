@@ -2339,6 +2339,28 @@ namespace ngbla
   }
 
 
+  // Laplace expansion along the first row, for D >= 4
+  template <int D, typename T>
+  T Det (Mat<D,D,T> m)
+  {
+    T det;
+    for (int j = 0; j < D; j++)
+      {
+        Mat<D-1,D-1,T> minor;
+        for (int i = 1; i < D; i++)
+          {
+            for (int k = 0; k < j; k++) minor(i-1,k) = m(i,k);
+            for (int k = j+1; k < D; k++) minor(i-1,k-1) = m(i,k);
+          }
+        T term = m(0,j)*Det(minor);
+        if (j == 0)     det = term;
+        else if (j & 1) det -= term;
+        else            det += term;
+      }
+    return det;
+  }
+
+
   
 
 
@@ -2396,11 +2418,40 @@ namespace ngbla
 
 
 
+  // non-square: only reached in dead branches of dimension switches
   template <int H, int W, typename T>
   INLINE Mat<H,W,T> Cof (Mat<H,W,T> m)
   {
     cerr << "Cof<" << H << "," << W << "> not implemented" << endl;
     return m;
+  }
+
+
+  // cofactor matrix by minors for D >= 4, compile-time unrolled with Iterate
+  template <int D, typename T>
+  INLINE Mat<D,D,T> Cof (Mat<D,D,T> m)
+  {
+    Mat<D,D,T> cof;
+    Iterate<D> ([&] (auto i)
+    {
+      Iterate<D> ([&] (auto j)
+      {
+        Mat<D-1,D-1,T> minor;
+        Iterate<D-1> ([&] (auto r)
+        {
+          constexpr int rr = (r.value < i.value) ? r.value : r.value+1;
+          Iterate<D-1> ([&] (auto c)
+          {
+            constexpr int cc = (c.value < j.value) ? c.value : c.value+1;
+            minor(r.value, c.value) = m(rr, cc);
+          });
+        });
+        T d = Det(minor);
+        if constexpr ((i.value+j.value) & 1) cof(i.value,j.value) = -d;
+        else cof(i.value,j.value) = d;
+      });
+    });
+    return cof;
   }
 
   template <typename T>
@@ -2448,31 +2499,6 @@ namespace ngbla
   }
 
 
-  template <typename T>
-  INLINE Mat<4,4,T> Cof (Mat<4,4,T> m)
-  {
-    Mat<4,4,T> cof;
-    cof(0,0) =   (m(1,1)*m(2,2)*m(3,3)+m(1,2)*m(2,3)*m(3,1)+m(1,3)*m(2,1)*m(3,2) - m(1,1)*m(3,2)*m(2,3) - m(2,1)*m(1,2)*m(3,3) - m(3,1)*m(2,2)*m(1,3));
-    cof(0,1) =  -(m(1,0)*m(2,2)*m(3,3)+m(1,2)*m(2,3)*m(3,0)+m(1,3)*m(2,0)*m(3,2) - m(1,0)*m(3,2)*m(2,3) - m(2,0)*m(1,2)*m(3,3) - m(3,0)*m(2,2)*m(1,3));
-    cof(0,2) =   (m(1,0)*m(2,1)*m(3,3)+m(1,1)*m(2,3)*m(3,0)+m(1,3)*m(2,0)*m(3,1) - m(1,0)*m(3,1)*m(2,3) - m(2,0)*m(1,1)*m(3,3) - m(3,0)*m(2,1)*m(1,3));
-    cof(0,3) =  -(m(1,0)*m(2,1)*m(3,2)+m(1,1)*m(2,2)*m(3,0)+m(1,2)*m(2,0)*m(3,1) - m(1,0)*m(3,1)*m(2,2) - m(2,0)*m(1,1)*m(3,2) - m(3,0)*m(2,1)*m(1,2));
-
-    cof(1,0) =  -(m(0,1)*m(2,2)*m(3,3)+m(0,2)*m(2,3)*m(3,1)+m(0,3)*m(2,1)*m(3,2) - m(0,1)*m(3,2)*m(2,3) - m(2,1)*m(0,2)*m(3,3) - m(3,1)*m(2,2)*m(0,3));
-    cof(1,1) =   (m(0,0)*m(2,2)*m(3,3)+m(0,2)*m(2,3)*m(3,0)+m(0,3)*m(2,0)*m(3,2) - m(0,0)*m(3,2)*m(2,3) - m(2,0)*m(0,2)*m(3,3) - m(3,0)*m(2,2)*m(0,3));
-    cof(1,2) =  -(m(0,0)*m(2,1)*m(3,3)+m(0,1)*m(2,3)*m(3,0)+m(0,3)*m(2,0)*m(3,1) - m(0,0)*m(3,1)*m(2,3) - m(2,0)*m(0,1)*m(3,3) - m(3,0)*m(2,1)*m(0,3));
-    cof(1,3) =   (m(0,0)*m(2,1)*m(3,2)+m(0,1)*m(2,2)*m(3,0)+m(0,2)*m(2,0)*m(3,1) - m(0,0)*m(3,1)*m(2,2) - m(2,0)*m(0,1)*m(3,2) - m(3,0)*m(2,1)*m(0,2));
-
-    cof(2,0) =   (m(0,1)*m(1,2)*m(3,3)+m(0,2)*m(1,3)*m(3,1)+m(0,3)*m(1,1)*m(3,2) - m(0,1)*m(3,2)*m(1,3) - m(1,1)*m(0,2)*m(3,3) - m(3,1)*m(1,2)*m(0,3));
-    cof(2,1) =  -(m(0,0)*m(1,2)*m(3,3)+m(0,2)*m(1,3)*m(3,0)+m(0,3)*m(1,0)*m(3,2) - m(0,0)*m(3,2)*m(1,3) - m(1,0)*m(0,2)*m(3,3) - m(3,0)*m(1,2)*m(0,3));
-    cof(2,2) =   (m(0,0)*m(1,1)*m(3,3)+m(0,1)*m(1,3)*m(3,0)+m(0,3)*m(1,0)*m(3,1) - m(0,0)*m(3,1)*m(1,3) - m(1,0)*m(0,1)*m(3,3) - m(3,0)*m(1,1)*m(0,3));
-    cof(2,3) =  -(m(0,0)*m(1,1)*m(3,2)+m(0,1)*m(1,2)*m(3,0)+m(0,2)*m(1,0)*m(3,1) - m(0,0)*m(3,1)*m(1,2) - m(1,0)*m(0,1)*m(3,2) - m(3,0)*m(1,1)*m(0,2));
-
-    cof(3,0) =  -(m(0,1)*m(1,2)*m(2,3)+m(0,2)*m(1,3)*m(2,1)+m(0,3)*m(1,1)*m(2,2) - m(0,1)*m(2,2)*m(1,3) - m(1,1)*m(0,2)*m(2,3) - m(2,1)*m(1,2)*m(0,3));
-    cof(3,1) =   (m(0,0)*m(1,2)*m(2,3)+m(0,2)*m(1,3)*m(2,0)+m(0,3)*m(1,0)*m(2,2) - m(0,0)*m(2,2)*m(1,3) - m(1,0)*m(0,2)*m(2,3) - m(2,0)*m(1,2)*m(0,3));
-    cof(3,2) =  -(m(0,0)*m(1,1)*m(2,3)+m(0,1)*m(1,3)*m(2,0)+m(0,3)*m(1,0)*m(2,1) - m(0,0)*m(2,1)*m(1,3) - m(1,0)*m(0,1)*m(2,3) - m(2,0)*m(1,1)*m(0,3));
-    cof(3,3) =   (m(0,0)*m(1,1)*m(2,2)+m(0,1)*m(1,2)*m(2,0)+m(0,2)*m(1,0)*m(2,1) - m(0,0)*m(2,1)*m(1,2) - m(1,0)*m(0,1)*m(2,2) - m(2,0)*m(1,1)*m(0,2));
-    return cof;
-  }
 
 
   template <int H, int W, typename T>

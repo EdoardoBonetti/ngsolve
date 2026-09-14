@@ -14,6 +14,7 @@
 #include <mach/mach_time.h>
 
 #include <iostream>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -57,24 +58,116 @@ namespace ngsmetal
   { return NS::String::string (s.c_str(), NS::UTF8StringEncoding); }
 
 
-  class MetalBuffer : public Buffer
+  /*
+    Buffers are sub-allocated from heaps. A fresh MTL::Buffer costs a page
+    fault per 16 kB on first touch (~20 GB/s, and it does not parallelise),
+    a heap keeps its pages wired across allocations, so a buffer released and
+    another one of any size allocated later fills at memory bandwidth.
+    Heaps grow on demand in chunks (or the request size, if larger), empty
+    heaps beyond one spare per storage mode are released.
+  */
+  class MetalHeapPool
   {
     MTL::Device * dev;
-    MTL::CommandQueue * queue;
+    std::mutex mutex;
+    std::vector<MTL::Heap*> heaps[2];   // [0] private, [1] shared
+    static constexpr size_t CHUNK = size_t(256) << 20;
+
+    static bool IsShared (MTL::ResourceOptions mode)
+    { return ((mode >> 4) & 0xF) == MTL::StorageModeShared; }
+    static int Index (MTL::ResourceOptions mode) { return IsShared(mode) ? 1 : 0; }
+
+  public:
+    MetalHeapPool (MTL::Device * adev) : dev(adev) { }
+    ~MetalHeapPool()
+    {
+      for (auto & hs : heaps)
+        for (auto h : hs) h->release();
+    }
+
+    MTL::Buffer * NewBuffer (size_t bytes, MTL::ResourceOptions mode)
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      auto & hs = heaps[Index(mode)];
+      auto sa = dev->heapBufferSizeAndAlign (bytes, mode);
+      for (auto h : hs)
+        if (h->maxAvailableSize (sa.align) >= sa.size)
+          if (auto b = h->newBuffer (bytes, mode)) return b;
+
+      auto hd = MTL::HeapDescriptor::alloc()->init();
+      hd->setSize (std::max (CHUNK, sa.size));
+      hd->setStorageMode (IsShared(mode) ? MTL::StorageModeShared : MTL::StorageModePrivate);
+      hd->setHazardTrackingMode (MTL::HazardTrackingModeTracked);
+      auto heap = dev->newHeap (hd);
+      hd->release();
+      if (!heap) return dev->newBuffer (bytes, mode);   // out of heap space, plain buffer
+      hs.push_back (heap);
+      return heap->newBuffer (bytes, mode);
+    }
+
+    // release the buffer, drop empty heaps beyond one spare
+    void Release (MTL::Buffer * buf)
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      auto heap = buf->heap();
+      auto & hs = heaps[Index(buf->resourceOptions())];
+      buf->release();
+      if (!heap) return;
+      bool spare = false;
+      for (size_t i = 0; i < hs.size(); )
+        {
+          if (hs[i]->usedSize() == 0)
+            {
+              if (spare) { hs[i]->release(); hs.erase (hs.begin()+i); continue; }
+              spare = true;
+            }
+          i++;
+        }
+    }
+
+    size_t HeldBytes()
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      size_t n = 0;
+      for (auto & hs : heaps) for (auto h : hs) n += h->size();
+      return n;
+    }
+  };
+
+  // a heap buffer released and returned to the pool when it goes out of scope
+  struct PoolBuffer
+  {
+    MetalHeapPool & pool;
+    MTL::Buffer * buf;
+    PoolBuffer (MetalHeapPool & apool, size_t bytes, MTL::ResourceOptions mode)
+      : pool(apool), buf(apool.NewBuffer (bytes, mode))
+    { if (!buf) Err ("newBuffer failed"); }
+    ~PoolBuffer() { pool.Release (buf); }
+    MTL::Buffer * operator->() const { return buf; }
+    operator MTL::Buffer*() const { return buf; }
+  };
+
+
+  class MetalQueue;
+
+  class MetalBuffer : public Buffer
+  {
+    shared_ptr<MetalHeapPool> pool;
+    shared_ptr<MetalQueue> queue;   // transfers run (and are traced) on it
     MTL::Buffer * buf;
 
   public:
-    MetalBuffer (MTL::Device * adev, MTL::CommandQueue * aqueue,
+    MetalBuffer (shared_ptr<MetalHeapPool> apool, shared_ptr<MetalQueue> aqueue,
                  size_t bytes, MemType mt)
-      : Buffer(bytes, mt), dev(adev), queue(aqueue)
+      : Buffer(bytes, mt), pool(std::move(apool)), queue(std::move(aqueue))
     {
       auto mode = (mt == MemType::Shared)
         ? MTL::ResourceStorageModeShared : MTL::ResourceStorageModePrivate;
-      buf = dev->newBuffer (bytes, mode);
+      buf = pool->NewBuffer (bytes, mode);
       if (!buf) Err ("newBuffer failed");
     }
 
-    ~MetalBuffer() { buf->release(); }
+    ~MetalBuffer() { pool->Release (buf); }
 
     MTL::Buffer * Get() const { return buf; }
 
@@ -82,45 +175,14 @@ namespace ngsmetal
     void * DoHostPtr() const override
     { return (memtype == MemType::Shared) ? buf->contents() : nullptr; }
 
-    void DoH2D (const void * src, size_t bytes, size_t offset) override
-    {
-      if (offset+bytes > size) Err ("H2D out of range");
-      if (memtype == MemType::Shared)
-        {
-          std::memcpy ((char*)buf->contents()+offset, src, bytes);
-          return;
-        }
-      auto stage = dev->newBuffer (src, bytes, MTL::ResourceStorageModeShared);
-      Blit (stage, 0, buf, offset, bytes);
-      stage->release();
-    }
-
-    void DoD2H (void * dst, size_t bytes, size_t offset) const override
-    {
-      if (offset+bytes > size) Err ("D2H out of range");
-      if (memtype == MemType::Shared)
-        {
-          std::memcpy (dst, (const char*)buf->contents()+offset, bytes);
-          return;
-        }
-      auto stage = dev->newBuffer (bytes, MTL::ResourceStorageModeShared);
-      Blit (buf, offset, stage, 0, bytes);
-      std::memcpy (dst, stage->contents(), bytes);
-      stage->release();
-    }
+    void DoH2D (const void * src, size_t bytes, size_t offset) override;
+    void DoD2H (void * dst, size_t bytes, size_t offset) const override;
+    void DoFill (size_t bytes, size_t offset, const FillFunc & fill) override;
 
   private:
     // private storage needs a blit, runs synchronously
     void Blit (MTL::Buffer * from, size_t foff, MTL::Buffer * to, size_t toff,
-               size_t bytes) const
-    {
-      auto cb = queue->commandBuffer();
-      auto enc = cb->blitCommandEncoder();
-      enc->copyFromBuffer (from, foff, to, toff, bytes);
-      enc->endEncoding();
-      cb->commit();
-      cb->waitUntilCompleted();
-    }
+               size_t bytes, const std::string & label) const;
   };
 
 
@@ -177,7 +239,8 @@ namespace ngsmetal
 
     static constexpr size_t TRACE_CAPACITY = 4096;
     ngcore::TraceContainer tracer{"GPU metal"};
-    std::vector<std::pair<std::string, MTL::CommandBuffer*>> traced;
+    struct Traced { std::string label; MTL::CommandBuffer * cb; int value; };
+    std::vector<Traced> traced;
 
     // mach_absolute_time units per second
     static double MachPerSec()
@@ -210,9 +273,9 @@ namespace ngsmetal
                                      (long long)((sec*MachPerSec() - double(mach)) * rate));
         };
 
-      for (auto & [label, cb] : traced)
+      for (auto & [label, cb, value] : traced)
         {
-          tracer.AddTicks (label, ToTicks(cb->GPUStartTime()), ToTicks(cb->GPUEndTime()));
+          tracer.AddTicks (label, ToTicks(cb->GPUStartTime()), ToTicks(cb->GPUEndTime()), value);
           cb->release();
         }
       traced.clear();
@@ -220,9 +283,10 @@ namespace ngsmetal
 
   public:
     MetalQueue (MTL::CommandQueue * aqueue) : queue(aqueue) { }
+    MTL::CommandQueue * Get() const { return queue; }
     ~MetalQueue()
     {
-      for (auto & [label, cb] : traced) cb->release();
+      for (auto & t : traced) t.cb->release();
       if (pending) pending->release();
     }
 
@@ -246,6 +310,18 @@ namespace ngsmetal
       if (failed || !msg.empty())
         Err ("kernel execution failed: " + (msg.empty() ? "unknown" : msg));
     }
+
+    // a transfer command buffer: committed, traced like a launch, waited for
+    void Transfer (MTL::CommandBuffer * cb, const std::string & label, size_t bytes)
+    {
+      Commit (cb, label, TransferValue(bytes));
+      DoFinish();
+    }
+
+    // host-side transfer (shared storage), on the same trace row
+    void TraceHost (const std::string & label, size_t bytes,
+                    ngcore::TTimePoint t0, ngcore::TTimePoint t1)
+    { tracer.AddTicks (label, t0, t1, TransferValue(bytes)); }
 
   private:
     void Encode (MTL::ComputeCommandEncoder * enc, Kernel & kernel, Dim3 groups, Dim3 groupsize,
@@ -274,13 +350,13 @@ namespace ngsmetal
                                  MTL::Size(groupsize.x, groupsize.y, groupsize.z));
     }
 
-    void Commit (MTL::CommandBuffer * cb, const std::string & label)
+    void Commit (MTL::CommandBuffer * cb, const std::string & label, int value = 0)
     {
       if (tracer.Active())
         {
           if (traced.size() == TRACE_CAPACITY) DoFinish();
           cb->retain();
-          traced.push_back ({label, cb});
+          traced.push_back ({label, cb, value});
         }
       if (pending) pending->release();
       pending = cb;
@@ -313,15 +389,66 @@ namespace ngsmetal
   };
 
 
+  void MetalBuffer :: DoH2D (const void * src, size_t bytes, size_t offset)
+  {
+    if (offset+bytes > size) Err ("H2D out of range");
+    auto label = TransferLabel ("H2D", bytes);
+    if (memtype == MemType::Shared)
+      {
+        auto t0 = ngcore::GetTimeCounter();
+        std::memcpy ((char*)buf->contents()+offset, src, bytes);
+        queue->TraceHost (label, bytes, t0, ngcore::GetTimeCounter());
+        return;
+      }
+    PoolBuffer stage (*pool, bytes, MTL::ResourceStorageModeShared);
+    std::memcpy (stage->contents(), src, bytes);
+    Blit (stage, 0, buf, offset, bytes, label);
+  }
+
+  // private storage only (shared is filled in place by Buffer::H2D)
+  void MetalBuffer :: DoFill (size_t bytes, size_t offset, const FillFunc & fill)
+  {
+    PoolBuffer stage (*pool, bytes, MTL::ResourceStorageModeShared);
+    fill (stage->contents(), 0, bytes);
+    Blit (stage, 0, buf, offset, bytes, TransferLabel ("H2D", bytes));
+  }
+
+  void MetalBuffer :: DoD2H (void * dst, size_t bytes, size_t offset) const
+  {
+    if (offset+bytes > size) Err ("D2H out of range");
+    auto label = TransferLabel ("D2H", bytes);
+    if (memtype == MemType::Shared)
+      {
+        auto t0 = ngcore::GetTimeCounter();
+        std::memcpy (dst, (const char*)buf->contents()+offset, bytes);
+        queue->TraceHost (label, bytes, t0, ngcore::GetTimeCounter());
+        return;
+      }
+    PoolBuffer stage (*pool, bytes, MTL::ResourceStorageModeShared);
+    Blit (buf, offset, stage, 0, bytes, label);
+    std::memcpy (dst, stage->contents(), bytes);
+  }
+
+  void MetalBuffer :: Blit (MTL::Buffer * from, size_t foff, MTL::Buffer * to, size_t toff,
+                            size_t bytes, const std::string & label) const
+  {
+    auto cb = queue->Get()->commandBuffer();
+    auto enc = cb->blitCommandEncoder();
+    enc->copyFromBuffer (from, foff, to, toff, bytes);
+    enc->endEncoding();
+    queue->Transfer (cb, label, bytes);
+  }
+
+
   class MetalDevice : public Device
   {
     MTL::Device * dev;
-    MTL::CommandQueue * queue;
-    shared_ptr<Queue> defqueue;
+    shared_ptr<MetalHeapPool> pool;
+    shared_ptr<MetalQueue> defqueue;
 
   public:
     MetalDevice (MTL::Device * adev, MTL::CommandQueue * aqueue)
-      : dev(adev), queue(aqueue),
+      : dev(adev), pool(std::make_shared<MetalHeapPool>(adev)),
         defqueue(std::make_shared<MetalQueue>(aqueue)) { }
 
     string Name() const override { return dev->name()->utf8String(); }
@@ -354,7 +481,7 @@ namespace ngsmetal
     }
 
     shared_ptr<Buffer> DoNewBuffer (size_t bytes, MemType mt) override
-    { return std::make_shared<MetalBuffer> (dev, queue, bytes, mt); }
+    { return std::make_shared<MetalBuffer> (pool, defqueue, bytes, mt); }
 
     shared_ptr<Library> DoCompileSource (const string & source) override
     {

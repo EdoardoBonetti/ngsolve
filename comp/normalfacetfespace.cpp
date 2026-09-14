@@ -4,11 +4,10 @@
 /* Date:   2008                                                      */
 /*********************************************************************/
 
-// #include <comp.hpp>
-// #include <fem.hpp>
 #include "normalfacetfespace.hpp"
 #include "../fem/hdiv_equations.hpp"
 #include "../fem/normalfacetfe.hpp"
+#include <special_matrix.hpp>
 #include "normalfacetfespace.hpp"
 #include <../fem/hcurlhdiv_dshape.hpp> 
 
@@ -454,6 +453,13 @@ namespace ngcomp
     ndlevel.Last() = ndof;
     */
     SetNDof (ndof);
+
+    if (low_order_space)
+      { // lowest-order dofs 0..nfacets-1 come first
+        IntRange lo_range(low_order_space->GetNDof());
+        low_order_embedding = make_shared<Embedding> (GetNDof(), lo_range, IsComplex());
+        low_order_restriction = make_shared<EmbeddingTranspose> (GetNDof(), lo_range, IsComplex());
+      }
     
     //no prolongation so far       
     //prol->Update();

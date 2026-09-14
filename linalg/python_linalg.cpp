@@ -5,6 +5,7 @@
 #include "../parallel/parallel_matrices.hpp"
 #include "../ngstd/python_ngstd.hpp"
 #include "sparsefactorization_interface.hpp"
+#include "acceleratesparseinverse.hpp"
 
 using namespace ngla;
 // include netgen-header to get access to PyMPI
@@ -188,6 +189,10 @@ void ExportSparseMatrix(py::module m)
 }
 
 void NGS_DLL_HEADER ExportNgla(py::module &m) {
+
+#ifdef USE_ACCELERATE_SPARSE
+  RegisterAccelerateSparseInverse();
+#endif
 
   py::enum_<PARALLEL_STATUS>(m, "PARALLEL_STATUS", "enum of possible parallel statuses")
     .value("DISTRIBUTED", DISTRIBUTED)
@@ -1271,7 +1276,24 @@ inverse : string
 
     .def("__timing__", &BaseMatrix::Timing, py::arg("runs")=10)
     .def("Update", [](BM &m) { m.Update(); }, py::call_guard<py::gil_scoped_release>(), "Update matrix")
-    .def("CreateDeviceMatrix", &BaseMatrix::CreateDeviceMatrix)
+    .def("CreateDeviceMatrix",
+         [] (shared_ptr<BaseMatrix> self, bool fp32) -> shared_ptr<BaseMatrix>
+         {
+           if (!fp32) return self->CreateDeviceMatrix();
+           if (auto p = dynamic_pointer_cast<SparseMatrixSymmetric<double>> (self))
+             return make_shared<DeviceSparseMatrix<float>> (*p, true);
+           if (auto p = dynamic_pointer_cast<SparseMatrix<double>> (self))
+             return make_shared<DeviceSparseMatrix<float>> (*p);
+           if (dynamic_pointer_cast<SparseMatrix<float>> (self))
+             return self->CreateDeviceMatrix();
+           if (auto p = dynamic_pointer_cast<BlockJacobiPrecondSymmetric<double,double>> (self))
+             return make_shared<DeviceBlockJacobi<float>> (*p);
+           if (auto p = dynamic_pointer_cast<BlockJacobiPrecond<double,double,double>> (self))
+             return make_shared<DeviceBlockJacobi<float>> (*p);
+           throw Exception ("CreateDeviceMatrix(fp32=True) is only implemented for "
+                            "sparse matrices and block smoothers, got " + string(typeid(*self).name()));
+         }, py::arg("fp32")=false,
+         "matrix on the device; fp32 uploads sparse values and block-Jacobi inverses in single precision")
     ;
 
   /*
@@ -1841,6 +1863,18 @@ inverse : string
 
   py::class_<SymmetricBlockGaussSeidelPrecond, shared_ptr<SymmetricBlockGaussSeidelPrecond>, BaseMatrix>
     (m, "SymmetricBlockGaussSeidelPreconditioner");
+
+  py::class_<BaseMSMPrecond, shared_ptr<BaseMSMPrecond>, BaseMatrix>
+    (m, "MSMPrecond", "smoother with forward and backward sweeps")
+    .def("Smooth", &BaseMSMPrecond::Smooth, py::call_guard<py::gil_scoped_release>(),
+         py::arg("x"), py::arg("b"), py::arg("steps")=1)
+    .def("SmoothBack", &BaseMSMPrecond::SmoothBack, py::call_guard<py::gil_scoped_release>(),
+         py::arg("x"), py::arg("b"), py::arg("steps")=1)
+    ;
+  py::class_<DeviceBlockGaussSeidel<double>, shared_ptr<DeviceBlockGaussSeidel<double>>, BaseMSMPrecond>
+    (m, "DeviceBlockGaussSeidelD", "block Gauss-Seidel on the gpu, fp64");
+  py::class_<DeviceBlockGaussSeidel<float>, shared_ptr<DeviceBlockGaussSeidel<float>>, BaseMSMPrecond>
+    (m, "DeviceBlockGaussSeidelF", "block Gauss-Seidel on the gpu, fp32");
   py::class_<SymmetricGaussSeidelPrecond, shared_ptr<SymmetricGaussSeidelPrecond>, BaseMatrix>
     (m, "SymmetricGaussSeidelPreconditioner");
   
