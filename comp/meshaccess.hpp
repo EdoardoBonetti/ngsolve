@@ -509,9 +509,10 @@ namespace ngcomp
     {
       switch (dim-int(ei.VB()))
         {
+        case 1: mesh.SetRefinementFlag<1>(ei.Nr(), ref); break;
         case 2: mesh.SetRefinementFlag<2>(ei.Nr(), ref); break;
         case 3: mesh.SetRefinementFlag<3>(ei.Nr(), ref); break;
-        default: ; 
+        default: ;
         }
       /*      
       if (id.IsVolume())

@@ -194,6 +194,136 @@ namespace ngcomp
 
 
 
+    /*
+      Exact L2 prolongation for 1D meshes refined by bisection (see netgen
+      Bisect1D): the first child replaces the parent in place, the second
+      child is appended with GetParentElement pointing to the first. The
+      old parent's coefficients are transferred to both children by L2
+      projection onto the half-intervals, which is exact for the polynomial
+      space. The two (order+1)x(order+1) matrices are computed on the fly
+      per child/parent pair - cheap in 1D and independent of vertex
+      orientation issues since the FEs are built with the true vertex numbers.
+    */
+  class L2HoProlongationSegm : public Prolongation
+  {
+    shared_ptr<MeshAccess> ma;
+    int order;
+    const Array<int> & first_dofs;
+    Array<size_t> els_on_level;
+    size_t lastne = 0;
+
+    // prolL: old parent -> in-place child (index parent), prolR: old parent -> appended child
+    void CalcMatrices (size_t child, size_t parent, Matrix<> & prolL, Matrix<> & prolR) const
+    {
+      auto vc = ma->GetElement(ElementId(VOL,child)).Vertices();
+      auto vp = ma->GetElement(ElementId(VOL,parent)).Vertices();
+      // the bisection midpoint is the vertex the two children share
+      size_t m  = (size_t(vc[0])==size_t(vp[0]) || size_t(vc[0])==size_t(vp[1])) ? vc[0] : vc[1];
+      size_t v0 = (size_t(vp[0])==m) ? vp[1] : vp[0];   // far vertex of the in-place child
+      size_t v1 = (size_t(vc[0])==m) ? vc[1] : vc[0];   // far vertex of the appended child
+
+      // reference coordinate of a vertex on the old parent (v0,v1):
+      // ET_SEGM has vertex 0 at xi=1 and vertex 1 at xi=0
+      auto xi_parent = [&] (size_t v) -> double
+        { return v==v0 ? 1.0 : (v==v1 ? 0.0 : 0.5); };
+
+      size_t vertsp[2] = { v0, v1 };
+      L2HighOrderFE<ET_SEGM> fep(order);
+      fep.SetVertexNumbers (vertsp);
+
+      size_t ndof = order+1;
+      Matrix<> mass(ndof,ndof), mixed(ndof,ndof);
+      Vector<> shapef(ndof), shapec(ndof);
+      IntegrationRule ir(ET_SEGM, 2*order);
+
+      auto calc = [&] (size_t el, Matrix<> & prol)
+        {
+          auto vf = ma->GetElement(ElementId(VOL,el)).Vertices();
+          size_t vertsf[2] = { size_t(vf[0]), size_t(vf[1]) };
+          L2HighOrderFE<ET_SEGM> fef(order);
+          fef.SetVertexNumbers (vertsf);
+          mass = 0.; mixed = 0.;
+          for (IntegrationPoint ip : ir)
+            {
+              double xic = ip(0);
+              IntegrationPoint ipp (xic*xi_parent(vertsf[0]) + (1-xic)*xi_parent(vertsf[1]));
+              fef.CalcShape (ip, shapef);
+              fep.CalcShape (ipp, shapec);
+              mass += ip.Weight() * shapef * Trans(shapef);
+              mixed += ip.Weight() * shapef * Trans(shapec);
+            }
+          CalcInverse (mass);
+          prol.SetSize (ndof, ndof);
+          prol = mass * mixed;
+        };
+      calc (parent, prolL);
+      calc (child, prolR);
+    }
+
+  public:
+    L2HoProlongationSegm (shared_ptr<MeshAccess> ama, int aorder, const Array<int> & afirst_dofs)
+      : ma(ama), order(aorder), first_dofs(afirst_dofs)
+    { }
+
+    virtual ~L2HoProlongationSegm() { ; }
+
+    size_t GetNDofLevel (int level) override
+    {
+      return els_on_level[level] * (order+1);
+    }
+
+    virtual void Update (const FESpace & /* fes */) override
+    {
+      size_t ne = ma->GetNE();
+      while (els_on_level.Size() < ma->GetNLevels())
+        els_on_level.Append (lastne);
+      els_on_level[ma->GetNLevels()-1] = ne;
+      lastne = ne;
+    }
+
+    virtual shared_ptr<SparseMatrix<double>> CreateProlongationMatrix (int finelevel) const override
+    { return nullptr; }
+
+    virtual void ProlongateInline (int finelevel, BaseVector & v) const override
+    {
+      FlatVector<> fv = v.FV<double>();
+      size_t ne = els_on_level[finelevel];
+      size_t nec = els_on_level[finelevel-1];
+      int ndel = first_dofs[1];
+
+      Matrix<> prolL, prolR;
+      Vector<> tmp(ndel);
+      for (size_t i = nec; i < ne; i++)
+        if (int parent = ma->GetParentElement (ElementId(VOL,i)).Nr(); parent != -1)
+          {
+            CalcMatrices (i, parent, prolL, prolR);
+            tmp = fv.Range(ndel*parent, ndel*(parent+1));
+            fv.Range(ndel*i, ndel*(i+1)) = prolR * tmp;
+            fv.Range(ndel*parent, ndel*(parent+1)) = prolL * tmp;
+          }
+    }
+
+    virtual void RestrictInline (int finelevel, BaseVector & v) const override
+    {
+      FlatVector<> fv = v.FV<double>();
+      size_t ne = els_on_level[finelevel];
+      size_t nec = els_on_level[finelevel-1];
+      int ndel = first_dofs[1];
+
+      Matrix<> prolL, prolR;
+      Vector<> tmp(ndel);
+      for (size_t i = ne; i-- > nec; )
+        if (int parent = ma->GetParentElement (ElementId(VOL,i)).Nr(); parent != -1)
+          {
+            CalcMatrices (i, parent, prolL, prolR);
+            tmp = Trans(prolR) * fv.Range(ndel*i, ndel*(i+1)) +
+                  Trans(prolL) * fv.Range(ndel*parent, ndel*(parent+1));
+            fv.Range(ndel*parent, ndel*(parent+1)) = tmp;
+          }
+    }
+  };
+
+
     /// L2Ho prolongaton
   class L2HoProlongationTrig : public Prolongation
   {
@@ -941,6 +1071,8 @@ namespace ngcomp
             else
               prol = make_shared<L2HoProlongationTrig>(ma, order, first_element_dof);
           }
+        else if (ma->GetDimension() == 1)
+          prol = make_shared<L2HoProlongationSegm>(ma, order, first_element_dof);
         else
           prol = make_shared<L2HoProlongation>(ma, first_element_dof);
       }
