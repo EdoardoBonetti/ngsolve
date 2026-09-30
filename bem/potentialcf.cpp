@@ -36,6 +36,35 @@ namespace ngsbem
   }
 
 
+  // x is near a source element if L2Norm(x-c) < r
+  template <int DIMS>
+  tuple<Vec<3>,double> NearElementBall (const ElementTransformation & trafo, const IntegrationPoint & center)
+  {
+    MappedIntegrationPoint<DIMS,3> mip(center, trafo);
+    return { mip.GetPoint(), L2Norm(mip.GetJacobian()) };
+  }
+
+  optional<tuple<Vec<3>,double>> PotentialNearfieldBall (const ElementTransformation & trafo)
+  {
+    switch (trafo.GetElementType())
+      {
+      case ET_SEGM: return NearElementBall<1> (trafo, IntegrationPoint(1./2, 0, 0));
+      case ET_TRIG: return NearElementBall<2> (trafo, IntegrationPoint(1./3, 1./3));
+      case ET_QUAD: return NearElementBall<2> (trafo, IntegrationPoint(1./2, 1./2));
+      case ET_TET:  return NearElementBall<3> (trafo, IntegrationPoint(1./4, 1./4, 1./4));
+      default:      return nullopt;
+      }
+  }
+
+  // the source elements with a near ball, as boxes slightly larger than the balls: the ones containing x include all
+  // elements x is near
+  struct PotentialNearSources
+  {
+    Array<size_t> elnr;
+    unique_ptr<netgen::BoxTree<3,int>> tree;
+  };
+
+
   template <typename TSCAL>
   void PotentialCF<TSCAL> ::
   BuildLocalExpansion(const Region & reg)
@@ -48,6 +77,8 @@ namespace ngsbem
 
     Vec<3> smax(-1e99, -1e99, -1e99);
     Vec<3> smin(1e99, 1e99, 1e99);
+    auto near = make_shared<PotentialNearSources>();
+    Array<netgen::Box<3>> near_boxes;
 
     for (size_t i = 0; i < mesh->GetNE(source_vb); i++)
       {
@@ -66,7 +97,30 @@ namespace ngsbem
               smin(j) = min(smin(j), miry[k].GetPoint()(j));
               smax(j) = max(smax(j), miry[k].GetPoint()(j));
             }
+
+        if (auto ball = PotentialNearfieldBall (trafo))
+          {
+            auto [c, r] = *ball;
+            netgen::Box<3> box(netgen::Point<3>(c(0), c(1), c(2)));
+            box.Increase ((1+1e-8)*r);
+            near_boxes.Append (box);
+            near->elnr.Append (i);
+          }
       }
+
+    if (near_boxes.Size())
+      {
+        netgen::Box<3> all(netgen::Box<3>::EMPTY_BOX);
+        for (auto & box : near_boxes)
+          {
+            all.Add (box.PMin());
+            all.Add (box.PMax());
+          }
+        near->tree = make_unique<netgen::BoxTree<3,int>> (all);
+        for (size_t k = 0; k < near_boxes.Size(); k++)
+          near->tree->Insert (near_boxes[k], int(k));
+      }
+    near_sources = near;
 
     Vec<3> cs = 0.5*(smin+smax);
     double rs = MaxNorm(smax-smin);
@@ -339,7 +393,7 @@ namespace ngsbem
   }
 
 
-  IntegrationRule GetIntegrationRule(Vec<3> x, const ElementTransformation & trafo, int intorder)
+  IntegrationRule GetIntegrationRule(Vec<3> x, const ElementTransformation & trafo, int intorder, LocalHeap & lh)
   {
     auto et = trafo.GetElementType();
     if (et == ET_TET)
@@ -359,7 +413,8 @@ namespace ngsbem
 
             int order = intorder + 2;
             IntegrationRule irtrig(ET_TRIG, order), irsegm(ET_SEGM, order);
-            IntegrationRule ir;
+            IntegrationRule ir(4*irtrig.Size()*irsegm.Size(), lh);
+            size_t cnt = 0;
 
             auto verts = ElementTopology::GetVertices(ET_TET);
             auto faces = ElementTopology::GetFaces(ET_TET);
@@ -384,10 +439,11 @@ namespace ngsbem
                       Vec<3> F = v0 + ips(0)*(v1-v0) + ips(1)*(v2-v0);
                       double t = ipt(0);
                       Vec<3> y = F + t*(vp-F);
-                      ir.AddIntegrationPoint (IntegrationPoint(y(0), y(1), y(2),
-                                                               ips.Weight()*ipt.Weight()*(1-t)*(1-t)*factor));
+                      ir[cnt++] = IntegrationPoint(y(0), y(1), y(2),
+                                                   ips.Weight()*ipt.Weight()*(1-t)*(1-t)*factor);
                     }
               }
+            ir.SetSize(cnt);
             return ir;
           }
         return IntegrationRule(et, intorder);
@@ -419,12 +475,13 @@ namespace ngsbem
         int npan = int(ceil(umax - umin));
         double du = (umax - umin) / npan;
         IntegrationRule irgauss(ET_SEGM, std::max(intorder, 9));
-        IntegrationRule ir;
+        IntegrationRule ir(npan*irgauss.Size(), lh);
+        size_t cnt = 0;
         for (int k = 0; k < npan; k++)
           for (auto & ip : irgauss)
             {
               double u = umin + (k + ip(0)) * du;
-              ir.AddIntegrationPoint (IntegrationPoint(t0 + rho*sinh(u)/J, 0, 0, ip.Weight() * du * rho*cosh(u)/J));   // dt = ds/J
+              ir[cnt++] = IntegrationPoint(t0 + rho*sinh(u)/J, 0, 0, ip.Weight() * du * rho*cosh(u)/J);   // dt = ds/J
             }
         return ir;
       }
@@ -444,10 +501,11 @@ namespace ngsbem
 
         // Split the reference element into triangles meeting at the projection.
         IntegrationRule irsegm(ET_SEGM, intorder);
-        IntegrationRule ir;
+        int ncorners = et == ET_TRIG ? 3 : 4;
+        IntegrationRule ir(ncorners*irsegm.Size()*irsegm.Size(), lh);
+        size_t cnt = 0;
 
         Vec<2> corners[] = {Vec<2>(0,0), Vec<2>(1,0), Vec<2>(1,1), Vec<2>(0,1)};
-        int ncorners = et == ET_TRIG ? 3 : 4;
         if (et == ET_TRIG)
           corners[2] = Vec<2>(0,1);
         for (int j = 0; j < ncorners; j++)
@@ -465,33 +523,21 @@ namespace ngsbem
                 for (auto ip2 : irsegm)
                   {
                     Vec<2> ipxy = v0 + ip1(0)*(1-ip2(0))*(v1-v0) + ip2(0)*(v2-v0);
-                    ir.AddIntegrationPoint (IntegrationPoint(ipxy(0), ipxy(1), 0,
-                                                             ip1.Weight()*ip2.Weight()*(1-ip2(0))*factor));
+                    ir[cnt++] = IntegrationPoint(ipxy(0), ipxy(1), 0,
+                                                 ip1.Weight()*ip2.Weight()*(1-ip2(0))*factor);
                   }
           }
+        ir.SetSize(cnt);
         return ir;
       }
     return IntegrationRule(et, intorder);
   }
 
 
-  template <int DIMS>
-  bool IsNearElementCenter (Vec<3> x, const ElementTransformation & trafo, const IntegrationPoint & center)
-  {
-    MappedIntegrationPoint<DIMS,3> mip(center, trafo);
-    return L2Norm(x-mip.GetPoint()) < L2Norm(mip.GetJacobian());
-  }
-
   bool IsPotentialNearfieldSourceElement(Vec<3> x, const ElementTransformation & trafo)
   {
-    switch (trafo.GetElementType())
-      {
-      case ET_SEGM: return IsNearElementCenter<1> (x, trafo, IntegrationPoint(1./2, 0, 0));
-      case ET_TRIG: return IsNearElementCenter<2> (x, trafo, IntegrationPoint(1./3, 1./3));
-      case ET_QUAD: return IsNearElementCenter<2> (x, trafo, IntegrationPoint(1./2, 1./2));
-      case ET_TET:  return IsNearElementCenter<3> (x, trafo, IntegrationPoint(1./4, 1./4, 1./4));
-      default:      return false;
-      }
+    auto ball = PotentialNearfieldBall (trafo);
+    return ball && L2Norm(x-get<0>(*ball)) < get<1>(*ball);
   }
 
 
@@ -516,7 +562,7 @@ namespace ngsbem
     FlatVector<T> elvec(fel.GetNDof(), lh);
     gf->GetElementVector(dnums, elvec);
 
-    SIMD_IntegrationRule simd_ir(ir);
+    SIMD_IntegrationRule simd_ir(ir, lh);
     Vector<SIMD<T>> simd_result(Dimension());
     simd_result = SIMD<T>(0.0);
 
@@ -688,6 +734,7 @@ namespace ngsbem
 
     double scalar_correction = 0.0;
     Vec<3> grad_correction { 0.0, 0.0, 0.0 };
+    Complex cf_correction = 0.0;
     double measure0 = mip0.GetMeasure();
     // Subtract the tangent kernel using the same rule as the curved kernel.
     Vec<3> nx{0.0};
@@ -741,11 +788,36 @@ namespace ngsbem
           }
         grad_correction = analytic - flat_numeric;
       }
+    else if (formula == AnalyticTriangleFormula::helmholtz_cf)
+      {
+        double sl_correction = LaplaceSL_Polygon(polygon, x);
+        double dl_correction = LaplaceDL_Polygon(polygon, x, ny);
+        LaplaceSLKernel<3> sl_singularity;
+        LaplaceDLKernel<3> dl_singularity;
+        for (auto ip : ir)
+          {
+            Vec<2> xi { ip(0), ip(1) };
+            Vec<3> y = p0 + jac * (xi-xi0);
+            double r = L2Norm(x-y);
+            if (r > 0)
+              {
+                sl_correction -= ip.Weight() * measure0 * sl_singularity.Evaluate(x, y, nx, ny)(0);
+                dl_correction -= ip.Weight() * measure0 * dl_singularity.Evaluate(x, y, nx, ny)(0);
+              }
+          }
+        cf_correction = dl_correction - Complex(0,1) * kernel->GetKappa() * sl_correction;
+      }
 
     FlatVector<T> vals(evaluator->Dim(), lh);
     evaluator->Apply(fel, mip0, elvec, vals, lh);
     for (auto term : kernel->Terms())
       {
+        if (formula == AnalyticTriangleFormula::helmholtz_cf)
+          {
+            if constexpr (std::is_same_v<T,Complex>)
+              result(term.test_comp) += term.fac * cf_correction * vals(term.trial_comp);
+            continue;
+          }
         double correction =
           formula == AnalyticTriangleFormula::laplace_grad_sl ?
           grad_correction(term.kernel_comp) : scalar_correction;
@@ -764,26 +836,31 @@ namespace ngsbem
     auto mesh = space->GetMeshAccess();
     auto formula = kernel->GetAnalyticTriangleFormula();
 
-    // TODO: find a better way to identify nearfield source elements.
-    // The current path scans all source elements for every target point.
+    Array<int> candidates;
     for (int ix = 0; ix < bmir.Size(); ix++)
       {
         const auto & mip = bmir[ix];
         FlatVector<T> row = result.Row(ix).Range(0, Dimension());
         Vec<3> x = mip.GetPoint();
 
-        for (size_t i = 0; i < mesh->GetNE(source_vb); i++)
+        // the elements whose box contains x, in element order
+        candidates.SetSize0();
+        if (near_sources->tree)
+          {
+            netgen::Point<3> p(x(0), x(1), x(2));
+            near_sources->tree->GetFirstIntersecting (p, p, [&] (int k) { candidates.Append (k); return false; });
+          }
+        QuickSort (candidates);
+        for (int k : candidates)
           {
             HeapReset hr(lh);
-            ElementId ei(source_vb, i);
-            if (!space->DefinedOn(ei)) continue;
-            if (definedon && !(*definedon).Mask().Test(mesh->GetElIndex(ei))) continue;
+            ElementId ei(source_vb, near_sources->elnr[k]);
 
             const ElementTransformation &trafo = mesh->GetTrafo(ei, lh);
             if (!IsPotentialNearfieldSourceElement(x, trafo))
               continue;
 
-            IntegrationRule near_ir = GetIntegrationRule(x, trafo, intorder);
+            IntegrationRule near_ir = GetIntegrationRule(x, trafo, intorder, lh);
             // Replace the expansion's standard source quadrature by Duffy.
             IntegrationRule standard_ir(trafo.GetElementType(), intorder);
             AddSourceElementContribution(mip, ei, standard_ir, row, T(-1.0), lh);
@@ -807,7 +884,7 @@ namespace ngsbem
                                          FlatVector<T> result) const
   {
     static Timer t("ngbem evaluate potential (ip)"); RegionTimer reg(t);
-    LocalHeapMem<100000> lh("Potential::Eval");
+    LocalHeapMem<1000000> lh("Potential::Eval");
     auto space = this->gf->GetFESpace();
     auto mesh = space->GetMeshAccess();
     auto formula = kernel->GetAnalyticTriangleFormula();
@@ -843,9 +920,9 @@ namespace ngsbem
                 use_tangent_correction = IsPotentialNearfieldSourceElement(mip.GetPoint(), trafo);
             }
 
-          IntegrationRule ir = GetIntegrationRule(mip.GetPoint(), trafo, intorder);
+          IntegrationRule ir = GetIntegrationRule(mip.GetPoint(), trafo, intorder, lh);
 
-          SIMD_IntegrationRule simd_ir(ir);
+          SIMD_IntegrationRule simd_ir(ir, lh);
 
           static constexpr int bs = 64;
           for (int k = 0; k < simd_ir.Size(); k += bs)

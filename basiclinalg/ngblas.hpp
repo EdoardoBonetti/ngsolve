@@ -235,8 +235,13 @@ namespace ngbla
   template <bool ADD, bool POS>
   inline void MatMat_AtB (SliceMatrix<double> a, SliceMatrix<double> b, BareSliceMatrix<double> c)
   {
-    if (a.Height() == 0 || b.Width() == 0) return;
-    size_t wa = std::min(a.Width(), std::size(dispatch_atb<ADD,POS>::ptrs)-1);            
+    if (b.Width() == 0) return;
+    if (a.Height() == 0)
+      {
+        if constexpr (!ADD) c.AddSize(a.Width(), b.Width()) = 0.0;
+        return;
+      }
+    size_t wa = std::min(a.Width(), std::size(dispatch_atb<ADD,POS>::ptrs)-1);
     (*dispatch_atb<ADD,POS>::ptrs[wa])  (a.Height(), a.Width(), b.Width(), a, b, c);
   }
   
@@ -391,8 +396,24 @@ namespace ngbla
   INLINE void NgGEMM (SliceMatrix<T,OA> a, SliceMatrix<T,OB> b,
                       SliceMatrix<T,ColMajor> c);
 
-  template <bool ADD, bool POS>
-  INLINE void NgGEMM (const SliceMatrixLike auto& a, const SliceMatrixLike auto& b, const SliceMatrixLike auto& c)
+  template <typename T>
+  using mat_elem_t = std::remove_cv_t<typename std::remove_reference_t<T>::TELEM>;
+
+  // element types with an NgGEMM kernel
+  template <typename T>
+  concept NgGEMMScalar = std::is_same_v<T,double> || std::is_same_v<T,float> ||
+    std::is_same_v<T,Complex> || std::is_same_v<T,Complex32>;
+
+  template <typename TA, typename TB, typename TC>
+  concept NgGEMMCompatible =
+    SliceMatrixLike<TA> && SliceMatrixLike<TB> && SliceMatrixLike<TC> &&
+    NgGEMMScalar<mat_elem_t<TC>> &&
+    std::is_same_v<mat_elem_t<TA>, mat_elem_t<TC>> &&
+    std::is_same_v<mat_elem_t<TB>, mat_elem_t<TC>>;
+
+  template <bool ADD, bool POS, typename TA, typename TB, typename TC>
+    requires NgGEMMCompatible<TA,TB,TC>
+  INLINE void NgGEMM (const TA& a, const TB& b, const TC& c)
   {
     NgGEMM<ADD,POS> (AsSliceMatrix(a), AsSliceMatrix(b), AsSliceMatrix(c));
   }
@@ -587,39 +608,7 @@ namespace ngbla
     NgGEMM<ADD,POS> (Trans(b),Trans(a),Trans(c));
   }
 
-  template <typename OP, SliceMatrixLike<float> T, SliceMatrixLike<float> TA, SliceMatrixLike<float> TB>
-  class assign_trait<OP, T, MultExpr<TA, TB>>
-  {
-  public:
-    static inline T & Assign (MatExpr<T> & self, const Expr<MultExpr<TA, TB>> & prod)
-    {
-      size_t n = CombinedSize(prod.Height(), self.Height());
-      size_t m = CombinedSize(prod.Width(), self.Width());
-      size_t k = CombinedSize(prod.View().A().Width(), prod.View().B().Height());
 
-      NgGEMM<OP::IsAdd(),OP::IsPos()> (AsBareSliceMatrix(prod.View().A()).AddSize(n,k).RemoveConst(),
-                                       AsBareSliceMatrix(prod.View().B()).AddSize(k,m).RemoveConst(),
-                                       AsBareSliceMatrix(self.Spec()).AddSize(n,m));
-      return self.Spec();
-    }
-  };
-
-  template <typename OP, SliceMatrixLike<Complex32> T, SliceMatrixLike<Complex32> TA, SliceMatrixLike<Complex32> TB>
-  class assign_trait<OP, T, MultExpr<TA, TB>>
-  {
-  public:
-    static inline T & Assign (MatExpr<T> & self, const Expr<MultExpr<TA, TB>> & prod)
-    {
-      size_t n = CombinedSize(prod.Height(), self.Height());
-      size_t m = CombinedSize(prod.Width(), self.Width());
-      size_t k = CombinedSize(prod.View().A().Width(), prod.View().B().Height());
-
-      NgGEMM<OP::IsAdd(),OP::IsPos()> (AsBareSliceMatrix(prod.View().A()).AddSize(n,k).RemoveConst(),
-                                       AsBareSliceMatrix(prod.View().B()).AddSize(k,m).RemoveConst(),
-                                       AsBareSliceMatrix(self.Spec()).AddSize(n,m));
-      return self.Spec();
-    }
-  };
 
 
   template <typename TM, typename FUNC, typename TX, typename TY>
@@ -1125,21 +1114,6 @@ namespace ngbla
   };
   */
 
-  template <typename OP, SliceMatrixLike<double> T, SliceMatrixLike TA, SliceMatrixLike TB>
-  class assign_trait<OP, T, MultExpr<TA, TB>> 
-  {
-  public:
-    static inline T & Assign (MatExpr<T> & self, const Expr<MultExpr<TA, TB>> & prod) 
-    {
-      size_t n = CombinedSize(prod.View().A().Height(), self.Spec().Height());
-      size_t m = CombinedSize(prod.View().B().Width(), self.Spec().Width());
-      size_t k = CombinedSize(prod.View().A().Width(), prod.View().B().Height());
-      NgGEMM<OP::IsAdd(),OP::IsPos()> (prod.View().A().Rows(0,n).Cols(0,k).RemoveConst(),
-                                       prod.View().B().Rows(0,k).Cols(0,m).RemoveConst(),
-                                       self.Spec().Rows(0,n).Cols(0,m));
-      return self.Spec();
-    }
-  };
 
   
   
@@ -1222,24 +1196,51 @@ namespace ngbla
     NgGEMM<ADD,POS> (Trans(b), Trans(a), Trans(c));
   }
   
-  template <typename OP, SliceMatrixLike<Complex> T, SliceMatrixLike<Complex> TA, SliceMatrixLike<Complex> TB>
+  // C = A*B for same element types, dispatched to NgGEMM
+  template <typename OP, typename T, typename TA, typename TB>
+    requires NgGEMMCompatible<TA,TB,T>
   class assign_trait<OP, T, MultExpr<TA, TB>>
   {
   public:
     static inline T & Assign (MatExpr<T> & self, const Expr<MultExpr<TA, TB>> & prod) 
     {
-      size_t n = CombinedSize(prod.Height(), self.Height());
-      size_t m = CombinedSize(prod.Width(), self.Width());
+      size_t n = CombinedSize(prod.View().A().Height(), self.Spec().Height());
+      size_t m = CombinedSize(prod.View().B().Width(), self.Spec().Width());
       size_t k = CombinedSize(prod.View().A().Width(), prod.View().B().Height());
-      
-      NgGEMM<OP::IsAdd(),OP::IsPos()> (AsBareSliceMatrix(prod.View().A()).AddSize(n,k).RemoveConst(),
-                                       AsBareSliceMatrix(prod.View().B()).AddSize(k,m).RemoveConst(),
-                                       AsBareSliceMatrix(self.Spec()).AddSize(n,m));
+      NgGEMM<OP::IsAdd(),OP::IsPos()> (prod.View().A().Rows(0,n).Cols(0,k).RemoveConst(),
+                                       prod.View().B().Rows(0,k).Cols(0,m).RemoveConst(),
+                                       self.Spec().Rows(0,n).Cols(0,m));
       return self.Spec();
     }
   };
 
-  
+  template <typename T>
+  concept RowMajorSliceMatrixLike =
+    std::is_constructible_v<SliceMatrix<typename std::remove_reference_t<T>::TELEM, RowMajor>, T>;
+
+  // C(Complex) = A(double) * B(Complex): view row-major B, C as double matrices of twice the width
+  template <typename OP, typename T, typename TA, typename TB>
+    requires SliceMatrixLike<TA> && RowMajorSliceMatrixLike<TB> && RowMajorSliceMatrixLike<T> &&
+    std::is_same_v<mat_elem_t<TA>, double> &&
+    std::is_same_v<mat_elem_t<TB>, Complex> && std::is_same_v<mat_elem_t<T>, Complex>
+  class assign_trait<OP, T, MultExpr<TA, TB>>
+  {
+  public:
+    static inline T & Assign (MatExpr<T> & self, const Expr<MultExpr<TA, TB>> & prod)
+    {
+      size_t n = CombinedSize(prod.View().A().Height(), self.Spec().Height());
+      size_t m = CombinedSize(prod.View().B().Width(), self.Spec().Width());
+      size_t k = CombinedSize(prod.View().A().Width(), prod.View().B().Height());
+      SliceMatrix<Complex> b = SliceMatrix<typename std::remove_reference_t<TB>::TELEM>(prod.View().B()).RemoveConst();
+      SliceMatrix<Complex> c = self.Spec();
+      NgGEMM<OP::IsAdd(),OP::IsPos()> (prod.View().A().Rows(0,n).Cols(0,k).RemoveConst(),
+                                       SliceMatrix<double>(k, 2*m, 2*b.Dist(), reinterpret_cast<double*>(b.Data())),
+                                       SliceMatrix<double>(n, 2*m, 2*c.Dist(), reinterpret_cast<double*>(c.Data())));
+      return self.Spec();
+    }
+  };
+
+
 
 
 
