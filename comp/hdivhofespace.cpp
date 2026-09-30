@@ -24,6 +24,7 @@
 #include <../fem/diffop_impl.hpp>
 #include <prolongation.hpp> 
 #include <fesconvert.hpp>
+#include "l2hofespace.hpp"
 
 namespace ngcomp
 {
@@ -143,86 +144,6 @@ namespace ngcomp
 
 
 
-  class HDivHOProlongation : public Prolongation
-  {
-    HDivHighOrderFESpace * fes;
-    shared_ptr<FESpace> fesL2;
-
-    mutable Array<shared_ptr<BaseMatrix>> convL2toH1;
-    mutable Array<shared_ptr<BaseMatrix>> convH1toL2;
-  public:
-    HDivHOProlongation (HDivHighOrderFESpace * afes)
-    {
-      fes = afes;
-      Flags flagsL2;
-      flagsL2.SetFlag ("order", fes->GetOrder());
-      flagsL2.SetFlag ("piola2", true);
-      flagsL2.SetFlag ("hoprolongation", true);
-      if (fes->IsComplex()) flagsL2.SetFlag ("complex", true);      
-      fesL2 = CreateFESpace("VectorL2", fes->GetMeshAccess(), flagsL2);
-    }
-
-    virtual void Update (const FESpace & cfes) override
-    {
-      FESpace & fes = const_cast<FESpace&>(cfes);
-      fesL2->Update();
-      fesL2->FinalizeUpdate();
-      
-      int levels = fes.GetMeshAccess()->GetNLevels();
-      if (convL2toH1.Size() < levels)
-        {
-          convL2toH1.SetSize(levels);
-          convH1toL2.SetSize(levels);
-          
-          LocalHeap lh(10*1000*1000);
-          convL2toH1[levels-1] = ConvertOperator(fesL2, dynamic_pointer_cast<FESpace>(fes.shared_from_this()), VOL, lh, 
-                                        nullptr, nullptr, NULL, nullptr, false, true, false, 0, 0, true);
-          convH1toL2[levels-1] = ConvertOperator(dynamic_pointer_cast<FESpace>(fes.shared_from_this()), fesL2, VOL, lh, 
-                                        nullptr, nullptr, NULL, nullptr, false, true, false, 0, 0, true);
-        }
-    }
-
-    virtual size_t GetNDofLevel (int level) override
-    {
-      return fes->GetNDofLevel(level);
-    }
-  
-    ///
-    virtual shared_ptr<SparseMatrix< double >> CreateProlongationMatrix( int finelevel ) const override
-    { return NULL; }
-
-    ///
-    virtual void ProlongateInline (int finelevel, BaseVector & v) const override
-    {
-      auto vl2 = convL2toH1[finelevel]->CreateRowVector();
-
-      auto shapec = convH1toL2[finelevel-1]->Shape();
-      auto shapef = convL2toH1[finelevel]->Shape();
-
-      vl2.Range(get<0>(shapec)) = *convH1toL2[finelevel-1] * v.Range(get<1>(shapec));      
-      fesL2->GetProlongation()->ProlongateInline(finelevel, vl2);
-      v.Range(get<0>(shapef)) = *convL2toH1[finelevel] * vl2.Range(get<1>(shapef));
-    }    
-
-    
-    ///
-    virtual void RestrictInline (int finelevel, BaseVector & v) const override
-    {
-      auto vl2 = convL2toH1[finelevel]->CreateRowVector();
-
-      auto shapec = convH1toL2[finelevel-1]->Shape();
-      auto shapef = convL2toH1[finelevel]->Shape();
-
-      vl2.Range(get<1>(shapef)) = Transpose(*convL2toH1[finelevel]) * v.Range(get<0>(shapef));      
-      fesL2->GetProlongation()->RestrictInline(finelevel, vl2);
-      v.Range(get<1>(shapec)) = Transpose(*convH1toL2[finelevel-1]) * vl2.Range(get<0>(shapec));
-    }    
-  };
-
-
-
-  
-  
   HDivHighOrderFESpace ::  
   HDivHighOrderFESpace (shared_ptr<MeshAccess> ama, const Flags & flags, bool parseflags)
     : FESpace (ama, flags)
@@ -382,7 +303,7 @@ namespace ngcomp
 
 
    if (flags.GetDefineFlag("hoprolongation"))
-        prol = make_shared<HDivHOProlongation> (this);
+        prol = CreateVectorL2EmbeddedProlongation (this, "piola2");
   }
   
   HDivHighOrderFESpace:: ~HDivHighOrderFESpace () 
@@ -755,7 +676,6 @@ namespace ngcomp
         first_facet_dof[nfa] = ndof;
 	 
 	// Array<int> fnums;
-        bool have_pyramids = false;
         for (size_t i = 0; i < nel; i++)
           {
             IVec<3> p = order_inner[i];
@@ -805,10 +725,19 @@ namespace ngcomp
                   inci -= p[0]*(p[1]*p[2] + p[1] + p[2] + 1)  + p[1]*p[2] + p[1] + p[2]; 
                 break; 
               case ET_PYRAMID: 
-                inci=0;
-                if(DefinedOn(ElementId(VOL,i)))
-                  have_pyramids=true;
-                break; 
+                {
+                  int pp = p[0];
+                  if (pp >= 1)
+                    inci = pp*pp + 2*( (pp-1)*pp*(pp+1)/3 + pp );
+                  int pd = RT ? pp : pp-1;
+                  if (pd >= 1 && !ho_div_free)
+                    inci += (pd+1)*(pd+2)*(2*pd+3)/6 - 1;
+                  if (highest_order_dc)
+                    for (auto f : ma->GetElFacets(i))
+                      if (!boundary_facet[f])
+                        inci += (ma->GetFacePNums(f).Size()==3) ? order_facet[f][0]+1 : order_facet[f][0]+order_facet[f][1]+1;
+                  break; 
+                }
               default:
                 inci = 0;
                 break;
@@ -818,9 +747,6 @@ namespace ngcomp
             ndof+= inci;
 	  }
         first_inner_dof[nel] = ndof;
-
-        if (have_pyramids)
-          cout << "WARNING: there are hdiv-pyramids (not implemented yet) !! " << endl;
 
         
         if (highest_order_dc)
@@ -1005,9 +931,6 @@ namespace ngcomp
     Ngs_Element ngel = ma->GetElement<ET_trait<ET>::DIM,VOL> (elnr);
     if (!DefinedOn(ngel)) return * new (lh) HDivDummyFE<ET>();
 
-    if(ET == ET_PYRAMID)
-      throw Exception("HDivHighOrderFESpace: Pyramid elements not implemented yet!");
-    
     HDivHighOrderFE<ET> * hofe =  new (lh) HDivHighOrderFE<ET> ();
 
     hofe -> SetVertexNumbers (ngel.Vertices());
@@ -1243,7 +1166,7 @@ namespace ngcomp
         
       case ET_TET:     return T_GetFE<ET_TET> (elnr, true, lh);
       case ET_PRISM:   return T_GetFE<ET_PRISM> (elnr, true, lh);
-        // case ET_PYRAMID: return T_GetFE<ET_PYRAMID> (elnr, false, lh);
+      case ET_PYRAMID: return T_GetFE<ET_PYRAMID> (elnr, true, lh);
       case ET_HEX:     return T_GetFE<ET_HEX> (elnr, true, lh);
         
       default:

@@ -73,10 +73,12 @@ namespace ngmg
     jac.SetSize (biform.GetNLevels());
     for (int i = 0; i < biform.GetNLevels(); i++)
       {
-	if (biform.GetMatrixPtr(i) && (force_update || !jac[i]))
+	if (biform.GetMatrixPtr(i) && (force_update || updateall || !jac[i]))
           {
+            auto freedofs = jac[i] ? jac[i]->GetInner() : biform.GetFESpace()->GetFreeDofs();
+            jac[i] = nullptr;
             jac[i] = dynamic_cast<const BaseSparseMatrix&> (*biform.GetMatrixPtr(i))
-              .CreateJacobiPrecond(biform.GetFESpace()->GetFreeDofs());
+              .CreateJacobiPrecond(freedofs);
           }
       }
   }
@@ -745,6 +747,7 @@ namespace ngmg
     int startlevel = updateall ? 1 : level;
     for(auto lvl : Range(startlevel,level+1))
       {
+        jac[lvl-1] = nullptr;
         if (!constraint)
           {
             jac[lvl-1] = dynamic_cast<const BaseSparseMatrix&>

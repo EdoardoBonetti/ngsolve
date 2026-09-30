@@ -16,6 +16,7 @@
 #include <diffop_impl.hpp>
 #include <diagonalmatrix.hpp>
 #include <elementbyelement.hpp>
+#include <fesconvert.hpp>
 
 using namespace ngmg;
 
@@ -192,6 +193,136 @@ namespace ngcomp
 
   
 
+
+
+    /*
+      Exact L2 prolongation for 1D meshes refined by bisection (see netgen
+      Bisect1D): the first child replaces the parent in place, the second
+      child is appended with GetParentElement pointing to the first. The
+      old parent's coefficients are transferred to both children by L2
+      projection onto the half-intervals, which is exact for the polynomial
+      space. The two (order+1)x(order+1) matrices are computed on the fly
+      per child/parent pair - cheap in 1D and independent of vertex
+      orientation issues since the FEs are built with the true vertex numbers.
+    */
+  class L2HoProlongationSegm : public Prolongation
+  {
+    shared_ptr<MeshAccess> ma;
+    int order;
+    const Array<int> & first_dofs;
+    Array<size_t> els_on_level;
+    size_t lastne = 0;
+
+    // prolL: old parent -> in-place child (index parent), prolR: old parent -> appended child
+    void CalcMatrices (size_t child, size_t parent, Matrix<> & prolL, Matrix<> & prolR) const
+    {
+      auto vc = ma->GetElement(ElementId(VOL,child)).Vertices();
+      auto vp = ma->GetElement(ElementId(VOL,parent)).Vertices();
+      // the bisection midpoint is the vertex the two children share
+      size_t m  = (size_t(vc[0])==size_t(vp[0]) || size_t(vc[0])==size_t(vp[1])) ? vc[0] : vc[1];
+      size_t v0 = (size_t(vp[0])==m) ? vp[1] : vp[0];   // far vertex of the in-place child
+      size_t v1 = (size_t(vc[0])==m) ? vc[1] : vc[0];   // far vertex of the appended child
+
+      // reference coordinate of a vertex on the old parent (v0,v1):
+      // ET_SEGM has vertex 0 at xi=1 and vertex 1 at xi=0
+      auto xi_parent = [&] (size_t v) -> double
+        { return v==v0 ? 1.0 : (v==v1 ? 0.0 : 0.5); };
+
+      size_t vertsp[2] = { v0, v1 };
+      L2HighOrderFE<ET_SEGM> fep(order);
+      fep.SetVertexNumbers (vertsp);
+
+      size_t ndof = order+1;
+      Matrix<> mass(ndof,ndof), mixed(ndof,ndof);
+      Vector<> shapef(ndof), shapec(ndof);
+      IntegrationRule ir(ET_SEGM, 2*order);
+
+      auto calc = [&] (size_t el, Matrix<> & prol)
+        {
+          auto vf = ma->GetElement(ElementId(VOL,el)).Vertices();
+          size_t vertsf[2] = { size_t(vf[0]), size_t(vf[1]) };
+          L2HighOrderFE<ET_SEGM> fef(order);
+          fef.SetVertexNumbers (vertsf);
+          mass = 0.; mixed = 0.;
+          for (IntegrationPoint ip : ir)
+            {
+              double xic = ip(0);
+              IntegrationPoint ipp (xic*xi_parent(vertsf[0]) + (1-xic)*xi_parent(vertsf[1]));
+              fef.CalcShape (ip, shapef);
+              fep.CalcShape (ipp, shapec);
+              mass += ip.Weight() * shapef * Trans(shapef);
+              mixed += ip.Weight() * shapef * Trans(shapec);
+            }
+          CalcInverse (mass);
+          prol.SetSize (ndof, ndof);
+          prol = mass * mixed;
+        };
+      calc (parent, prolL);
+      calc (child, prolR);
+    }
+
+  public:
+    L2HoProlongationSegm (shared_ptr<MeshAccess> ama, int aorder, const Array<int> & afirst_dofs)
+      : ma(ama), order(aorder), first_dofs(afirst_dofs)
+    { }
+
+    virtual ~L2HoProlongationSegm() { ; }
+
+    size_t GetNDofLevel (int level) override
+    {
+      return els_on_level[level] * (order+1);
+    }
+
+    virtual void Update (const FESpace & /* fes */) override
+    {
+      size_t ne = ma->GetNE();
+      while (els_on_level.Size() < ma->GetNLevels())
+        els_on_level.Append (lastne);
+      els_on_level[ma->GetNLevels()-1] = ne;
+      lastne = ne;
+    }
+
+    virtual shared_ptr<SparseMatrix<double>> CreateProlongationMatrix (int finelevel) const override
+    { return nullptr; }
+
+    virtual void ProlongateInline (int finelevel, BaseVector & v) const override
+    {
+      FlatVector<> fv = v.FV<double>();
+      size_t ne = els_on_level[finelevel];
+      size_t nec = els_on_level[finelevel-1];
+      int ndel = first_dofs[1];
+
+      Matrix<> prolL, prolR;
+      Vector<> tmp(ndel);
+      for (size_t i = nec; i < ne; i++)
+        if (int parent = ma->GetParentElement (ElementId(VOL,i)).Nr(); parent != -1)
+          {
+            CalcMatrices (i, parent, prolL, prolR);
+            tmp = fv.Range(ndel*parent, ndel*(parent+1));
+            fv.Range(ndel*i, ndel*(i+1)) = prolR * tmp;
+            fv.Range(ndel*parent, ndel*(parent+1)) = prolL * tmp;
+          }
+    }
+
+    virtual void RestrictInline (int finelevel, BaseVector & v) const override
+    {
+      FlatVector<> fv = v.FV<double>();
+      size_t ne = els_on_level[finelevel];
+      size_t nec = els_on_level[finelevel-1];
+      int ndel = first_dofs[1];
+
+      Matrix<> prolL, prolR;
+      Vector<> tmp(ndel);
+      for (size_t i = ne; i-- > nec; )
+        if (int parent = ma->GetParentElement (ElementId(VOL,i)).Nr(); parent != -1)
+          {
+            CalcMatrices (i, parent, prolL, prolR);
+            tmp = Trans(prolR) * fv.Range(ndel*i, ndel*(i+1)) +
+                  Trans(prolL) * fv.Range(ndel*parent, ndel*(parent+1));
+            fv.Range(ndel*parent, ndel*(parent+1)) = tmp;
+          }
+    }
+  };
 
 
     /// L2Ho prolongaton
@@ -941,6 +1072,8 @@ namespace ngcomp
             else
               prol = make_shared<L2HoProlongationTrig>(ma, order, first_element_dof);
           }
+        else if (ma->GetDimension() == 1)
+          prol = make_shared<L2HoProlongationSegm>(ma, order, first_element_dof);
         else
           prol = make_shared<L2HoProlongation>(ma, first_element_dof);
       }
@@ -3042,6 +3175,61 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     }
   };
 
+  template <int DIM_SPC>
+  class DiffOpIdVectorL2Covariant2 : public DiffOp<DiffOpIdVectorL2Covariant2<DIM_SPC> >
+  {
+  public:
+    static constexpr int DIM = 1;
+    static constexpr int DIM_SPACE = DIM_SPC;
+    static constexpr int DIM_ELEMENT = DIM_SPC;
+    static constexpr int DIM_DMAT = DIM_SPC;
+    static constexpr int DIFFORDER = 0;
+    using FiniteElementType = VectorFiniteElement;
+
+    template <typename FEL, typename MIP, typename MAT>
+    static void GenerateMatrix (const FEL & bfel, const MIP & mip,
+                                MAT && mat, LocalHeap & lh)
+    {
+      auto & fel = static_cast<const VectorFiniteElement&> (bfel);
+      auto & feli = static_cast<const BaseScalarFiniteElement&> (fel[0]);
+      HeapReset hr(lh);
+      FlatVector<> hv(feli.GetNDof(), lh);
+      feli.CalcShape(mip.IP(), hv);
+
+      Mat<DIM_SPACE> trafo = Trans(mip.GetJacobianInverse());
+      if constexpr(DIM_SPACE==2)
+        {
+          IVec<3> verts = dynamic_cast<const VertexOrientedFE<ET_TRIG> &>(feli).GetVertexOrientedFace(0);
+          Vec<2> gradv[3] = {{1, 0}, {0, 1}, {-1, -1}};
+          for (int j = 0; j < 2; j++)
+            {
+              Vec<2> base = trafo * gradv[verts[j]];
+              for (int i = 0; i < feli.GetNDof(); i++)
+                mat.Col(i + j * feli.GetNDof()) = hv(i) * base;
+            }
+        }
+      else
+        {
+          IVec<4> verts = { 0, 1, 2, 3 };
+          auto vnums = dynamic_cast<const VertexOrientedFE<ET_TET> &>(feli).GetVertexNumbers();
+
+          if (vnums[verts[0]] > vnums[verts[1]]) Swap (verts[0], verts[1]);
+          if (vnums[verts[2]] > vnums[verts[3]]) Swap (verts[2], verts[3]);
+          if (vnums[verts[0]] > vnums[verts[2]]) Swap (verts[0], verts[2]);
+          if (vnums[verts[1]] > vnums[verts[3]]) Swap (verts[1], verts[3]);
+          if (vnums[verts[1]] > vnums[verts[2]]) Swap (verts[1], verts[2]);
+
+          Vec<3> gradv[4] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {-1, -1, -1}};
+          for (int j = 0; j < 3; j++)
+            {
+              Vec<3> base = trafo * gradv[verts[j]];
+              for (int i = 0; i < feli.GetNDof(); i++)
+                mat.Col(i + j * feli.GetNDof()) = hv(i) * base;
+            }
+        }
+    }
+  };
+
   template <int DIM_SPC, VorB VB = VOL>
   class DiffOpIdVectorL2Piola : public DiffOp<DiffOpIdVectorL2Piola<DIM_SPC,VB> >
   {
@@ -4003,7 +4191,7 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
         massfR = 0.;
         massfcR = 0.;
 
-        if (!piola)
+        if (!piola && !covariant)
           for (IntegrationPoint ip : ir)
             {
               IntegrationPoint ipcL(0.5*ip(0), ip(1));
@@ -4053,29 +4241,36 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
         VectorFiniteElement vecfL(felfL, 2);
         VectorFiniteElement vecfR(felfR, 2);
         
-        if (piola)
-          for (IntegrationPoint ip : ir)
-            {
-              IntegrationPoint ipcL(0.5*ip(0), ip(1));
-              IntegrationPoint ipcR(0.5*(1+ip(0)-ip(1)), ip(1));              
+        auto mapped = [&] (auto diffop)
+          {
+            using DIFFOP = decltype(diffop);
+            for (IntegrationPoint ip : ir)
+              {
+                IntegrationPoint ipcL(0.5*ip(0), ip(1));
+                IntegrationPoint ipcR(0.5*(1+ip(0)-ip(1)), ip(1));
 
-              MappedIntegrationPoint<2, 2> mipfl(ip, trafol);
-              MappedIntegrationPoint<2, 2> mipcl(ipcL, trafoid);
-              MappedIntegrationPoint<2, 2> mipfr(ip, trafor);
-              MappedIntegrationPoint<2, 2> mipcr(ipcR, trafoid);
+                MappedIntegrationPoint<2, 2> mipfl(ip, trafol);
+                MappedIntegrationPoint<2, 2> mipcl(ipcL, trafoid);
+                MappedIntegrationPoint<2, 2> mipfr(ip, trafor);
+                MappedIntegrationPoint<2, 2> mipcr(ipcR, trafoid);
 
-              DiffOpIdVectorL2Piola2<2>::GenerateMatrix(vecfc, mipcl, Trans(mshapec), lh);
-              DiffOpIdVectorL2Piola2<2>::GenerateMatrix(vecfL, mipfl, Trans(mshapef), lh);
+                DIFFOP::GenerateMatrix(vecfc, mipcl, Trans(mshapec), lh);
+                DIFFOP::GenerateMatrix(vecfL, mipfl, Trans(mshapef), lh);
 
-              massfL += ip.Weight() * mshapef * Trans(mshapef);
-              massfcL += ip.Weight() * mshapef * Trans(mshapec);
+                massfL += ip.Weight() * mshapef * Trans(mshapef);
+                massfcL += ip.Weight() * mshapef * Trans(mshapec);
 
-              DiffOpIdVectorL2Piola2<2>::GenerateMatrix(vecfc, mipcr, Trans(mshapec), lh);
-              DiffOpIdVectorL2Piola2<2>::GenerateMatrix(vecfR, mipfr, Trans(mshapef), lh);
+                DIFFOP::GenerateMatrix(vecfc, mipcr, Trans(mshapec), lh);
+                DIFFOP::GenerateMatrix(vecfR, mipfr, Trans(mshapef), lh);
               
-              massfR += ip.Weight() * mshapef * Trans(mshapef);
-              massfcR += ip.Weight() * mshapef * Trans(mshapec);
-            }
+                massfR += ip.Weight() * mshapef * Trans(mshapef);
+                massfcR += ip.Weight() * mshapef * Trans(mshapec);
+              }
+          };
+        if (piola)
+          mapped (DiffOpIdVectorL2Piola2<2>());
+        else if (covariant)
+          mapped (DiffOpIdVectorL2Covariant2<2>());
         
         CalcInverse (massfL);
         trigprolsL[classnr].SetSize(dim*ndof, dim*ndof);
@@ -4161,15 +4356,22 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     ///
     virtual void ProlongateInline (int finelevel, BaseVector & v) const override
     {
+      if (v.IsComplex())
+        ProlongateInlineT (finelevel, v.FV<Complex>());
+      else
+        ProlongateInlineT (finelevel, v.FV<double>());
+    }
+
+    template <typename T>
+    void ProlongateInlineT (int finelevel, FlatVector<T> fv) const
+    {
       int dim = ma->GetDimension();
 
-      FlatVector<> fv = v.FV<double>();
-      
       size_t ne = els_on_level[finelevel];
       size_t nec = els_on_level[finelevel-1];
       int ndel = (order+1)*(order+2)/2;
 
-      Vector<> tmp1(dim*ndel), tmp2(dim*ndel);
+      Vector<T> tmp1(dim*ndel), tmp2(dim*ndel);
 
       size_t scal_ndofc = nec*ndel;  
       size_t scal_ndoff = ne*ndel;  
@@ -4199,14 +4401,21 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     ///
     virtual void RestrictInline (int finelevel, BaseVector & v) const override
     {
+      if (v.IsComplex())
+        RestrictInlineT (finelevel, v.FV<Complex>());
+      else
+        RestrictInlineT (finelevel, v.FV<double>());
+    }
+
+    template <typename T>
+    void RestrictInlineT (int finelevel, FlatVector<T> fv) const
+    {
       int dim = ma->GetDimension();
-      FlatVector<> fv = v.FV<double>();
-      
       size_t ne = els_on_level[finelevel];
       size_t nec = els_on_level[finelevel-1];
       int ndel = (order+1)*(order+2)/2;
 
-      Vector<double> tmp(dim*ndel), tmpL(dim*ndel), tmpR(dim*ndel);
+      Vector<T> tmp(dim*ndel), tmpL(dim*ndel), tmpR(dim*ndel);
 
       size_t scal_ndofc = nec*ndel;  
       size_t scal_ndoff = ne*ndel;  
@@ -4303,7 +4512,7 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
         massfR = 0.;
         massfcR = 0.;
 
-        if (!piola)
+        if (!piola && !covariant)
           for (IntegrationPoint ip : ir)
             {
               IntegrationPoint ipcL(0.5*ip(0), ip(1), ip(2));
@@ -4351,29 +4560,36 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
         VectorFiniteElement vecfL(felfL, dim);
         VectorFiniteElement vecfR(felfR, dim);
         
-        if (piola)
-          for (IntegrationPoint ip : ir)
-            {
-              IntegrationPoint ipcL(0.5*ip(0), ip(1), ip(2));
-              IntegrationPoint ipcR(0.5*(1+ip(0)-ip(1)-ip(2)), ip(1), ip(2));              
+        auto mapped = [&] (auto diffop)
+          {
+            using DIFFOP = decltype(diffop);
+            for (IntegrationPoint ip : ir)
+              {
+                IntegrationPoint ipcL(0.5*ip(0), ip(1), ip(2));
+                IntegrationPoint ipcR(0.5*(1+ip(0)-ip(1)-ip(2)), ip(1), ip(2));
               
-              MappedIntegrationPoint<3,3> mipfl(ip, trafol);
-              MappedIntegrationPoint<3,3> mipcl(ipcL, trafoid);
-              MappedIntegrationPoint<3,3> mipfr(ip, trafor);
-              MappedIntegrationPoint<3,3> mipcr(ipcR, trafoid);
+                MappedIntegrationPoint<3,3> mipfl(ip, trafol);
+                MappedIntegrationPoint<3,3> mipcl(ipcL, trafoid);
+                MappedIntegrationPoint<3,3> mipfr(ip, trafor);
+                MappedIntegrationPoint<3,3> mipcr(ipcR, trafoid);
 
-              DiffOpIdVectorL2Piola2<3>::GenerateMatrix(vecfc, mipcl, Trans(mshapec), lh);
-              DiffOpIdVectorL2Piola2<3>::GenerateMatrix(vecfL, mipfl, Trans(mshapef), lh);
+                DIFFOP::GenerateMatrix(vecfc, mipcl, Trans(mshapec), lh);
+                DIFFOP::GenerateMatrix(vecfL, mipfl, Trans(mshapef), lh);
 
-              massfL += ip.Weight() * mshapef * Trans(mshapef);
-              massfcL += ip.Weight() * mshapef * Trans(mshapec);
+                massfL += ip.Weight() * mshapef * Trans(mshapef);
+                massfcL += ip.Weight() * mshapef * Trans(mshapec);
 
-              DiffOpIdVectorL2Piola2<3>::GenerateMatrix(vecfc, mipcr, Trans(mshapec), lh);
-              DiffOpIdVectorL2Piola2<3>::GenerateMatrix(vecfR, mipfr, Trans(mshapef), lh);
+                DIFFOP::GenerateMatrix(vecfc, mipcr, Trans(mshapec), lh);
+                DIFFOP::GenerateMatrix(vecfR, mipfr, Trans(mshapef), lh);
 
-              massfR += ip.Weight() * mshapef * Trans(mshapef);
-              massfcR += ip.Weight() * mshapef * Trans(mshapec);
-            }
+                massfR += ip.Weight() * mshapef * Trans(mshapef);
+                massfcR += ip.Weight() * mshapef * Trans(mshapec);
+              }
+          };
+        if (piola)
+          mapped (DiffOpIdVectorL2Piola2<3>());
+        else if (covariant)
+          mapped (DiffOpIdVectorL2Covariant2<3>());
 
         CalcInverse (massfL);
         prolsL[classnr].SetSize(dim*ndof, dim*ndof);
@@ -4478,7 +4694,84 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     
     ///
     virtual shared_ptr<SparseMatrix< double >> CreateProlongationMatrix( int finelevel ) const override
-    { return nullptr; }
+    {
+      if (finelevel >= els_on_level.Size())     // space created after refinement
+        return nullptr;
+
+      int dim = ma->GetDimension();
+      int ndel = (order+1)*(order+2)*(order+3)/6;
+      int bs = dim*ndel;
+      size_t ne = els_on_level[finelevel];
+      size_t nec = els_on_level[finelevel-1];
+      size_t sf = ne*ndel, sc = nec*ndel;      // scalar ndof fine / coarse
+
+      Array<int> max_parent(ne);
+      for (auto i : Range(ne))
+        {
+          int parent = i;
+          max_parent[i] = i;
+          while (parent >= int(nec))
+            {
+              parent = ma->GetParentElement(ElementId(VOL, parent)).Nr();
+              if (parent != -1)
+                max_parent[i] = parent;
+            }
+        }
+
+      Array<int> indicesPerRow(dim*sf);
+      indicesPerRow = bs;
+      MatrixGraph mg(indicesPerRow, dim*sc);
+      for (size_t el = 0; el < ne; el++)
+        for (int c = 0; c < dim; c++)
+          for (int i = 0; i < ndel; i++)
+            for (int c2 = 0; c2 < dim; c2++)
+              for (int j = 0; j < ndel; j++)
+                mg.CreatePosition (c*sf + el*ndel + i, c2*sc + max_parent[el]*ndel + j);
+
+      auto spprol = make_shared<SparseMatrix<double>> (std::move(mg));
+      auto & prol = *spprol;
+      prol.AsVector() = 0.;
+
+      for (size_t el = 0; el < nec; el++)
+        for (int c = 0; c < dim; c++)
+          for (int i = 0; i < ndel; i++)
+            prol(c*sf + el*ndel + i, c*sc + el*ndel + i) = 1.;
+
+      // block of element el against its max_parent, in the (c*ndel+i) layout
+      // the dense prols act on
+      auto getblock = [&](size_t el, FlatMatrix<double> b)
+      {
+        size_t mp = max_parent[el];
+        for (int c = 0; c < dim; c++)
+          for (int i = 0; i < ndel; i++)
+            for (int c2 = 0; c2 < dim; c2++)
+              for (int j = 0; j < ndel; j++)
+                b(c*ndel+i, c2*ndel+j) = prol(c*sf + el*ndel + i, c2*sc + mp*ndel + j);
+      };
+      auto setblock = [&](size_t el, FlatMatrix<double> b)
+      {
+        size_t mp = max_parent[el];
+        for (int c = 0; c < dim; c++)
+          for (int i = 0; i < ndel; i++)
+            for (int c2 = 0; c2 < dim; c2++)
+              for (int j = 0; j < ndel; j++)
+                prol(c*sf + el*ndel + i, c2*sc + mp*ndel + j) = b(c*ndel+i, c2*ndel+j);
+      };
+
+      Matrix<double> bparent(bs,bs), bl(bs,bs), br(bs,bs);
+      for (size_t el = nec; el < ne; el++)
+        {
+          int parent = ma->GetParentElement(ElementId(VOL, el)).Nr();
+          if (parent == -1) continue;
+          int classnr = tet_creation_class[el];
+          getblock(parent, bparent);
+          br = prolsR[classnr] * bparent;
+          bl = prolsL[classnr] * bparent;
+          setblock(el, br);
+          setblock(parent, bl);
+        }
+      return spprol;
+    }
 
     virtual size_t GetNDofLevel (int level) override
     {
@@ -4490,15 +4783,22 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     ///
     virtual void ProlongateInline (int finelevel, BaseVector & v) const override
     {
+      if (v.IsComplex())
+        ProlongateInlineT (finelevel, v.FV<Complex>());
+      else
+        ProlongateInlineT (finelevel, v.FV<double>());
+    }
+
+    template <typename T>
+    void ProlongateInlineT (int finelevel, FlatVector<T> fv) const
+    {
       int dim = ma->GetDimension();
 
-      FlatVector<> fv = v.FV<double>();
-      
       size_t ne = els_on_level[finelevel];
       size_t nec = els_on_level[finelevel-1];
       int ndel = (order+1)*(order+2)*(order+3)/6;
 
-      Vector<> tmp1(dim*ndel), tmp2(dim*ndel);
+      Vector<T> tmp1(dim*ndel), tmp2(dim*ndel);
 
       size_t scal_ndofc = nec*ndel;  
       size_t scal_ndoff = ne*ndel;
@@ -4528,14 +4828,21 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     ///
     virtual void RestrictInline (int finelevel, BaseVector & v) const override
     {
+      if (v.IsComplex())
+        RestrictInlineT (finelevel, v.FV<Complex>());
+      else
+        RestrictInlineT (finelevel, v.FV<double>());
+    }
+
+    template <typename T>
+    void RestrictInlineT (int finelevel, FlatVector<T> fv) const
+    {
       int dim = ma->GetDimension();
-      FlatVector<> fv = v.FV<double>();
-      
       size_t ne = els_on_level[finelevel];
       size_t nec = els_on_level[finelevel-1];
       int ndel = (order+1)*(order+2)*(order+3)/6;
 
-      Vector<double> tmp(dim*ndel), tmpL(dim*ndel), tmpR(dim*ndel);
+      Vector<T> tmp(dim*ndel), tmpL(dim*ndel), tmpR(dim*ndel);
 
       size_t scal_ndofc = nec*ndel;  
       size_t scal_ndoff = ne*ndel;  
@@ -4581,6 +4888,10 @@ One can evaluate the vector-valued function, and one can take the gradient.
     docu.Arg("covariant") = "bool = False\n"
       "  Use the covariant transform to map to physical element\n"
       "  allows to use the curl-differential operator.";
+    docu.Arg("piola2") = "bool = False\n"
+      "  Piola transform with vertex oriented basis, used for high order prolongation";
+    docu.Arg("covariant2") = "bool = False\n"
+      "  Covariant transform with vertex oriented basis, used for high order prolongation";
     docu.Arg("all_dofs_together") = "bool = True\n"
       "  dofs within one scalar component are together.";
     docu.Arg("hide_all_dofs") = "bool = False\n"
@@ -4607,6 +4918,7 @@ One can evaluate the vector-valued function, and one can take the gradient.
       piola = flags.GetDefineFlag ("piola");
       covariant = flags.GetDefineFlag ("covariant");
       piola2 = flags.GetDefineFlag ("piola2");
+      covariant2 = flags.GetDefineFlag ("covariant2");
 
       if (piola)
         {
@@ -4635,6 +4947,18 @@ One can evaluate the vector-valued function, and one can take the gradient.
               break;
             case 3:
               evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpIdVectorL2Piola2<3>>>();
+              break;
+            }
+        }
+      else if (covariant2)
+        {
+          switch (ma->GetDimension())
+            {
+            case 2:
+              evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpIdVectorL2Covariant2<2>>>();
+              break;
+            case 3:
+              evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpIdVectorL2Covariant2<3>>>();
               break;
             }
         }
@@ -4676,9 +5000,9 @@ One can evaluate the vector-valued function, and one can take the gradient.
       if (flags.GetDefineFlag("hoprolongation"))
         {
           if (ma->GetDimension()==2)
-            prol = make_shared<VectorL2HoProlongationTrig> (ma, order, piola2, covariant);
+            prol = make_shared<VectorL2HoProlongationTrig> (ma, order, piola2, covariant2);
           else if (ma->GetDimension()==3)
-            prol = make_shared<VectorL2HoProlongationTet> (ma, order, piola2, covariant);
+            prol = make_shared<VectorL2HoProlongationTet> (ma, order, piola2, covariant2);
         }
     }
 
@@ -6058,6 +6382,117 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
 
   }
 
+
+
+  class VectorL2EmbeddedProlongation : public Prolongation
+  {
+    FESpace * fes;
+    shared_ptr<FESpace> fesL2;
+    Array<shared_ptr<BaseMatrix>> convL2toX, convXtoL2;
+    mutable Array<shared_ptr<SparseMatrix<double>>> prolmats;
+
+    AutoVector CreateL2Vector (size_t size, bool is_complex) const
+    {
+      if (is_complex)
+        return make_unique<VVector<Complex>> (size);
+      return make_unique<VVector<double>> (size);
+    }
+
+  public:
+    VectorL2EmbeddedProlongation (FESpace * afes, const string & mapping)
+      : fes(afes)
+    {
+      Flags flagsL2;
+      flagsL2.SetFlag ("order", fes->GetOrder());
+      flagsL2.SetFlag (mapping, true);
+      flagsL2.SetFlag ("hoprolongation", true);
+      if (fes->IsComplex()) flagsL2.SetFlag ("complex", true);
+      fesL2 = CreateFESpace ("VectorL2", fes->GetMeshAccess(), flagsL2);
+    }
+
+    virtual void Update (const FESpace & cfes) override
+    {
+      FESpace & afes = const_cast<FESpace&>(cfes);
+      fesL2->Update();
+      fesL2->FinalizeUpdate();
+
+      int levels = afes.GetMeshAccess()->GetNLevels();
+      if (convL2toX.Size() >= levels) return;
+
+      convL2toX.SetSize(levels);
+      convXtoL2.SetSize(levels);
+      prolmats.SetSize(levels);
+
+      auto ma = afes.GetMeshAccess();
+      Array<shared_ptr<PML_Transformation>> saved_pml(ma->GetPMLTrafos().Size());
+      for (int i = 0; i < saved_pml.Size(); i++)
+        if ((saved_pml[i] = ma->GetPML(i)))
+          ma->UnSetPML(i);
+
+      LocalHeap lh(10*1000*1000);
+      auto self = dynamic_pointer_cast<FESpace>(afes.shared_from_this());
+      convL2toX[levels-1] = ConvertOperator(fesL2, self, VOL, lh,
+                                            nullptr, nullptr, NULL, nullptr, false, true, false, 0, 0, true);
+      convXtoL2[levels-1] = ConvertOperator(self, fesL2, VOL, lh,
+                                            nullptr, nullptr, NULL, nullptr, false, true, false, 0, 0, true);
+
+      for (int i = 0; i < saved_pml.Size(); i++)
+        if (saved_pml[i]) ma->SetPML(saved_pml[i], i);
+    }
+
+    virtual size_t GetNDofLevel (int level) override
+    {
+      return fes->GetNDofLevel(level);
+    }
+
+    virtual shared_ptr<SparseMatrix<double>> CreateProlongationMatrix (int finelevel) const override
+    {
+      if (finelevel >= convL2toX.Size() || !convL2toX[finelevel] || !convXtoL2[finelevel-1])
+        return nullptr;
+
+      if (!prolmats[finelevel])
+        {
+          auto l2prol = fesL2->GetProlongation()->CreateProlongationMatrix(finelevel);
+          auto toX = dynamic_pointer_cast<SparseMatrixTM<double>> (convL2toX[finelevel]->CreateSparseMatrix());
+          auto toL2 = dynamic_pointer_cast<SparseMatrixTM<double>> (convXtoL2[finelevel-1]->CreateSparseMatrix());
+          if (!l2prol || !toX || !toL2)
+            return nullptr;
+          prolmats[finelevel] = dynamic_pointer_cast<SparseMatrix<double>> (MatMult (*toX, *MatMult (*l2prol, *toL2)));
+        }
+      return prolmats[finelevel];
+    }
+
+    virtual void ProlongateInline (int finelevel, BaseVector & v) const override
+    {
+      if (finelevel >= convL2toX.Size() || !convL2toX[finelevel] || !convXtoL2[finelevel-1])
+        throw Exception ("VectorL2EmbeddedProlongation: no conversion for level "+ToString(finelevel));
+      auto & toL2 = *convXtoL2[finelevel-1];
+      auto & toX = *convL2toX[finelevel];
+      auto vl2 = CreateL2Vector (toX.Width(), v.IsComplex());
+
+      vl2.Range(0, toL2.Height()) = toL2 * v.Range(0, toL2.Width());
+      fesL2->GetProlongation()->ProlongateInline(finelevel, vl2);
+      v.Range(0, toX.Height()) = toX * vl2;
+    }
+
+    virtual void RestrictInline (int finelevel, BaseVector & v) const override
+    {
+      if (finelevel >= convL2toX.Size() || !convL2toX[finelevel] || !convXtoL2[finelevel-1])
+        throw Exception ("VectorL2EmbeddedProlongation: no conversion for level "+ToString(finelevel));
+      auto & toL2 = *convXtoL2[finelevel-1];
+      auto & toX = *convL2toX[finelevel];
+      auto vl2 = CreateL2Vector (toX.Width(), v.IsComplex());
+
+      vl2 = Transpose(toX) * v.Range(0, toX.Height());
+      fesL2->GetProlongation()->RestrictInline(finelevel, vl2);
+      v.Range(0, toL2.Width()) = Transpose(toL2) * vl2.Range(0, toL2.Height());
+    }
+  };
+
+  shared_ptr<Prolongation> CreateVectorL2EmbeddedProlongation (FESpace * fes, const string & mapping)
+  {
+    return make_shared<VectorL2EmbeddedProlongation> (fes, mapping);
+  }
 
 
   static RegisterFESpace<L2HighOrderFESpace> initl2 ("L2");
