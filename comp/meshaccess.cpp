@@ -2147,9 +2147,15 @@ namespace ngcomp
   {
     static Timer t("MeshAccess::Refine"); RegionTimer reg(t);
     nlevels = std::numeric_limits<int>::max();
+    static Timer t_ng("MeshAccess::Refine netgen"); t_ng.Start();
     mesh.Refine(NG_REFINE_H, onlyonce);
+    t_ng.Stop();
+    static Timer t_ub("MeshAccess::Refine UpdateBuffers"); t_ub.Start();
     UpdateBuffers();
+    t_ub.Stop();
+    static Timer t_sig("MeshAccess::Refine updateSignal (fes/gfu autoupdate)"); t_sig.Start();
     updateSignal.Emit();
+    t_sig.Stop();
   }
 
   void MeshAccess :: Curve (int order)
