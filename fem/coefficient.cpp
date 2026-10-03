@@ -1636,7 +1636,10 @@ public:
   void CalcEquivalenceKey () override
   {
     std::stringstream ss;
-    if(Dimension() == 1)
+    // only a true scalar may share the key of the constant 0: a one-component
+    // vector zero (Dimensions() = {1}) is declared as var_i_0 in generated code,
+    // a scalar as var_i, so equal keys made code reference undeclared variables
+    if(Dimensions().Size() == 0)
     {
       equivalence_key = HexLiteral(0);
     }
