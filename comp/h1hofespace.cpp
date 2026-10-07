@@ -327,6 +327,351 @@ namespace ngcomp
 
 
 
+
+  /*
+    Local high-order prolongation (flag "localhoprolongation"), for nested
+    GridFunction updates after adaptive (bisection) refinement.
+
+    The spaces are nested and of the same order, so prolongation is the
+    identity on the function. Elements that were not refined keep their
+    index, vertices, edges and faces (netgen appends new entities and never
+    renumbers old ones), so their dofs are copied. On every changed element
+    the coarse polynomial of its coarse ancestor is represented exactly by the
+    element's dofs, which are obtained by an element-local L2 projection.
+    A dof shared by several changed elements is written by the one with the
+    lowest index (deterministic, no races). The cost is proportional to the
+    number of changed elements; nothing global is assembled or stored.
+
+    Only ProlongateInline from the previous level is supported (the nested
+    GridFunction update). Curved meshes, non-simplex elements or vector-valued
+    spaces fall back to the global H1HOProlongation.
+  */
+  class H1LocalHOProlongation : public Prolongation
+  {
+    weak_ptr<FESpace> fes;
+    shared_ptr<Prolongation> global;   // fallback, created on demand
+    bool decided = false;
+    bool use_global = false;
+
+    struct Snapshot
+    {
+      int nlevels = -1;          // ma->GetNLevels() when taken
+      size_t ndof = 0, ne = 0;
+      int nvert = 0;             // vertices per element
+      Array<int> verts;          // ne * nvert
+      Table<DofId> dnums;
+    };
+    Snapshot coarse, fine;
+
+    // Projection operators per fine-element orientation: in reference
+    // coordinates the element's mass matrix and shape values depend only on
+    // the ordering of its vertex numbers, so P = M^{-1} Phi W (ndof x nip)
+    // is computed once per ordering (6 for trigs, 24 for tets).
+    mutable Array<Matrix<double>> projP;   // indexed by OrientationCode
+    mutable int projP_ndof = -1;
+
+    static int OrientationCode (FlatArray<int> v)
+    {
+      int n = v.Size(), code = 0;
+      for (int k = 0; k < n; k++)
+        {
+          int rank = 0;
+          for (int j = 0; j < n; j++) if (v[j] < v[k]) rank++;
+          code = code * n + rank;
+        }
+      return code;
+    }
+
+    void BuildProjections (const FESpace & afes, LocalHeap & lh) const
+    {
+      static Timer t("H1LocalHOProlongation build projections"); RegionTimer reg(t);
+      auto ma = afes.GetMeshAccess();
+      int nv = ma->GetDimension()+1;
+      int ncode = 1;
+      for (int k = 0; k < nv; k++) ncode *= nv;
+      projP.SetSize (ncode);
+      ArrayMem<int,4> perm(nv);
+      for (int k = 0; k < nv; k++) perm[k] = k;
+      do
+        {
+          HeapReset hr(lh);
+          auto & febase = afes.GetFE (ElementId(VOL, 0), lh);
+          febase.SetVertexNumbers (perm);
+          auto & fe = dynamic_cast<const BaseScalarFiniteElement&> (febase);
+          int nd = fe.GetNDof();
+          const IntegrationRule & ir = SelectIntegrationRule (fe.ElementType(), 2*fe.Order());
+          int nip = ir.Size();
+          Matrix<> phi(nd, nip);
+          for (int q = 0; q < nip; q++)
+            fe.CalcShape (ir[q], phi.Col(q));
+          Matrix<> M(nd, nd);
+          M = 0.0;
+          for (int q = 0; q < nip; q++)
+            for (int r1 = 0; r1 < nd; r1++)
+              for (int c1 = 0; c1 < nd; c1++)
+                M(r1,c1) += ir[q].Weight() * phi(r1,q) * phi(c1,q);
+          CalcInverse (M);
+          Matrix<> P(nd, nip);
+          P = M * phi;
+          for (int q = 0; q < nip; q++)
+            P.Col(q) *= ir[q].Weight();
+          projP[OrientationCode(perm)] = std::move(P);
+          projP_ndof = nd;
+        }
+      while (std::next_permutation (perm.begin(), perm.end()));
+    }
+
+    static Snapshot TakeSnapshot (const FESpace & afes)
+    {
+      static Timer t("H1LocalHOProlongation::Snapshot"); RegionTimer reg(t);
+      auto ma = afes.GetMeshAccess();
+      Snapshot sn;
+      sn.nlevels = ma->GetNLevels();
+      sn.ndof = afes.GetNDof();
+      sn.ne = ma->GetNE(VOL);
+      sn.nvert = ma->GetDimension() + 1;
+      sn.verts.SetSize (sn.ne * sn.nvert);
+      Array<int> cnt(sn.ne);
+      ParallelForRange (sn.ne, [&] (IntRange r)
+        {
+          Array<DofId> dn;
+          for (auto i : r)
+            {
+              ElementId ei(VOL, i);
+              auto vs = ma->GetElement(ei).Vertices();
+              for (int k = 0; k < sn.nvert; k++)
+                sn.verts[i*sn.nvert+k] = vs[k];
+              afes.GetDofNrs (ei, dn);
+              cnt[i] = dn.Size();
+            }
+        });
+      sn.dnums = Table<DofId> (cnt);
+      ParallelForRange (sn.ne, [&] (IntRange r)
+        {
+          Array<DofId> dn;
+          for (auto i : r)
+            {
+              afes.GetDofNrs (ElementId(VOL, i), dn);
+              sn.dnums[i] = dn;
+            }
+        });
+      return sn;
+    }
+
+    void Decide (const FESpace & afes)
+    {
+      auto ma = afes.GetMeshAccess();
+      bool simplices = true;
+      ELEMENT_TYPE et = ma->GetDimension() == 2 ? ET_TRIG : ET_TET;
+      for (auto i : Range(ma->GetNE(VOL)))
+        if (ma->GetElement(ElementId(VOL, i)).GetType() != et) { simplices = false; break; }
+      use_global = !simplices || ma->GetDimension() < 2 || afes.GetDimension() != 1
+        || const_cast<MeshAccess&>(*ma).GetCurveOrder() > 1;
+      if (use_global)
+        global = make_shared<H1HOProlongation> (afes);
+      decided = true;
+    }
+
+  public:
+    H1LocalHOProlongation (const FESpace & afes) { ; }
+
+    virtual void Update (const FESpace & afes) override
+    {
+      Prolongation::Update (afes);
+      fes = dynamic_pointer_cast<FESpace>(const_cast<FESpace*>(&afes)->shared_from_this());
+      if (!decided) Decide (afes);
+      if (use_global) { global->Update (afes); return; }
+      int nlevels = afes.GetMeshAccess()->GetNLevels();
+      if (nlevels == fine.nlevels) return;     // Update is called several times per level
+      coarse = std::move (fine);
+      fine = TakeSnapshot (afes);
+    }
+
+    virtual size_t GetNDofLevel (int level) override
+    {
+      return fes.lock()->GetNDofLevel(level);
+    }
+
+    shared_ptr<SparseMatrix< double >> CreateProlongationMatrix (int finelevel) const override
+    {
+      if (use_global) return global->CreateProlongationMatrix (finelevel);
+      throw Exception ("localhoprolongation: no prolongation matrix (use hoprolongation)");
+    }
+
+    virtual void RestrictInline (int finelevel, BaseVector & v) const override
+    {
+      if (use_global) { global->RestrictInline (finelevel, v); return; }
+      throw Exception ("localhoprolongation: no restriction (use hoprolongation)");
+    }
+
+    virtual void ProlongateInline (int finelevel, BaseVector & v) const override
+    {
+      if (use_global) { global->ProlongateInline (finelevel, v); return; }
+      static Timer t("H1LocalHOProlongation::ProlongateInline"); RegionTimer reg(t);
+      static Timer tcopy("H1LocalHOProlongation copy");
+      static Timer tproj("H1LocalHOProlongation project");
+
+      auto afes = fes.lock();
+      auto ma = afes->GetMeshAccess();
+      if (coarse.nlevels != finelevel || fine.nlevels != finelevel+1)
+        throw Exception ("localhoprolongation: only prolongation from the previous level is supported");
+
+      const size_t ndc = coarse.ndof, ndf = fine.ndof;
+      const size_t nec = coarse.ne, nef = fine.ne;
+      const int nv = fine.nvert;
+      const int D = ma->GetDimension();
+      FlatVector<double> fv = v.FV<double>();
+      Vector<double> vc(ndc);
+      vc = fv.Range(0, ndc);
+      fv = 0.0;
+
+      auto unchanged = [&] (size_t i)
+        {
+          if (i >= nec) return false;
+          for (int k = 0; k < nv; k++)
+            if (coarse.verts[i*nv+k] != fine.verts[i*nv+k]) return false;
+          return coarse.dnums[i].Size() == fine.dnums[i].Size();
+        };
+
+      // 1. copy the dofs of unchanged elements
+      tcopy.Start();
+      BitArray done(ndf);
+      done.Clear();
+      ParallelFor (nef, [&] (size_t i)
+        {
+          if (!unchanged(i)) return;
+          auto dc = coarse.dnums[i];
+          auto df = fine.dnums[i];
+          for (auto k : Range(df))
+            if (IsRegularDof(df[k]) && IsRegularDof(dc[k]))
+              {
+                fv[df[k]] = vc[dc[k]];
+                done.SetBitAtomic (df[k]);
+              }
+        });
+
+      // owner of every remaining dof: the lowest-index changed element containing it
+      Array<int> owner(ndf);
+      owner = std::numeric_limits<int>::max();
+      ParallelFor (nef, [&] (size_t i)
+        {
+          if (unchanged(i)) return;
+          for (auto d : fine.dnums[i])
+            if (IsRegularDof(d) && !done.Test(d))
+              {
+                auto & o = AsAtomic(owner[d]);
+                int cur = o.load();
+                while (int(i) < cur && !o.compare_exchange_weak(cur, int(i))) ;
+              }
+        });
+      tcopy.Stop();
+
+      // 2. element-local L2 projection on changed elements
+      if (projP.Size() == 0)
+        {
+          LocalHeap lh0(10000000, "localhoprol-init");
+          BuildProjections (*afes, lh0);
+        }
+      tproj.Start();
+      ParallelForRange (nef, [&] (IntRange r)
+        {
+          LocalHeap lh(1000000, "localhoprol");
+          for (auto i : r)
+            {
+              if (unchanged(i)) continue;
+              auto df = fine.dnums[i];
+              bool any = false;
+              for (auto d : df)
+                if (IsRegularDof(d) && owner[d] == int(i)) { any = true; break; }
+              if (!any) continue;
+              HeapReset hr(lh);
+
+              // coarse ancestor: in-place children keep the parent's index,
+              // appended children point to their parent
+              size_t a = i;
+              while (a >= nec)
+                {
+                  int pa = ma->GetParentElement(ElementId(VOL, a)).Nr();
+                  if (pa < 0 || size_t(pa) >= a)
+                    throw Exception ("localhoprolongation: missing parent element");
+                  a = pa;
+                }
+              auto dc = coarse.dnums[a];
+              if (dc.Size() != df.Size())
+                throw Exception ("localhoprolongation: element orders differ between levels");
+
+              ElementId ei(VOL, i);
+              auto & fecbase = afes->GetFE(ei, lh);
+              ArrayMem<int,4> cv(nv), fvn(nv);
+              for (int k = 0; k < nv; k++)
+                {
+                  cv[k] = coarse.verts[a*nv+k];
+                  fvn[k] = fine.verts[i*nv+k];
+                }
+              fecbase.SetVertexNumbers (cv);
+              auto & fec = dynamic_cast<const BaseScalarFiniteElement&> (fecbase);
+              int nd = fec.GetNDof();
+              if (nd != projP_ndof)
+                throw Exception ("localhoprolongation: non-uniform element order");
+              const Matrix<> & P = projP[OrientationCode(fvn)];
+
+              // vertex coordinates
+              Mat<4,3> xf = 0.0, xc = 0.0;
+              for (int k = 0; k < nv; k++)
+                {
+                  auto pf = ma->GetPoint<3>(fvn[k]);
+                  auto pc = ma->GetPoint<3>(cv[k]);
+                  for (int j = 0; j < 3; j++) { xf(k,j) = pf(j); xc(k,j) = pc(j); }
+                }
+              // affine map of the coarse element: x = xc[D] + sum_k lam_k (xc[k] - xc[D])
+              Mat<3,3> J = 0.0;
+              for (int k = 0; k < D; k++)
+                for (int j = 0; j < D; j++)
+                  J(j,k) = xc(k,j) - xc(D,j);
+              Mat<3,3> Jinv = 0.0;
+              if (D == 2)
+                {
+                  double det = J(0,0)*J(1,1) - J(0,1)*J(1,0);
+                  Jinv(0,0) = J(1,1)/det; Jinv(0,1) = -J(0,1)/det;
+                  Jinv(1,0) = -J(1,0)/det; Jinv(1,1) = J(0,0)/det;
+                }
+              else
+                Jinv = Inv(J);
+
+              const IntegrationRule & ir = SelectIntegrationRule (fec.ElementType(), 2*fec.Order());
+              int nip = ir.Size();
+              FlatVector<> sc(nd, lh), uc(nd, lh), uq(nip, lh);
+              for (int k = 0; k < nd; k++) uc(k) = vc[dc[k]];
+              for (int q = 0; q < nip; q++)
+                {
+                  const IntegrationPoint & ip = ir[q];
+                  // fine reference point -> physical point
+                  double lam[4];
+                  for (int k = 0; k < D; k++) lam[k] = ip(k);
+                  lam[D] = 1.0;
+                  for (int k = 0; k < D; k++) lam[D] -= ip(k);
+                  Vec<3> x = 0.0;
+                  for (int k = 0; k <= D; k++)
+                    for (int j = 0; j < 3; j++) x(j) += lam[k] * xf(k,j);
+                  // physical point -> coarse reference point
+                  Vec<3> rhs = 0.0;
+                  for (int j = 0; j < D; j++) rhs(j) = x(j) - xc(D,j);
+                  Vec<3> xi = Jinv * rhs;
+                  IntegrationPoint ipc(xi(0), xi(1), D == 3 ? xi(2) : 0.0, 0.0);
+                  fec.CalcShape (ipc, sc);
+                  uq(q) = InnerProduct (sc, uc);
+                }
+              FlatVector<> c(nd, lh);
+              c = P * uq;
+              for (auto k : Range(df))
+                if (IsRegularDof(df[k]) && owner[df[k]] == int(i))
+                  fv[df[k]] = c(k);
+            }
+        });
+      tproj.Stop();
+    }
+  };
+
   
   H1HighOrderFESpace ::  
   H1HighOrderFESpace (shared_ptr<MeshAccess> ama, const Flags & flags, bool parseflags)
@@ -400,6 +745,9 @@ namespace ngcomp
 
 
     test_ho_prolongation = flags.GetDefineFlag("hoprolongation");
+    bool local_ho_prolongation = flags.GetDefineFlag("localhoprolongation");
+    if (local_ho_prolongation)
+      test_ho_prolongation = true;
     if (test_ho_prolongation)
       no_low_order_space=true;
     
@@ -510,6 +858,8 @@ namespace ngcomp
 
     if (!test_ho_prolongation)
       prol = make_shared<LinearProlongation> (GetMeshAccess());
+    else if (local_ho_prolongation)
+      prol = make_shared<H1LocalHOProlongation> (*this);
     else
       prol = make_shared<H1HOProlongation> (*this);      
     needs_transform_vec = false;
@@ -553,6 +903,11 @@ into the wirebasket.
     docu.Arg("hoprolongation") = "bool = false\n"
       "  (experimental, only trigs) creates high order prolongation,\n"
       "  and switches off low-order space";
+    docu.Arg("localhoprolongation") = "bool = false\n"
+      "  like hoprolongation, but local: after adaptive refinement, dofs of\n"
+      "  unrefined elements are copied and only refined elements are\n"
+      "  projected (cost ~ #changed elements, no global operators stored).\n"
+      "  Only for nested GridFunction updates from the previous level.";
     docu.Arg("orderinner");
     docu.Arg("orderedge");
     docu.Arg("orderface");    
