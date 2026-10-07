@@ -442,18 +442,25 @@ namespace ngcomp
       size_t ne = ma->GetDimension() == 3 ? ma->GetNSE() : ma->GetNE();
       cout << IM(3) << "update prol, level = " << ma->GetNLevels() <<  ", ne = " << ne << endl;
       
+      if (els_on_level.Size() == 0)
+        {
+          // first update: the mesh may already be refined, the current
+          // elements are the coarsest this space knows (no prolongation
+          // into the current level)
+          els_on_level.SetSize(ma->GetNLevels());
+          els_on_level = ne;
+          trig_creation_class.SetSize(ne);
+          trig_creation_class = 0;
+          return;
+        }
+
       while (els_on_level.Size() < ma->GetNLevels())
         els_on_level.Append(oldne);
       els_on_level[ma->GetNLevels()-1] = ne;
 
       cout << IM(3) << "els_on_level = " << endl << els_on_level << endl;
 
-      if (ma->GetNLevels() == 1)
-        {
-          trig_creation_class.SetSize(ne);
-          trig_creation_class = 0;
-          return;
-        }
+      if (ne == oldne) return;
 
       CalcMatrices();
       
@@ -744,18 +751,25 @@ namespace ngcomp
       size_t ne = ma->GetNE();
       cout << IM(3) << "update prol, level = " << ma->GetNLevels() <<  ", ne = " << ne << endl;
       
+      if (els_on_level.Size() == 0)
+        {
+          // first update: the mesh may already be refined, the current
+          // elements are the coarsest this space knows (no prolongation
+          // into the current level)
+          els_on_level.SetSize(ma->GetNLevels());
+          els_on_level = ne;
+          tet_creation_class.SetSize(ne);
+          tet_creation_class = 0;
+          return;
+        }
+
       while (els_on_level.Size() < ma->GetNLevels())
         els_on_level.Append(oldne);
       els_on_level[ma->GetNLevels()-1] = ne;
 
       cout << IM(3) << "els_on_level = " << endl << els_on_level << endl;
 
-      if (ma->GetNLevels() == 1)
-        {
-          tet_creation_class.SetSize(ne);
-          tet_creation_class = 0;
-          return;
-        }
+      if (ne == oldne) return;
 
       CalcMatrices();
       
@@ -1065,7 +1079,7 @@ namespace ngcomp
           if (el.GetType() != ET_TRIG && el.GetType() != ET_TET)
             allsimplex = false;
         allsimplex = !ma->GetCommunicator().AllReduce(!allsimplex, NG_MPI_LOR);
-        if (allsimplex && ma->GetNLevels() == 1)
+        if (allsimplex)
           {
             if (ma->GetDimension() == 3)
               prol = make_shared<L2HoProlongationTet>(ma, order, first_element_dof);
@@ -2476,7 +2490,7 @@ global system.
           if (el.GetType() != ET_TRIG)
             allsimplex = false;
         allsimplex = !ma->GetCommunicator().AllReduce(!allsimplex, NG_MPI_LOR);
-        if(ma->GetDimension() == 3 && allsimplex && ma->GetNLevels() ==1)
+        if(ma->GetDimension() == 3 && allsimplex)
           prol = make_shared<L2HoProlongationTrig>(ma, order, first_element_dof);
       }
 
@@ -4306,6 +4320,18 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
       size_t ne = ma->GetNE();
       cout << IM(3) << "update prol, level = " << ma->GetNLevels() <<  ", ne = " << ne << endl;
       
+      if (els_on_level.Size() == 0)
+        {
+          // first update: the mesh may already be refined, the current
+          // elements are the coarsest this space knows (no prolongation
+          // into the current level)
+          els_on_level.SetSize(ma->GetNLevels());
+          els_on_level = ne;
+          trig_creation_class.SetSize(ne);
+          trig_creation_class = 0;
+          return;
+        }
+
       while (els_on_level.Size() < ma->GetNLevels())
         els_on_level.Append(oldne);
       els_on_level[ma->GetNLevels()-1] = ne;
@@ -4625,6 +4651,18 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
       size_t ne = ma->GetNE();
       cout << IM(3) << "update prol, level = " << ma->GetNLevels() <<  ", ne = " << ne << endl;
       
+      if (els_on_level.Size() == 0)
+        {
+          // first update: the mesh may already be refined, the current
+          // elements are the coarsest this space knows (no prolongation
+          // into the current level)
+          els_on_level.SetSize(ma->GetNLevels());
+          els_on_level = ne;
+          tet_creation_class.SetSize(ne);
+          tet_creation_class = 0;
+          return;
+        }
+
       while (els_on_level.Size() < ma->GetNLevels())
         els_on_level.Append(oldne);
       els_on_level[ma->GetNLevels()-1] = ne;
@@ -4637,8 +4675,7 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
         for (int j = 0; j < 4; j++)
           tet_creation_verts[i][j] = ma->GetElement({VOL,i}).Vertices()[j];
 
-      if (ma->GetNLevels() == 1)
-        return;
+      if (ne == oldne) return;
 
       BitArray isparent(ne);
       BitArray isdone(ne);
