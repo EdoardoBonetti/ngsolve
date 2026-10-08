@@ -73,6 +73,13 @@ namespace ngla
   void JacobiPrecond<TM,TV_ROW,TV_COL> ::
   MultAdd (double s, const BaseVector & x, BaseVector & y) const 
   {
+    if constexpr (!ngbla::IsComplex<TV_ROW>())
+      if (x.IsComplex() || y.IsComplex())
+        {  // real diagonal, complex vectors
+          this->MultComplexByParts (s, x, y, true);
+          return;
+        }
+
     static Timer t("JacobiPrecond::MultAdd");
     RegionTimer reg(t);
 

@@ -513,6 +513,14 @@ namespace ngcomp
       static Timer timerharmonicexttrans ("Apply BDDC preconditioner - harmonic extension trans");
       
 
+      // the building blocks (and tmp) are real: apply to real and imaginary part separately
+      if constexpr (!ngbla::IsComplex<TV>())
+        if (x.IsComplex() || y.IsComplex())
+          {
+            MultComplexByParts (1, x, y, false);
+            return;
+          }
+      
       RegionTimer reg (timer);
 
       x.Distribute();

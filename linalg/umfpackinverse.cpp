@@ -331,6 +331,13 @@ namespace ngla
   void S_UmfpackInverse_SVec<SCAL,SCAL_VEC> ::
   Mult (const BaseVector & x, BaseVector & y) const
   {
+    if constexpr (!ngbla::IsComplex<SCAL_VEC>())
+      if (x.IsComplex() || y.IsComplex())
+        {  // real factorization, complex vectors
+          this->MultComplexByParts (1, x, y, false);
+          return;
+        }
+
     static Timer timer(string("Umfpack Solve, mat = ") + typeid(SCAL).name() + ", vec = " + typeid(SCAL_VEC).name());
     RegionTimer reg (timer);
 

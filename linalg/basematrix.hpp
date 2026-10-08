@@ -66,7 +66,14 @@ namespace ngla
 
     /// is matrix complex ? derived from the column format
     virtual bool IsComplex() const;
-    
+
+    /// a real operator applied to complex vector(s) ?
+    bool RealOnComplex (const BaseVector & x, const BaseVector & y) const;
+    /// y = s * A x, or y += s * A x if add, (A^T if trans) for a real operator A
+    /// and complex vector(s): applies A to the real and the imaginary part of x
+    void MultComplexByParts (Complex s, const BaseVector & x, BaseVector & y,
+                             bool add, bool trans = false) const;
+
     /// scalar assignment
     BaseMatrix & operator= (double s)
     {

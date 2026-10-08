@@ -181,7 +181,10 @@ namespace ngla
 
   BaseVector & ParallelBaseVector :: Set (Complex scal, const BaseVector & v)
   {
-    FV<Complex>() = scal * v.FV<Complex>();
+    if (v.IsComplex())
+      FV<Complex>() = scal * v.FV<Complex>();
+    else
+      FV<Complex>() = scal * v.FV<double>();
     const ParallelBaseVector * parv = dynamic_cast_ParallelBaseVector (&v);
 
     if ( parv->IsParallelVector() )
@@ -221,7 +224,10 @@ namespace ngla
 	  parv->Cumulate();
       }
 
-    FV<Complex>() += scal * parv->FV<Complex>();
+    if (parv->IsComplex())
+      FV<Complex>() += scal * parv->FV<Complex>();
+    else
+      FV<Complex>() += scal * parv->FV<double>();
     return *this;
   }
 

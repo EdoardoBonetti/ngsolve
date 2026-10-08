@@ -693,7 +693,8 @@ namespace ngla
     The host memory of the vector as FlatVector<T>. T's real type must be
     the vector's real type: a complex vector may be viewed as complex or
     as twice as many reals, a Vec<3,double> vector as double, but a float
-    vector never as double. Length in T's from the byte size.
+    vector never as double, and a real vector never as complex.
+    Length in T's from the byte size.
   */
   template <typename T> inline string ScalarTypeName ()
   {
@@ -706,11 +707,13 @@ namespace ngla
   template <typename T>
   inline FlatVector<T> BaseVector::FV () const
   {
-    typedef typename scal_traits<typename mat_traits<T>::TSCAL>::TSCAL_REAL TREAL;
+    typedef typename mat_traits<T>::TSCAL TSCAL;
+    typedef typename scal_traits<TSCAL>::TSCAL_REAL TREAL;
     size_t bytes = std::visit ([&] (auto proto) -> size_t
     {
       typedef typename scal_traits<decltype(proto)>::TSCAL_REAL VREAL;
-      if constexpr (!std::is_same_v<VREAL,TREAL>)
+      if constexpr (!std::is_same_v<VREAL,TREAL> ||
+                    (ngbla::IsComplex<TSCAL>() && !ngbla::IsComplex<decltype(proto)>()))
         throw Exception ("BaseVector::FV<" + ScalarTypeName<T>() + "> called for a vector of "
                          + ScalarTypeName<decltype(proto)>());
       return size_t(size) * entrysize * sizeof(VREAL);

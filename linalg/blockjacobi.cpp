@@ -592,6 +592,13 @@ namespace ngla
   void BlockJacobiPrecond<TM, TV_ROW, TV_COL> ::
   MultAdd (TSCAL64 s, const BaseVector & x, BaseVector & y) const 
   {
+    if constexpr (!ngbla::IsComplex<TVX>())
+      if (x.IsComplex() || y.IsComplex())
+        {  // real blocks, complex vectors
+          this->MultComplexByParts (s, x, y, true);
+          return;
+        }
+
     static Timer timer("BlockJacobi::MultAdd");
     RegionTimer reg (timer);
     
@@ -1085,6 +1092,13 @@ namespace ngla
   void BlockJacobiPrecondSymmetric<TM,TV> :: 
   MultAdd (TSCAL64 s, const BaseVector & x, BaseVector & y) const 
   {
+    if constexpr (!ngbla::IsComplex<TVX>())
+      if (x.IsComplex() || y.IsComplex())
+        {  // real blocks, complex vectors
+          this->MultComplexByParts (s, x, y, true);
+          return;
+        }
+
     static Timer timer("BlockJacobiSymmetric::MultAdd");
     RegionTimer reg (timer);
 
