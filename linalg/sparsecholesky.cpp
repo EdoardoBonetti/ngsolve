@@ -1998,6 +1998,13 @@ namespace ngla
   void SparseCholesky<TM, TV_ROW, TV_COL> :: 
   MultAdd (TSCAL64 s, const BaseVector & x, BaseVector & y) const
   {
+    if constexpr (!ngbla::IsComplex<TVX>())
+      if (x.IsComplex() || y.IsComplex())
+        {  // real factorization, complex vectors
+          this->MultComplexByParts (s, x, y, true);
+          return;
+        }
+
     static Timer timer("SparseCholesky<d,d,d>::MultAdd");
     RegionTimer reg (timer);
     timer.AddFlops (2.0*lfact.Size());

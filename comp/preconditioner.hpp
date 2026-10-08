@@ -84,25 +84,37 @@ namespace ngcomp
     virtual shared_ptr<BitArray> GetFreeDofs (bool external = false) const;
     
     
-    ///
+    /// a real preconditioner acts on real and imaginary part of complex vectors
     virtual void Mult (const BaseVector & x, BaseVector & y) const override
     {
-      GetMatrix().Mult(x, y);
+      if (RealOnComplex(x, y))
+        MultComplexByParts (1, x, y, false);
+      else
+        GetMatrix().Mult(x, y);
     }
 
     virtual void MultAdd (double s, const BaseVector & x, BaseVector & y) const override
     {
-      GetMatrix().MultAdd(s, x, y);
+      if (RealOnComplex(x, y))
+        MultComplexByParts (s, x, y, true);
+      else
+        GetMatrix().MultAdd(s, x, y);
     }
 
     virtual void MultTrans (const BaseVector & x, BaseVector & y) const override
     {
-      GetMatrix().MultTrans(x, y);
+      if (RealOnComplex(x, y))
+        MultComplexByParts (1, x, y, false, true);
+      else
+        GetMatrix().MultTrans(x, y);
     }
 
     virtual void MultTransAdd (double s, const BaseVector & x, BaseVector & y) const override
     {
-      GetMatrix().MultTransAdd(s, x, y);
+      if (RealOnComplex(x, y))
+        MultComplexByParts (s, x, y, true, true);
+      else
+        GetMatrix().MultTransAdd(s, x, y);
     }
 
 

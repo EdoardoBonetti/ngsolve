@@ -78,6 +78,66 @@ namespace ngla
     return ColFormat().IsComplex();
   }
 
+  bool BaseMatrix :: RealOnComplex (const BaseVector & x, const BaseVector & y) const
+  {
+    return (x.IsComplex() || y.IsComplex()) && !IsComplex();
+  }
+
+  // a real vector for the complex vector v: the operator's format knows the
+  // real ParallelDofs, a sequential vector can take its own format
+  static AutoVector RealVectorFor (const BaseMatrix & m, bool row, const BaseVector & v)
+  {
+    try
+      {
+        auto hv = row ? m.CreateRowVector() : m.CreateColVector();
+        if (!hv.IsComplex() && 2*hv.FV<double>().Size() == v.FV<double>().Size())
+          return hv;
+      }
+    catch (Exception &) { ; }
+    if (v.GetFormat().pardofs)
+      throw Exception (string("real operator applied to complex parallel vector: no real vector format available, type = ")
+                       + typeid(m).name());
+    return CreateBaseVector (v.GetFormat().WithScalar(double(0)));
+  }
+
+  void BaseMatrix :: MultComplexByParts (Complex s, const BaseVector & x, BaseVector & y,
+                                         bool add, bool trans) const
+  {
+    if (!y.IsComplex())
+      throw Exception (string("real operator applied to a complex vector, but the result vector is real, type = ")
+                       + typeid(*this).name());
+
+    auto apply = [&] (const BaseVector & hx, BaseVector & hy)
+    {
+      if (trans) MultTrans (hx, hy);
+      else Mult (hx, hy);
+    };
+
+    auto hy = RealVectorFor (*this, trans, y);
+    if (!add) y = 0.0;
+
+    if (!x.IsComplex())
+      {
+        apply (x, hy);
+        y.Add (s, hy);
+        return;
+      }
+
+    auto hx = RealVectorFor (*this, !trans, x);
+    auto fx = x.FV<Complex>();
+    auto fhx = hx.FV<double>();
+
+    fhx = Real(fx);
+    hx.SetParallelStatus (x.GetParallelStatus());
+    apply (hx, hy);
+    y.Add (s, hy);
+
+    fhx = Imag(fx);
+    hx.SetParallelStatus (x.GetParallelStatus());
+    apply (hx, hy);
+    y.Add (s*Complex(0,1), hy);
+  }
+
   BaseVector & BaseMatrix :: AsVector()
   {
     throw Exception (string("BaseMatrix::AsVector not overloaded, type = ")+typeid(*this).name());
