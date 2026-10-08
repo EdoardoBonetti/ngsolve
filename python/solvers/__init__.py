@@ -1,4 +1,4 @@
-from ngsolve.eigenvalues import PINVIT, LOBPCG
+from ngsolve.eigenvalues import PINVIT, LOBPCG, GPLHR
 from ngsolve.krylovspace import CG, QMR, TFQMR, MinRes, PreconditionedRichardson, GMRES, GMRes
 from ngsolve.krylovspace import CGSolver, QMRSolver, TFQMRSolver, MinResSolver, GMRESSolver, GMResSolver
 from ngsolve.nonlinearsolvers import Newton, NewtonMinimization
