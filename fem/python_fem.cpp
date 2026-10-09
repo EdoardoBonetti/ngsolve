@@ -1180,6 +1180,163 @@ keep_files : bool
        py::arg("randomized")=true,
        py::arg("critical_value")=-1
     )
+    .def("_BuildTendexLines", [](shared_ptr<CoefficientFunction> cf, shared_ptr<ngcomp::MeshAccess> ma,
+                                 const std::vector<std::tuple<double,double,double>> & start_points,
+                                 py::object metric_obj, int family, std::tuple<double,double,double> plane_normal, int which,
+                                 double length, double max_points, double thickness, double tolerance,
+                                 int direction, double degeneracy)
+    {
+        // Integral curves of an eigenvector field of the symmetric 3x3 field cf w.r.t. the metric:
+        // cf v = lambda metric v (tendex lines of the tidal field E_ij, vortex lines of the frame-drag
+        // field B_ij). family 0,1,2 = eigenvalues in ascending order; with a nonzero plane_normal, of
+        // the eigenvectors in that plane the one with the smallest (which=0) or largest (which=1)
+        // eigenvalue. The value on the line is the eigenvalue. A line ends where its eigenvalue is
+        // within degeneracy*max|lambda| of another one (the direction is undefined there).
+        // metric None: the plain symmetric eigenproblem cf v = lambda v
+        shared_ptr<CoefficientFunction> metric;
+        if (!metric_obj.is_none()) metric = py::cast<shared_ptr<CoefficientFunction>>(metric_obj);
+        if (cf->Dimension() != 9 || (metric && metric->Dimension() != 9))
+          throw Exception("_BuildTendexLines: cf and metric must be 3x3 matrix valued");
+        Array<netgen::Point<3>> points;
+        for(const auto & [x,y,z] : start_points)
+            points.Append(netgen::Point<3>{x,y,z});
+        Vec<3> nrm(std::get<0>(plane_normal), std::get<1>(plane_normal), std::get<2>(plane_normal));
+        bool inplane = L2Norm(nrm) > 0;
+        if (inplane) nrm /= L2Norm(nrm);
+
+        std::function<bool(int, const double*, netgen::Vec<3>&)> dummy =
+          [](int, const double*, netgen::Vec<3>& v) { v = 0.0; return false; };
+
+        std::function eval_func = [&](int elnr, const double * lami, netgen::Vec<3> & vec, double & value)
+        {
+            vec = 0.0; value = 0.0;
+            LocalHeapMem<10000> lh("TendexLines evaluate");
+            auto eid = ElementId(VOL, elnr);
+            Vec<3> lam(lami[0], lami[1], lami[2]);
+            if(ma->GetElType(eid) == ET_TRIG) {
+              lam[0] = 1-lami[0]-lami[1];
+              lam[1] = lami[0];
+            }
+            auto& trafo = ma->GetTrafo(eid, lh);
+            // evaluate on a one-point rule, not on the point: compiled CoefficientFunctions take their
+            // fast (compiled) path only for rules, the single-point path is ~200x slower
+            IntegrationRule ir;
+            ir.Append(IntegrationPoint(lam[0], lam[1], lam[2]));
+            auto & mir = trafo(ir, lh);
+            FlatMatrix<double> tm(1, 9, lh), gm(1, 9, lh);
+            cf->Evaluate(mir, tm);
+            if (metric) metric->Evaluate(mir, gm);
+            Vec<9> tv, gv;
+            for (int i = 0; i < 9; i++) { tv[i] = tm(0,i); gv[i] = metric ? gm(0,i) : (i % 4 == 0 ? 1.0 : 0.0); }
+            Mat<3,3> T, G, L = 0.0, Li = 0.0;
+            for (int i = 0; i < 3; i++)
+              for (int j = 0; j < 3; j++)
+                { T(i,j) = 0.5*(tv[3*i+j]+tv[3*j+i]); G(i,j) = 0.5*(gv[3*i+j]+gv[3*j+i]); }
+            for (double t : tv) if (!std::isfinite(t)) return false;
+            // Cholesky G = L L^T, then the symmetric problem L^-1 T L^-T w = lambda w, v = L^-T w
+            for (int j = 0; j < 3; j++)
+              {
+                double d = G(j,j);
+                for (int k = 0; k < j; k++) d -= L(j,k)*L(j,k);
+                if (!(d > 0)) return false;
+                L(j,j) = sqrt(d);
+                for (int i = j+1; i < 3; i++)
+                  {
+                    double s = G(i,j);
+                    for (int k = 0; k < j; k++) s -= L(i,k)*L(j,k);
+                    L(i,j) = s / L(j,j);
+                  }
+              }
+            for (int j = 0; j < 3; j++)
+              {
+                Li(j,j) = 1/L(j,j);
+                for (int i = j+1; i < 3; i++)
+                  {
+                    double s = 0;
+                    for (int k = j; k < i; k++) s -= L(i,k)*Li(k,j);
+                    Li(i,j) = s / L(i,i);
+                  }
+              }
+            Mat<3,3> A = Li * T * Trans(Li), W = 0.0;
+            for (int i = 0; i < 3; i++) W(i,i) = 1;
+            for (int sweep = 0; sweep < 30; sweep++)            // cyclic Jacobi
+              {
+                double off = sqr(A(0,1)) + sqr(A(0,2)) + sqr(A(1,2));
+                if (off <= 1e-30 * (sqr(A(0,0)) + sqr(A(1,1)) + sqr(A(2,2))) || off == 0) break;
+                for (int p = 0; p < 2; p++)
+                  for (int q = p+1; q < 3; q++)
+                    {
+                      if (A(p,q) == 0) continue;
+                      double theta = 0.5 * (A(q,q) - A(p,p)) / A(p,q);
+                      double t = (theta >= 0 ? 1 : -1) / (fabs(theta) + sqrt(theta*theta + 1));
+                      double c = 1 / sqrt(t*t + 1), s = t * c;
+                      Mat<3,3> J = 0.0;
+                      for (int i = 0; i < 3; i++) J(i,i) = 1;
+                      J(p,p) = c; J(q,q) = c; J(p,q) = s; J(q,p) = -s;
+                      A = Trans(J) * A * J;
+                      W = W * J;
+                    }
+              }
+            Vec<3> lamv(A(0,0), A(1,1), A(2,2));
+            Mat<3,3> V = Trans(Li) * W;                       // columns: metric-unit eigenvectors
+            int ord[3] = {0, 1, 2};
+            std::sort(ord, ord+3, [&](int a, int b) { return lamv[a] < lamv[b]; });
+            int k = ord[std::clamp(family, 0, 2)];
+            if (inplane)
+              {
+                k = -1;
+                for (int jj = 0; jj < 3; jj++)
+                  {
+                    int j = ord[which == 0 ? jj : 2-jj];
+                    Vec<3> col(V(0,j), V(1,j), V(2,j));
+                    if (fabs(InnerProduct(col, nrm)) < 0.5 * L2Norm(col)) { k = j; break; }
+                  }
+                if (k < 0) return false;
+              }
+            double lmax = max(fabs(lamv[0]), max(fabs(lamv[1]), fabs(lamv[2])));
+            for (int j = 0; j < 3; j++)
+              if (j != k && fabs(lamv[j] - lamv[k]) < degeneracy * lmax) return false;
+            for (int i = 0; i < 3; i++) vec[i] = V(i,k);
+            value = lamv[k];
+            return true;
+        };
+
+        netgen::Point<3> pmin, pmax;
+        ma->GetNetgenMesh()->GetBox(pmin, pmax);
+        double diam = Dist(pmin, pmax);                 // FieldLineCalc measures lengths relative to this
+        netgen::FieldLineCalc linecalc(*ma->GetNetgenMesh(), dummy, length/diam, max_points,
+                                       thickness/diam, tolerance/diam, 3, direction);
+        linecalc.SetValueFunction(eval_func);
+        linecalc.SetLineField(true);
+        linecalc.SetCriticalValue(-1);
+        linecalc.GenerateFieldLines(points, points.Size());
+
+        auto convert = [](const auto & data) {
+            std::vector<double> a;
+            if(data.Size()==0)
+                return a;
+            size_t n = data.Size() * sizeof(data[0])/sizeof(double);
+            double * p = reinterpret_cast<double*>(&data[0]);
+            for(auto i : Range(n))
+                a.push_back(p[i]);
+            return a;
+        };
+
+        py::dict res;
+        res["type"] = py::cast("fieldlines");
+        res["name"] = py::cast("tendexlines");
+        res["pstart"] = convert(linecalc.GetPStart());
+        res["pend"] = convert(linecalc.GetPEnd());
+        res["value"] = convert(linecalc.GetValues());
+        res["thickness"] = py::cast(linecalc.GetThickness());
+        return res;
+    }, py::arg("mesh"), py::arg("start_points"), py::arg("metric")=py::none(), py::arg("family")=0,
+       py::arg("plane_normal")=std::make_tuple(0.,0.,0.), py::arg("which")=0,
+       py::arg("length")=1.0, py::arg("max_points")=5000, py::arg("thickness")=0.01,
+       py::arg("tolerance")=1e-4, py::arg("direction")=0, py::arg("degeneracy")=1e-3,
+       "Eigenvector lines (tendex / vortex lines) of the symmetric 3x3 field self, w.r.t. an optional metric: "
+       "integral curves of one eigenvector field (lengths are absolute; returns the dict of "
+       "ngsolve.webgui.FieldLines, value = eigenvalue). Use ngsolve.webgui.TendexLines.")
     ;
 
   m.def("Cross", [] (shared_ptr<CF> cf1, shared_ptr<CF> cf2) { return CrossProduct(cf1, cf2); });
