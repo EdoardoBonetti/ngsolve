@@ -9,6 +9,9 @@
 #include "../fem/hcurlcurlfe.hpp"
 #include "../fem/hcurlhdiv_dshape.hpp"
 #include <diffop_impl.hpp>
+#include <prolongation.hpp>
+#include <functional>
+#include <unordered_map>
 
 
 namespace ngcomp
@@ -1747,7 +1750,272 @@ namespace ngcomp
   
 
 
-  
+  /*
+    Prolongation for HCurlCurl on refined tetrahedral meshes (3D, uniform order).
+
+    Refinement keeps the spaces nested: a coarse function restricted to a fine element is a
+    polynomial of the same degree, so the local L2 projection onto the fine element basis
+    reproduces it exactly,
+        P_loc = M^{-1} B,   M = (psi_i, psi_j)_T,   B = (psi_i, phi_j)_T,
+    with psi the fine basis and phi the basis of the parent element, rebuilt from the parent's
+    vertex numbers (same orientation as on the coarse level). A fine dof shared by several fine
+    elements is taken from the first one, they all agree. The parent is found from the coarse
+    ancestors of the fine vertices, so no element hierarchy is needed. Where refinement moves new
+    vertices onto a curved boundary, the parent polynomial is extrapolated: still a usable
+    multigrid transfer, but no longer an exact embedding.
+  */
+  class HCurlCurlProlongation : public Prolongation
+  {
+    const FESpace & fes;
+    shared_ptr<MeshAccess> ma;
+
+    Array<size_t> ndoflevel;
+    Array<shared_ptr<SparseMatrix<double>>> prol, prolT;   // level l-1 -> l, nullptr if unknown
+
+    // the last level, needed to build the next prolongation
+    size_t nvlast = 0;
+    Array<IVec<4>> elverts;
+    Table<DofId> eldofs;
+    std::unordered_map<size_t, Array<int>> elhash;       // sorted vertices -> elements
+
+    static IVec<4> SortedKey (IVec<4> v)
+    {
+      for (int i = 0; i < 4; i++)
+        for (int j = i + 1; j < 4; j++)
+          if (v[j] < v[i]) std::swap (v[i], v[j]);
+      return v;
+    }
+    static size_t HashKey (IVec<4> v)
+    {
+      size_t h = 0;
+      for (int i = 0; i < 4; i++) h = h * 1000003 + size_t(v[i] + 1);
+      return h;
+    }
+
+    void StoreLevel ()
+    {
+      size_t ne = ma->GetNE(VOL);
+      nvlast = ma->GetNV();
+      elverts.SetSize (ne);
+      elhash.clear();
+      TableCreator<DofId> creator(ne);
+      for ( ; !creator.Done(); creator++)
+        for (size_t i = 0; i < ne; i++)
+          {
+            Array<DofId> dnums;
+            fes.GetDofNrs (ElementId(VOL, i), dnums);
+            for (auto d : dnums) creator.Add (i, d);
+          }
+      eldofs = creator.MoveTable();
+      for (size_t i = 0; i < ne; i++)
+        {
+          auto el = ma->GetElement (ElementId(VOL, i));
+          IVec<4> v(-1, -1, -1, -1);
+          for (int k = 0; k < 4 && k < el.Vertices().Size(); k++)
+            v[k] = el.Vertices()[k];
+          elverts[i] = v;
+          elhash[HashKey(SortedKey(v))].Append(i);
+        }
+    }
+
+    shared_ptr<SparseMatrix<double>> BuildProlongation ()
+    {
+      static Timer t("HCurlCurlProlongation::Build"); RegionTimer reg(t);
+      const size_t nvc = nvlast;
+      const size_t ndof_f = fes.GetNDof();
+      const size_t ndof_c = ndoflevel.Last();
+      const int order = fes.GetOrder();
+
+      std::function<void(int, Array<int>&)> ancestors = [&] (int v, Array<int> & anc)
+        {
+          if (size_t(v) < nvc) { if (!anc.Contains(v)) anc.Append(v); return; }
+          auto par = ma->GetParentNodes(v);
+          if (par[0] < 0 || par[1] < 0)
+            throw Exception ("HCurlCurlProlongation: vertex without parents");
+          ancestors (par[0], anc);
+          ancestors (par[1], anc);
+        };
+
+      Array<int> rows, cols;
+      Array<double> vals;
+      Array<bool> done(ndof_f);
+      done = false;
+      const IntegrationRule & ir = SelectIntegrationRule (ET_TET, 2 * order);
+      LocalHeap lh(50000000, "hcurlcurl-prolongation");
+
+      for (size_t i = 0; i < ma->GetNE(VOL); i++)
+        {
+          HeapReset hr(lh);
+          ElementId ei(VOL, i);
+          auto el = ma->GetElement(ei);
+          if (el.GetType() != ET_TET)
+            throw Exception ("HCurlCurlProlongation: only tetrahedral meshes");
+
+          Array<DofId> fdnums;
+          fes.GetDofNrs (ei, fdnums);
+          bool alldone = true;
+          for (auto d : fdnums)
+            if (IsRegularDof(d) && !done[d]) alldone = false;
+          if (alldone) continue;
+
+          // parent: the coarse element spanned by the coarse ancestors of the vertices
+          Array<int> anc;
+          for (auto v : el.Vertices()) ancestors (v, anc);
+          if (anc.Size() != 4)
+            throw Exception ("HCurlCurlProlongation: parent element not found");
+          IVec<4> key = SortedKey (IVec<4>(anc[0], anc[1], anc[2], anc[3]));
+          int parent = -1;
+          auto it = elhash.find (HashKey(key));
+          if (it != elhash.end())
+            for (int e : it->second)
+              if (SortedKey(elverts[e]) == key) parent = e;
+          if (parent < 0)
+            throw Exception ("HCurlCurlProlongation: parent element not found");
+
+          // parent basis (its vertex numbers) and its affine map x = p3 + F xi
+          IVec<4> pv = elverts[parent];
+          ArrayMem<int, 4> vnums;
+          for (int k = 0; k < 4; k++) vnums.Append (pv[k]);
+          auto fec = new (lh) HCurlCurlFE<ET_TET> (order);
+          fec->SetVertexNumbers (vnums);
+          for (int k = 0; k < 6; k++) fec->SetOrderEdge (k, order);
+          for (int k = 0; k < 4; k++) fec->SetOrderFacet (k, IVec<2>(order, order));
+          fec->SetOrderInner (IVec<3>(order, order, order));
+          fec->ComputeNDof();
+          Matrix<> pmat(4, 3);
+          for (int k = 0; k < 4; k++)
+            for (int a = 0; a < 3; a++) pmat(k, a) = ma->GetPoint<3>(pv[k])(a);
+          FE_ElementTransformation<3,3> trafo_c (ET_TET, pmat);
+          Mat<3,3> F, Finv;
+          Vec<3> p3;
+          for (int a = 0; a < 3; a++) p3(a) = pmat(3, a);
+          for (int k = 0; k < 3; k++)
+            for (int a = 0; a < 3; a++) F(a, k) = pmat(k, a) - p3(a);
+          CalcInverse (F, Finv);
+
+          auto & fef = static_cast<const HCurlCurlFiniteElement<3>&> (fes.GetFE(ei, lh));
+          auto & trafo_f = ma->GetTrafo (ei, lh);
+          int ndf = fef.GetNDof(), ndc = fec->GetNDof();
+          FlatMatrix<> shf(ndf, 9, lh), wshf(ndf, 9, lh), shc(ndc, 9, lh);
+          FlatMatrix<> M(ndf, ndf, lh), B(ndf, ndc, lh);
+          M = 0.0; B = 0.0;
+          for (auto & ip : ir)
+            {
+              MappedIntegrationPoint<3,3> mipf(ip, trafo_f);
+              fef.CalcMappedShape (mipf, shf);
+              Vec<3> xi = Finv * (mipf.GetPoint() - p3);
+              IntegrationPoint ipc(xi(0), xi(1), xi(2), 0);
+              MappedIntegrationPoint<3,3> mipc(ipc, trafo_c);
+              Vec<3> diff = mipc.GetPoint() - mipf.GetPoint();
+              if (L2Norm (diff) > 1e-8 * (1 + L2Norm (p3)))
+                throw Exception ("HCurlCurlProlongation: inconsistent parent map");
+              fec->CalcMappedShape (mipc, shc);
+              wshf = mipf.GetWeight() * shf;
+              M += wshf * Trans(shf);
+              B += wshf * Trans(shc);
+            }
+          CalcInverse (M);
+          FlatMatrix<> Ploc(ndf, ndc, lh);
+          Ploc = M * B;
+
+          FlatArray<DofId> cdofs = eldofs[parent];
+          for (int a = 0; a < ndf; a++)
+            {
+              DofId r = fdnums[a];
+              if (!IsRegularDof(r) || done[r]) continue;
+              for (int b = 0; b < ndc; b++)
+                if (fabs (Ploc(a, b)) > 1e-13)
+                  {
+                    rows.Append (r);
+                    cols.Append (cdofs[b]);
+                    vals.Append (Ploc(a, b));
+                  }
+              done[r] = true;
+            }
+        }
+      return dynamic_pointer_cast<SparseMatrix<double>>
+        (SparseMatrix<double>::CreateFromCOO (rows, cols, vals, ndof_f, ndof_c));
+    }
+
+  public:
+    HCurlCurlProlongation (const FESpace & afes)
+      : fes(afes), ma(afes.GetMeshAccess()) { ; }
+
+    void Update (const FESpace & afes) override
+    {
+      int level = ma->GetNLevels() - 1;
+      if (level < ndoflevel.Size()) return;           // this level is done
+      Prolongation::Update (afes);
+      while (ndoflevel.Size() < level)
+        {                                               // levels the space has not seen
+          ndoflevel.Append (0);
+          prol.Append (nullptr);
+          prolT.Append (nullptr);
+        }
+      shared_ptr<SparseMatrix<double>> p = nullptr;
+      if (level > 0 && elverts.Size() && ndoflevel.Size() == level && ndoflevel.Last() > 0)
+        p = BuildProlongation();
+      prol.Append (p);
+      prolT.Append (p ? dynamic_pointer_cast<SparseMatrix<double>>(p->CreateTranspose(true)) : nullptr);
+      ndoflevel.Append (fes.GetNDof());
+      StoreLevel();
+    }
+
+    size_t GetNDofLevel (int level) override { return ndoflevel[level]; }
+
+    shared_ptr<SparseMatrix<double>> CreateProlongationMatrix (int finelevel) const override
+    {
+      if (finelevel >= prol.Size() || !prol[finelevel])
+        throw Exception ("HCurlCurlProlongation: no prolongation to level " + ToString(finelevel));
+      return prol[finelevel];
+    }
+
+    void ProlongateInline (int finelevel, BaseVector & v) const override
+    {
+      auto & P = *CreateProlongationMatrix (finelevel);
+      size_t nf = P.Height(), nc = P.Width();
+      FlatVector<> fv = v.FV<double>();
+      Vector<> coarse(nc);
+      coarse = fv.Range(0, nc);
+      ParallelForRange (nf, [&] (IntRange r)
+        {
+          for (auto i : r)
+            {
+              double sum = 0;
+              auto ind = P.GetRowIndices(i);
+              auto val = P.GetRowValues(i);
+              for (size_t k = 0; k < ind.Size(); k++) sum += val(k) * coarse(ind[k]);
+              fv(i) = sum;
+            }
+        });
+    }
+
+    void RestrictInline (int finelevel, BaseVector & v) const override
+    {
+      if (finelevel >= prolT.Size() || !prolT[finelevel])
+        throw Exception ("HCurlCurlProlongation: no prolongation to level " + ToString(finelevel));
+      auto & PT = *prolT[finelevel];
+      size_t nc = PT.Height(), nf = PT.Width();
+      FlatVector<> fv = v.FV<double>();
+      Vector<> fine(nf);
+      fine = fv.Range(0, nf);
+      ParallelForRange (nc, [&] (IntRange r)
+        {
+          for (auto i : r)
+            {
+              double sum = 0;
+              auto ind = PT.GetRowIndices(i);
+              auto val = PT.GetRowValues(i);
+              for (size_t k = 0; k < ind.Size(); k++) sum += val(k) * fine(ind[k]);
+              fv(i) = sum;
+            }
+        });
+      fv.Range(nc, nf) = 0.0;
+    }
+  };
+
+
+
   HCurlCurlFESpace :: HCurlCurlFESpace (shared_ptr<MeshAccess> ama,const Flags & flags,bool checkflags)
     : FESpace(ama,flags), issurfacespace(false)
   {
@@ -1775,6 +2043,9 @@ namespace ngcomp
       evaluator[VOL]  = make_shared<T_DifferentialOperator<DiffOpIdHCurlCurl<3>>>();
       flux_evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpCurlHCurlCurl<3>>>();
       //flux_evaluator[BND] = make_shared<T_DifferentialOperator<DiffOpCurlHCurlCurlBoundary>>();
+      if (!discontinuous && uniform_order_edge == order && uniform_order_facet == order
+          && uniform_order_inner == order)
+        prol = make_shared<HCurlCurlProlongation> (*this);
     }
 
     switch (ma->GetDimension())
@@ -2028,11 +2299,15 @@ Einstein: Einstein tensor Ein_ij(g) = Ric_ij(g)-0.5*S(g) g_ij
           }
       }
 
-    
+
     UpdateCouplingDofArray();
 
     if (print)
       *testout << "Hcurlcurl ctofdof = " << ctofdof << endl;
+
+    // the base class Update is not called, so the prolongation is updated here
+    if (prol && !issurfacespace)
+      prol->Update (*this);
   }
 
   void  HCurlCurlFESpace :: UpdateCouplingDofArray ()

@@ -650,4 +650,87 @@ def FieldLines(
     return global_data
 
 
-__all__ = ["Draw", "FieldLines", "AddFieldLines"]
+def TendexLines(
+    function: ngs.CoefficientFunction,
+    mesh: ngs.Mesh,
+    start_points,
+    metric: Optional[ngs.CoefficientFunction] = None,
+    family: int = 0,
+    plane_normal=None,
+    which: str = "min",
+    length: float = 1.0,
+    name: str = "tendexlines",
+    thickness: float = 0.01,
+    tolerance: float = 1e-4,
+    direction: int = 0,
+    degeneracy: float = 1e-3,
+    max_points_per_line: int = 100000,
+    log_scale: bool = False,
+    negate: bool = False,
+):
+    """Eigenvector lines of a symmetric 3x3 matrix-valued CoefficientFunction, for Draw(..., objects=[...]).
+
+    A line is tangent everywhere to one eigenvector field of `function`, of the generalized problem
+    function v = lambda metric v if a metric (3x3, symmetric positive definite) is given. Applied to the tidal
+    field E_ij or the frame-drag field B_ij of a spacetime slice these are the tendex and vortex lines of
+    Nichols et al., PRD 84, 124014 (2011); the same works for a stress tensor (principal stress
+    trajectories) or any other symmetric tensor field.
+
+    Eigenvectors have no orientation: each step continues the direction of the previous one, and a line ends
+    where its eigenvalue comes within `degeneracy` * max|lambda| of another one (the direction is undefined
+    there), or where it leaves the mesh. The lines are traced in parallel (inside a TaskManager).
+
+    function      3x3 CoefficientFunction (symmetrized internally). Compile it for speed.
+    mesh, start_points  the mesh and an (n, 3) array of seeds; each seed gives one line (both directions
+                  for direction=0, one way for +1 / -1).
+    metric        optional 3x3 CoefficientFunction; the eigenvectors are then metric-unit and `length`
+                  is measured with the metric.
+    family        0, 1, 2: the eigenvalue in ascending order. Alternatively plane_normal=(nx, ny, nz) with
+                  which="min" or "max": of the eigenvectors lying in that plane, the one with the smallest /
+                  largest eigenvalue (lines that stay in a symmetry plane, e.g. the meridian plane of
+                  axisymmetric data).
+    length        maximal length of each line (absolute; both halves together for direction=0).
+    thickness, tolerance  absolute; tolerance is that of the adaptive Runge-Kutta step.
+    log_scale     color by the signed logarithm of the eigenvalue (eigenvalues of tidal fields fall off
+                  like r^-3, a linear scale shows only the strong-field region).
+    negate        color -lambda: negative eigenvalues red (the tendex convention: red = stretching).
+    Returns the dict of FieldLines, plus "eigenvalue": the eigenvalue on each segment.
+    """
+    pts = np.asarray(start_points, dtype=float).reshape(-1, 3)
+    if function.dim != 9:
+        raise ValueError("TendexLines: function must be 3x3 matrix-valued")
+    with ngs.TaskManager():
+        data = function._BuildTendexLines(
+            mesh,
+            [tuple(map(float, p)) for p in pts],
+            metric=metric,
+            family=int(family),
+            plane_normal=tuple(map(float, plane_normal)) if plane_normal is not None else (0.0, 0.0, 0.0),
+            which=0 if which == "min" else 1,
+            length=float(length),
+            max_points=max_points_per_line,
+            thickness=float(thickness),
+            tolerance=float(tolerance),
+            direction=int(direction),
+            degeneracy=float(degeneracy),
+        )
+    lam = np.asarray(data["value"], dtype=float)
+    data["eigenvalue"] = list(lam)
+    shown = -lam if negate else lam
+    if len(shown):
+        vmax = float(np.percentile(np.abs(shown), 97)) or 1.0
+        if log_scale:
+            lt = vmax * 10 ** -2.5
+            shown = np.clip(np.sign(shown) * np.log10(1 + np.abs(shown) / lt) / np.log10(1 + vmax / lt), -1, 1)
+            vmax = 1.0
+        data["value"] = list(map(float, shown))
+        data["min"], data["max"] = -vmax, vmax
+    else:
+        data["min"], data["max"] = -1.0, 1.0
+    data["name"] = name
+    data["max_phase_dist"] = 0.5
+    data["fade_dist"] = 0.0
+    return data
+
+
+__all__ = ["Draw", "FieldLines", "AddFieldLines", "TendexLines"]
