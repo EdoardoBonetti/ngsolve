@@ -38,9 +38,8 @@ using netgen::h_argv;
 using netgen::NG_TCL_STATIC;
 using netgen::NG_TCL_VOLATILE;
 */
-#define NG_TCL_VOLATILE		((Tcl_FreeProc *) 1)
-#define NG_TCL_STATIC		((Tcl_FreeProc *) 0)
-#define NG_TCL_DYNAMIC		((Tcl_FreeProc *) 3)
+// NG_TCL_VOLATILE/STATIC/DYNAMIC come from meshing/visual_interface.hpp
+// (typed Ng_Tcl_FreeProc* since netgen's Tcl/Tk 9 changes)
 
 
 #ifdef SOCKETS

@@ -77,6 +77,69 @@ def test_krylovspace_solvers():
         assert error < 1e-12
 
 
+def _convection_diffusion_pencil(b, sigma, maxh=0.15):
+    mesh = Mesh(unit_square.GenerateMesh(maxh=maxh))
+    fes = H1(mesh, order=2, complex=True, dirichlet=".*")
+    u, v = fes.TnT()
+    a = BilinearForm(grad(u)*grad(v)*dx + (b*grad(u))*v*dx).Assemble()
+    m = BilinearForm(u*v*dx).Assemble()
+    ashift = BilinearForm(grad(u)*grad(v)*dx + (b*grad(u))*v*dx - sigma*u*v*dx).Assemble()
+    lap = BilinearForm(grad(u)*grad(v)*dx)
+    pre = Preconditioner(lap, "bddc")
+    lap.Assemble()
+    return fes, a, m, ashift, pre
+
+
+def _check_eigenpairs(fes, a, m, lams, vecs, sigma, num, tol):
+    import numpy as np
+    import scipy.linalg
+    fd = np.array(fes.FreeDofs(), dtype=bool)
+    A = a.mat.ToDense().NumPy()[np.ix_(fd, fd)]
+    M = m.mat.ToDense().NumPy()[np.ix_(fd, fd)]
+    ref = scipy.linalg.eigvals(A, M)
+    ref = ref[np.argsort(np.abs(ref - sigma))][:num]
+    for lam in lams:
+        assert min(abs(lam - ref)) < tol * abs(lam)
+    for j in range(num):
+        x = vecs[j].FV().NumPy()[fd]
+        assert np.linalg.norm(A @ x - lams[j] * (M @ x)) < 1e2 * tol * abs(lams[j]) * np.linalg.norm(M @ x)
+
+
+def test_gplhr_convection_diffusion():
+    # -Laplace u + b.grad u = lam u: real spectrum, strongly non-normal operator
+    sigma = 0
+    fes, a, m, ashift, pre = _convection_diffusion_pencil(CF((8, 6)), sigma)
+    lams, vecs = solvers.GPLHR(a.mat, m.mat, pre, num=3, sigma=sigma, m=1, maxit=100, tol=1e-10,
+                               freedofs=fes.FreeDofs(), printrates=False)
+    _check_eigenpairs(fes, a, m, lams, vecs, sigma, 3, 1e-8)
+    # LOBPCG-style search direction and no Krylov blocks
+    # (num=3 keeps the nearly double eigenvalue lam_2 ~ lam_3 together)
+    lams, vecs = solvers.GPLHR(a.mat, m.mat, pre, num=3, sigma=sigma, m=0, thick=False, maxit=300, tol=1e-10,
+                               freedofs=fes.FreeDofs(), printrates=False)
+    _check_eigenpairs(fes, a, m, lams, vecs, sigma, 3, 1e-8)
+
+
+def test_gplhr_interior_complex_target():
+    # rotating flow: complex eigenvalues; complex target inside the spectrum,
+    # preconditioner = a few TFQMR steps on (A - sigma M) with BDDC of the Laplacian
+    sigma = 50+30j
+    fes, a, m, ashift, pre = _convection_diffusion_pencil(30*CF((-(y-0.5), x-0.5)), sigma)
+    inner = TFQMRSolver(ashift.mat, pre=pre, maxiter=20, tol=1e-12)
+    lams, vecs = solvers.GPLHR(a.mat, m.mat, inner, num=3, sigma=sigma, m=1, maxit=100, tol=1e-10,
+                               freedofs=fes.FreeDofs(), printrates=False)
+    _check_eigenpairs(fes, a, m, lams, vecs, sigma, 3, 1e-8)
+
+
+def test_gplhr_needs_complex_vectors():
+    mesh = Mesh(unit_square.GenerateMesh(maxh=0.3))
+    fes = H1(mesh, order=1)
+    u, v = fes.TnT()
+    a = BilinearForm(grad(u)*grad(v)*dx).Assemble()
+    m = BilinearForm(u*v*dx).Assemble()
+    with pytest.raises(ValueError):
+        solvers.GPLHR(a.mat, m.mat, IdentityMatrix(fes.ndof), printrates=False)
+
+
 
 if __name__ == "__main__":
     # test_arnoldi()

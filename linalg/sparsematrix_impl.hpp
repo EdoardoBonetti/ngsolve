@@ -265,6 +265,13 @@ namespace ngla
   void SparseMatrix<TM,TV_ROW,TV_COL> ::
   MultAdd (double s, const BaseVector & x, BaseVector & y) const
   {
+    if constexpr (!ngbla::IsComplex<TVX>() && !ngbla::IsComplex<TVY>())
+      if (x.IsComplex() || y.IsComplex())
+        {  // real matrix, complex vectors
+          this->MultComplexByParts (s, x, y, true);
+          return;
+        }
+
     static Timer t("SparseMatrix::MultAdd"); RegionTimer reg(t);
     t.AddFlops (this->NZE()*sizeof(TV_ROW)*sizeof(TV_COL)/sqr(sizeof(double)));
 
@@ -345,6 +352,13 @@ namespace ngla
   void SparseMatrix<TM,TV_ROW,TV_COL> ::
   MultTransAdd (double s, const BaseVector & x, BaseVector & y) const
   {
+    if constexpr (!ngbla::IsComplex<TVX>() && !ngbla::IsComplex<TVY>())
+      if (x.IsComplex() || y.IsComplex())
+        {  // real matrix, complex vectors
+          this->MultComplexByParts (s, x, y, true, true);
+          return;
+        }
+
     static Timer timer ("SparseMatrix::MultTransAdd");
     RegionTimer reg (timer);
 
@@ -996,6 +1010,13 @@ namespace ngla
   void SparseMatrixSymmetric<TM,TV> :: 
   MultAdd (double s, const BaseVector & x, BaseVector & y) const
   {
+    if constexpr (!ngbla::IsComplex<TVX>() && !ngbla::IsComplex<TVY>())
+      if (x.IsComplex() || y.IsComplex())
+        {  // real matrix, complex vectors
+          this->MultComplexByParts (s, x, y, true);
+          return;
+        }
+
     static Timer timer("SparseMatrixSymmetric::MultAdd");
     RegionTimer reg (timer);
     timer.AddFlops (2*this->nze);
