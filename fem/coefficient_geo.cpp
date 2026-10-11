@@ -917,73 +917,79 @@ namespace ngfem
       return 0;
     }
     
+    // reference tangent tref of edge edgenr and the reference tangents tref1, tref2
+    // of its two faces, orthogonal to the edge
+    static void RefVectors (const ElementTransformation & trafo, int edgenr,
+                            Vec<3> & tref, Vec<3> & tref1, Vec<3> & tref2)
+    {
+      // assume tets !!!
+      /*
+        edge -> vertex is 
+        static const int tet_edges[6][2] =
+        { { 3, 0 },
+        { 3, 1 },
+        { 3, 2 }, 
+        { 0, 1 }, 
+        { 0, 2 },
+        { 1, 2 }};
+
+        face -> vertex is 
+        { { 3, 1, 2, -1 },
+        { 3, 2, 0, -1 },
+        { 3, 0, 1, -1 },
+        { 0, 2, 1, -1 } }; // all faces point into interior!
+
+        from this we get edge -> face
+      */
+      static int edge2face[6][2] =
+        { { 1, 2 },
+          { 0, 2 },
+          { 0, 1 },
+          { 2, 3 },
+          { 1, 3 },
+          { 0, 3 }
+        };
+
+      FlatVector<Vec<3>> normals = ElementTopology::GetNormals<3>(ET_TET);
+
+      ELEMENT_TYPE et = trafo.GetElementType();
+      auto edge = ElementTopology::GetEdges(et)[edgenr];
+                
+      auto [v1x, v1y, v1z] = ElementTopology::GetVertices(ET_TET)[edge[0]];
+      Vec<3> v1(v1x, v1y, v1z);
+      auto [v2x, v2y, v2z] = ElementTopology::GetVertices(ET_TET)[edge[1]];
+      Vec<3> v2(v2x, v2y, v2z);
+      
+      Vec<3> nref1 = normals[edge2face[edgenr][0]];
+      Vec<3> nref2 = normals[edge2face[edgenr][1]];
+      tref = v2-v1;
+
+      // fix orientation of tangential vector (compare TangentialVector with consistent = true)
+      int iavnums[] = { 0, 1, 2, 3 };
+      FlatArray<int> vnums(4, &iavnums[0]);
+      trafo.GetSort(vnums);
+      int invnums[4];
+      for (int i = 0; i < 4; i++)
+        invnums[iavnums[i]] = i;
+      if (invnums[edge[0]] > invnums[edge[1]])
+        tref *= -1;
+      
+      tref1 = Cross(tref, nref1);
+      tref2 = -Cross(tref, nref2);
+    }
+
     virtual void Evaluate (const BaseMappedIntegrationPoint & ip, FlatVector<> res) const override
     {
       if (ip.DimSpace() != D)
         throw Exception("illegal dim of EdgeFaceTangentialVector");
 
       //cout << "in EdgeFaceTangentialVectorsCF, VB = " << ip.IP().VB() << endl;
-      // assume tets !!!
       
       if (ip.IP().VB() == BBND)
         {
           Mat<3,3> F = ip.GetJacobian();
-          int edgenr = ip.IP().FacetNr();
-
-          /*
-            edge -> vertex is 
-            static const int tet_edges[6][2] =
-            { { 3, 0 },
-            { 3, 1 },
-            { 3, 2 }, 
-            { 0, 1 }, 
-            { 0, 2 },
-            { 1, 2 }};
-
-            face -> vertex is 
-            { { 3, 1, 2, -1 },
-            { 3, 2, 0, -1 },
-            { 3, 0, 1, -1 },
-            { 0, 2, 1, -1 } }; // all faces point into interior!
-
-            from this we get edge -> face
-          */
-          static int edge2face[6][2] =
-            { { 1, 2 },
-              { 0, 2 },
-              { 0, 1 },
-              { 2, 3 },
-              { 1, 3 },
-              { 0, 3 }
-            };
-
-          FlatVector<Vec<3>> normals = ElementTopology::GetNormals<3>(ET_TET);
-
-          auto & trafo = ip.GetTransformation();
-          ELEMENT_TYPE et = trafo.GetElementType();
-          auto edge = ElementTopology::GetEdges(et)[edgenr];
-                    
-          auto [v1x, v1y, v1z] = ElementTopology::GetVertices(ET_TET)[edge[0]];
-          Vec<3> v1(v1x, v1y, v1z);
-          auto [v2x, v2y, v2z] = ElementTopology::GetVertices(ET_TET)[edge[1]];
-          Vec<3> v2(v2x, v2y, v2z);
-          
-          Vec<3> nref1 = normals[edge2face[edgenr][0]];
-          Vec<3> nref2 = normals[edge2face[edgenr][1]];
-          Vec<3> tref = v2-v1;
-
-          // fix orientation of tangential vector (compare TangentialVector with consistent = true)
-          int iavnums[] = { 0, 1, 2, 3 };
-          FlatArray<int> vnums(4, &iavnums[0]);
-          trafo.GetSort(vnums);
-          int invnums[4];
-          for (int i = 0; i < 4; i++)
-            invnums[iavnums[i]] = i;
-          if (invnums[edge[0]] > invnums[edge[1]])
-            tref *= -1;
-          
-          Vec<3> tref1 = Cross(tref, nref1);
-          Vec<3> tref2 = -Cross(tref, nref2);
+          Vec<3> tref, tref1, tref2;
+          RefVectors (ip.GetTransformation(), ip.IP().FacetNr(), tref, tref1, tref2);
 
           Vec<3> t1 = F * tref1;
           Vec<3> t2 = F * tref2;
@@ -1013,6 +1019,48 @@ namespace ngfem
         }
       else
         throw Exception("EdgeFaceTangentialVector only makes sense on edges");
+    }
+
+    // same as the scalar version, all points of the rule lie on the same edge
+    virtual void Evaluate (const SIMD_BaseMappedIntegrationRule & bmir, BareSliceMatrix<SIMD<double>> values) const override
+    {
+      if (bmir.DimSpace() != D || bmir.DimElement() != D)
+        throw Exception("illegal dim of EdgeFaceTangentialVector");
+      if (bmir.Size() == 0) return;
+
+      auto & mir = static_cast<const SIMD_MappedIntegrationRule<D,D>&> (bmir);
+      auto & ir = mir.IR();
+      if (ir[0].VB() != BBND)
+        throw Exception("EdgeFaceTangentialVector only makes sense on edges");
+
+      Vec<3> tref, tref1, tref2;
+      RefVectors (mir.GetTransformation(), ir[0].FacetNr(), tref, tref1, tref2);
+
+      for (size_t i = 0; i < mir.Size(); i++)
+        {
+          Mat<3,3,SIMD<double>> F = mir[i].GetJacobian();
+          Vec<3,SIMD<double>> t, t1, t2;
+          for (int j = 0; j < 3; j++)
+            {
+              t(j) = F(j,0)*tref(0) + F(j,1)*tref(1) + F(j,2)*tref(2);
+              t1(j) = F(j,0)*tref1(0) + F(j,1)*tref1(1) + F(j,2)*tref1(2);
+              t2(j) = F(j,0)*tref2(0) + F(j,1)*tref2(1) + F(j,2)*tref2(2);
+            }
+
+          t *= 1.0/L2Norm(t);
+          t1 -= InnerProduct(t1,t)*t;
+          t2 -= InnerProduct(t2,t)*t;
+          t1 *= 1.0/L2Norm(t1);
+          t2 *= 1.0/L2Norm(t2);
+
+          // det(t,t1,t2) > 0 as in the scalar version
+          auto pos = InnerProduct(Cross(t,t1),t2) > SIMD<double>(0.0);
+          for (int j = 0; j < 3; j++)
+            {
+              values(2*j,i) = If(pos, t1(j), t2(j));
+              values(2*j+1,i) = If(pos, t2(j), t1(j));
+            }
+        }
     }
     
   };
