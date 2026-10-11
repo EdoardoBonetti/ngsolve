@@ -2380,6 +2380,7 @@ namespace ngfem
   {
     int dimension = -1;
     size_t nip = -47;
+    size_t first_nr = 0;   // number of the first point, for a Range of a bigger rule
     const SIMD_IntegrationRule *irx = nullptr, *iry = nullptr, *irz = nullptr; // for tensor product IR
   public:
     SIMD_IntegrationRule () = default;
@@ -2403,10 +2404,14 @@ namespace ngfem
 
     INLINE SIMD_IntegrationRule Range (size_t first, size_t next) const
     {
-      return SIMD_IntegrationRule (next-first, &(*this)[first]);
+      SIMD_IntegrationRule ir(next-first, &(*this)[first]);
+      ir.first_nr = first_nr + first*SIMD<IntegrationPoint>::Size();
+      return ir;
     }
 
     size_t GetNIP() const { return nip; } // Size()*SIMD<double>::Size(); }
+    size_t FirstNr() const { return first_nr; }
+    void SetFirstNr (size_t nr) { first_nr = nr; }
     void SetNIP(size_t _nip) { nip = _nip; }
 
     SIMD_IntegrationRule Clone() const
@@ -2414,6 +2419,7 @@ namespace ngfem
       SIMD_IntegrationRule ir2(Size(), &(*this)[0]);
       ir2.dimension = dimension;
       ir2.nip = nip;
+      ir2.first_nr = first_nr;
       ir2.irx = irx;
       ir2.iry = iry;
       ir2.irz = irz;
@@ -2475,6 +2481,7 @@ namespace ngfem
       ir.SetIRY(air.GetIRYPtr());
       ir.SetIRZ(air.GetIRZPtr());
       ir.SetNIP(air.GetNIP());
+      ir.SetFirstNr(air.FirstNr());
     }
     ~SIMD_BaseMappedIntegrationRule ()
       { ir.NothingToDelete(); }

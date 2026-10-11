@@ -69,13 +69,18 @@ namespace ngcomp
     }
     
     
+    // SIMD rules may be Ranges of the element rule (SymbolicBFI evaluates big rules in blocks),
+    // point i of the Range is dof mir.IR().FirstNr()+i
     template <typename FEL, typename MIR>
     static void GenerateMatrixSIMDIR (const FEL & fel, const MIR & mir, BareSliceMatrix<SIMD<double>> mat)
     {
+      constexpr int SW = SIMD<double>::Size();
       int ndof = fel.GetNDof();
+      int first = mir.IR().FirstNr();
       mat.AddSize(ndof, mir.Size()) = SIMD<double> (0.0);
-      SliceMatrix<double> hmat(ndof, ndof, SIMD<double>::Size()*mat.Dist(), (double*)mat.Data());
-      hmat.Diag() = 1;
+      SliceMatrix<double> hmat(ndof, SW*mir.Size(), SW*mat.Dist(), (double*)mat.Data());
+      for (int i = 0; i < SW*mir.Size() && first+i < ndof; i++)
+        hmat(first+i, i) = 1;
       // cout << "diffopir, genmat:" << endl << mat.AddSize(ndof, mir.Size()) << endl;
     }
     
@@ -84,18 +89,12 @@ namespace ngcomp
     static void ApplySIMDIR (const FEL & fel, const MIR & mir,
                              const TVX & x, BareSliceMatrix<SIMD<double>> y)
     {
-      int i = 0;
       constexpr int SW = SIMD<double>::Size();
       int ndof = fel.GetNDof();
-      // range of safe access
-      for ( ; (i + 1) * SW <= ndof; i++)
-        y(0, i) = SIMD<double>(&x(SW*i));
-
-      // handle possible overhead
-      if (const int mask = ndof - SW * i; mask != 0)
-        y(0, i) = If(SIMD<mask64>(mask), SIMD<double>(&x(SW*i, mask)), SIMD<double>(x(ndof - 1)));
-
-      // cout << "y (final) " << y << endl;
+      int first = mir.IR().FirstNr();
+      // padding points of the last SIMD point repeat the last dof
+      for (size_t i = 0; i < mir.Size(); i++)
+        y(0, i) = SIMD<double> ([&] (int j) { return x(min(first+int(i)*SW+j, ndof-1)); });
     }
 
     using DiffOp<IRDiffOp> :: AddTransSIMDIR;    
@@ -104,11 +103,12 @@ namespace ngcomp
                                 BareSliceMatrix<SIMD<double>> x, TVY & y)
     // LocalHeap & lh)
     {
-      int i = 0;
       constexpr int SW = SIMD<double>::Size();
       int ndof = fel.GetNDof();
-      for ( ; i*SW < ndof; i++)
-        x(0,i).Store(&y(SW*i), ndof-SW*i);
+      int first = mir.IR().FirstNr();
+      for (size_t i = 0; i < mir.Size(); i++)
+        for (int j = 0; j < SW && first+int(i)*SW+j < ndof; j++)
+          y(first+i*SW+j) = x(0,i)[j];
     }
     
     
