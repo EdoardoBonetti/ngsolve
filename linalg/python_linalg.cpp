@@ -1198,6 +1198,9 @@ void NGS_DLL_HEADER ExportNgla(py::module &m) {
       return m.InverseMatrix(freedofs);
     }
       ,"Inverse", py::arg("freedofs")=nullptr, py::arg("inverse")=nullopt, py::arg("flags")=nullopt,
+      // sparse factorizations keep only a weak_ptr to the matrix (Height/Width, Smooth, Update use it),
+      // so (a temporary matrix).Inverse() must keep the matrix alive
+      py::keep_alive<0,1>(),
       docu_string(R"raw_string(Calculate inverse of sparse matrix
 Parameters:
 
