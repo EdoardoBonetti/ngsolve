@@ -4354,6 +4354,97 @@ namespace ngfem
               elmat.Rows(r2).Cols(r1) += Trans (bbmat2.Cols(r2)) * bdbmat1.Cols(r1) | Lapack;
             }
         }
+
+    // u.Other(bnd=g): on a boundary facet the neighbour value of u is g, evaluated on the
+    // surface element as in ApplyFacetMatrix. The matrix gets the part of g that is linear
+    // in the trial functions of this element, e.g. g = 5*u (a constant part of g is a
+    // right hand side and is dropped).
+    bool has_bnd_other = false;
+    for (auto proxy : trial_proxies)
+      if (proxy->IsOther() && proxy->BoundaryValues())
+        has_bnd_other = true;
+    if (!has_bnd_other) return;
+
+    IntegrationRule & ir_facet_surf = stransform(ir_facet, lh);
+    BaseMappedIntegrationRule & smir = strafo(ir_facet_surf, lh);
+    mir1.SetOtherMIR (&smir);
+    smir.SetOtherMIR (&mir1);
+    const_cast<ElementTransformation&>(strafo).userdata = &ud;
+
+    for (auto proxyo : trial_proxies)
+      {
+        if (!proxyo->IsOther() || !proxyo->BoundaryValues()) continue;
+        auto g = proxyo->BoundaryValues();
+        int dimo = proxyo->Dimension();
+
+        Array<ProxyFunction*> gproxies;
+        g->TraverseDAG
+          ( [&] (CoefficientFunction & nodecf)
+            {
+              auto proxy = dynamic_cast<ProxyFunction*> (&nodecf);
+              if (proxy && !proxy->IsTestFunction() && !proxy->IsOther() && !gproxies.Contains(proxy))
+                gproxies.Append (proxy);
+            });
+        if (gproxies.Size() == 0) continue;
+
+        // g without trial functions, subtracted to get the linear part
+        HeapReset hrg(lh);
+        ud.trialfunction = nullptr;
+        ud.testfunction = nullptr;
+        FlatMatrix<TSCAL> g0(smir.Size(), dimo, lh);
+        g -> Evaluate (smir, g0);
+
+        for (auto proxy2 : test_proxies)
+          {
+            if (proxy2->IsOther()) continue;
+            HeapReset hr2(lh);
+            FlatMatrix<TSCAL> val(mir1.Size(), 1, lh);
+
+            // dcf(i,l,k) = d cf / (d test_l d other_k)
+            FlatTensor<3, TSCAL> dcf(lh, mir1.Size(), proxy2->Dimension(), dimo);
+            for (size_t k = 0; k < dimo; k++)
+              for (size_t l = 0; l < proxy2->Dimension(); l++)
+                {
+                  ud.trialfunction = proxyo;
+                  ud.trial_comp = k;
+                  ud.testfunction = proxy2;
+                  ud.test_comp = l;
+                  cf -> Evaluate (mir1, val);
+                  dcf(STAR,l,k) = val.Col(0);
+                }
+            ud.testfunction = nullptr;
+
+            for (auto proxy1 : gproxies)
+              {
+                HeapReset hr1(lh);
+                // dg(i,k,m) = d g_k / d u_m
+                FlatTensor<3, TSCAL> dg(lh, smir.Size(), dimo, proxy1->Dimension());
+                FlatMatrix<TSCAL> gval(smir.Size(), dimo, lh);
+                for (size_t m = 0; m < proxy1->Dimension(); m++)
+                  {
+                    ud.trialfunction = proxy1;
+                    ud.trial_comp = m;
+                    g -> Evaluate (smir, gval);
+                    dg(STAR,STAR,m) = gval - g0;
+                  }
+                ud.trialfunction = nullptr;
+
+                FlatMatrix<SCAL_SHAPES,ColMajor> bmat1(proxy1->Dimension(), elmat.Width(), lh);
+                FlatMatrix<SCAL_SHAPES,ColMajor> bmat2(proxy2->Dimension(), elmat.Height(), lh);
+                FlatMatrix<TSCAL> dmat(proxy2->Dimension(), proxy1->Dimension(), lh);
+                IntRange r1 = proxy1->Evaluator()->UsedDofs(fel1_trial);
+                IntRange r2 = proxy2->Evaluator()->UsedDofs(fel1_test);
+                for (size_t i = 0; i < mir1.Size(); i++)
+                  {
+                    dmat = dcf(i,STAR,STAR) * dg(i,STAR,STAR);
+                    dmat *= mir1[i].GetMeasure() * ir_facet[i].Weight();
+                    proxy1->Evaluator()->CalcMatrix(fel1_trial, mir1[i], bmat1, lh);
+                    proxy2->Evaluator()->CalcMatrix(fel1_test, mir1[i], bmat2, lh);
+                    elmat.Rows(r2).Cols(r1) += Trans (bmat2.Cols(r2)) * (dmat * bmat1.Cols(r1));
+                  }
+              }
+          }
+      }
   }
 
 
