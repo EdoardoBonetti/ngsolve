@@ -250,8 +250,10 @@ def GPLHR(mata, matm, pre, num=1, sigma=0, m=1, blocksize=None, maxit=100, tol=1
 
     tol : float
       Tolerance for the relative column-wise residual of the Schur form,
-      |A v_j - Q RA[:,j]| / |RA[:,j]| + |B v_j - Q RB[:,j]| / |RB[:,j]|.
-      Both equations are scaled separately, since |matm| << |mata| for FEM matrices.
+      (|A v_j - Q RA[:,j]| + s |B v_j - Q RB[:,j]|) / (|RA[:,j]| + s |RB[:,j]|),
+      with the eigenvalue scale s = |RA|_F / |RB|_F. The scale balances the two
+      equations (|matm| << |mata| for FEM matrices) and keeps the test meaningful
+      for zero eigenvalues (kernels), where A v_j vanishes.
 
     initial : MultiVector
       Initial guess (default: pre applied to random vectors).
@@ -360,6 +362,12 @@ def GPLHR(mata, matm, pre, num=1, sigma=0, m=1, blocksize=None, maxit=100, tol=1
         V[nini:k] = apply(pre, rand)
     if proj: V = apply(proj, V)
     V = orth(V)
+    if len(V) < k:   # pre (numerically) singular on the random block: complete with random vectors
+        R = MultiVector(tmp, k-len(V))
+        for v in R:
+            v.SetRandom()
+        if proj: R = apply(proj, R)
+        V = concat([V, orth(R, against=[(V,)])])
     if len(V) < k:
         raise RuntimeError("GPLHR: initial vectors are linearly dependent")
     AV, BV = apply(A, V), apply(B, V)
@@ -373,8 +381,12 @@ def GPLHR(mata, matm, pre, num=1, sigma=0, m=1, blocksize=None, maxit=100, tol=1
     for it in range(maxit+1):
         for check in range(2):
             WA, WB = Ev(AV - Q * Matrix(RA)), Ev(BV - Q * Matrix(RB))
-            res = colnorms(WA) / np.maximum(np.linalg.norm(RA, axis=0), 1e-300) \
-                + colnorms(WB) / np.maximum(np.linalg.norm(RB, axis=0), 1e-300)
+            # relative residual of the pencil columns; the scale s (typical |lambda| in the block)
+            # keeps it meaningful for eigenvalues at or near zero, where A V_j itself vanishes
+            s = np.linalg.norm(RA) / max(np.linalg.norm(RB), 1e-300)
+            s = s if s > 0 else max(abs(sigma), 1)
+            res = (colnorms(WA) + s*colnorms(WB)) \
+                / np.maximum(np.linalg.norm(RA, axis=0) + s*np.linalg.norm(RB, axis=0), 1e-300)
             nconv = 0
             while nconv < k and res[nconv] < tol:
                 nconv += 1
