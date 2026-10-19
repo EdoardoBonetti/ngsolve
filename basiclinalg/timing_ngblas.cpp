@@ -52,6 +52,7 @@ Available options timings are:
           52 .. C = A * B^t,   A=n*k, B=m*k, C=n*m
           60 .. C -= A^t * D B,  A=n*k, B=n*m, C = k*m, D=diag
           61 .. C = A^t B,  A=n*k, B=n*m, C = k*m
+          62 .. C = A^t B^t,  A=m*n, B=k*m, C = n*k
           70 .. C += A B^t,  A=n*k, B=m*k, C = n*m, A,B SIMD
 	  80 .. (x,y)        inner product, size n
           100.. MultAddKernel  C += A * B,  A=4*n, B=n*3SW
@@ -61,7 +62,13 @@ Available options timings are:
           150.. ScalKernel     C = A * B^t,  A=4*n, B = 3*n
           151.. ScalKernel     C = A * B^t,  A=4*n, B = 3*n\n, A,B aligned
           200.. CalcInverse        A = nxn
-          201.. CalcInverse by LU  A = nxn          
+          201.. CalcInverse by LU  A = nxn
+          202.. Complex CalcInverse, ngbla LU (212 .. lapack)
+          203.. CalcInverse, ngbla LU (213 .. lapack)
+          204.. Complex CalcLU (214 .. zgetrf)
+          206.. Complex InverseFromLU (216 .. zgetri)
+          207.. CalcLU (217 .. dgetrf)
+          208.. InverseFromLU (218 .. dgetri)
           205.. LDL                A = nxn
           210.. CalcInverseLapack  A = nxn
           300.. CalcSVD            A = nxn
@@ -242,12 +249,13 @@ Available options timings are:
           
           double tot = n*m*k;
           size_t its = 1e10 / tot + 1;
+          if (its > maxits) its = maxits;
           // MultMatMat(a,b,c);
           if (tot < 1e6)
             {
               c = a * b;
               double err = L2Norm(a*b-c);
-              if (err > 1e-8)
+              if (err > (sizeof(a(0,0)) == 4 ? 1e-5*L2Norm(c) : 1e-8))
                 throw Exception("MultMatMat is faulty");
           }
         
@@ -295,6 +303,7 @@ Available options timings are:
         c = 0.0;
         double tot = n*m*k;
         size_t its = 1e10 / tot + 1;
+        if (its > maxits) its = maxits;
         // MultMatMat(a,b,c);
         {
           Timer t("C += A*B");
@@ -638,6 +647,7 @@ Available options timings are:
         c = 0.0;        
         double tot = n*m*k;
         size_t its = 1e10 / tot + 1;
+          if (its > maxits) its = maxits;
         {
           Timer t("C = A*B");
           t.Start();
@@ -740,6 +750,38 @@ Available options timings are:
         }
       }
 
+    if (what == 62)
+      {
+        // C = A^t*B^t,  A = m*n, B = k*m, C = n*k
+        Matrix<> a(m,n), b(k,m), c(n,k);
+        for (size_t i = 0; i < a.Height(); i++)
+          for (size_t j = 0; j < a.Width(); j++)
+            a(i,j) = sin(i+1) * cos(j);
+        for (size_t i = 0; i < b.Height(); i++)
+          for (size_t j = 0; j < b.Width(); j++)
+            b(i,j) = cos(i+3) * cos(j);
+        c = Trans(a)*Trans(b);
+        if (n*m*k <= 1e6)
+          {
+            Matrix<> at = Trans(a), bt = Trans(b);
+            if (double err = L2Norm(at*bt-c); err > 1e-8)
+              cout << "MultAtBt is faulty, err = " << err << endl;
+          }
+        double tot = n*m*k;
+        size_t its = 1e10 / tot + 1;
+        if (its > maxits) its = maxits;
+        Timer t("C = A^t*B^t");
+        t.Start();
+        if (!lapack)
+          for (size_t j = 0; j < its; j++)
+            c = Trans(a)*Trans(b);
+        else
+          for (size_t j = 0; j < its; j++)
+            c = Trans(a)*Trans(b) | Lapack;
+        t.Stop();
+        timings.push_back(make_tuple("MultAtBt", 1e-9 * tot *its / t.GetTime()));
+      }
+
     if (what == 0 || what == 61)
       {
         // C=A^t*B
@@ -763,6 +805,7 @@ Available options timings are:
           }
         double tot = n*m*k;
         size_t its = 5e8 / tot + 1;
+          if (its > maxits) its = maxits;
         {
           Timer t("C = A^t*B");
           t.Start();
@@ -1104,6 +1147,109 @@ Available options timings are:
 
     
 
+    // ngbla LU vs lapack inverse, complex (202/212) and double (203/213)
+    auto timeinv = [&] (auto scal, bool lapack, string name)
+      {
+        typedef decltype(scal) T;
+        Matrix<T> a(n,n), ha(n,n);
+        for (int i = 0; i < n; i++)
+          for (int j = 0; j < n; j++)
+            if constexpr (is_same_v<T,double>)
+              a(i,j) = sin(1.7*i*n+3.1*j);
+            else
+              a(i,j) = T(sin(1.7*i*n+3.1*j), cos(2.3*i-0.9*j*n));
+        double tot = n*n*n;
+        size_t its = 1e10 / tot + 1;
+        if (its > maxits) its = maxits;
+        Timer t(name);
+        t.Start();
+        for (size_t j = 0; j < its; j++)
+          {
+            ha = a;
+            CalcInverse(ha, lapack ? INVERSE_LIB::INV_LAPACK : INVERSE_LIB::INV_NGBLA_LU);
+          }
+        t.Stop();
+        timings.push_back(make_tuple(name, 1e-9 * tot *its / t.GetTime()));
+      };
+    if (what == 202) timeinv (Complex(0), false, "Inv(A) complex LU");
+    if (what == 212) timeinv (Complex(0), true, "Inv(A) complex lapack");
+    if (what == 203) timeinv (0.0, false, "Inv(A) LU");
+    if (what == 213) timeinv (0.0, true, "Inv(A) lapack");
+
+    // CalcLU vs getrf, InverseFromLU vs getri, GFlops with (2/3, 4/3) n^3 real resp. (8/3, 16/3) n^3 complex
+    // complex: 204/214 (CalcLU/zgetrf), 206/216 (InverseFromLU/zgetri); double: 207/217, 208/218
+    auto timelu = [&] (auto scal, bool lapack, bool inv)
+      {
+        typedef decltype(scal) T;
+        constexpr bool iscomplex = is_same_v<T,Complex>;
+        Matrix<T> a(n,n), ha(n,n), lu(n,n);
+        for (int i = 0; i < n; i++)
+          for (int j = 0; j < n; j++)
+            if constexpr (iscomplex)
+              a(i,j) = Complex(sin(1.7*i*n+3.1*j), cos(2.3*i-0.9*j*n));
+            else
+              a(i,j) = sin(1.7*i*n+3.1*j);
+        Array<int> p(n);
+#ifdef LAPACK
+        integer ni = n, info, lwork = -1;
+        Array<integer> ipiv(n);
+        T hwork;
+        if constexpr (iscomplex)
+          zgetri_ (&ni, &a(0,0), &ni, &ipiv[0], &hwork, &lwork, &info);
+        else
+          dgetri (&ni, &a(0,0), &ni, &ipiv[0], &hwork, &lwork, &info);
+        lwork = integer(std::real(hwork));
+        Array<T> work(lwork);
+#else
+        if (lapack) return;
+#endif
+        auto factor = [&] (SliceMatrix<T> m)
+        {
+#ifdef LAPACK
+          if (lapack)
+            {
+              if constexpr (iscomplex)
+                zgetrf_ (&ni, &ni, &m(0,0), &ni, &ipiv[0], &info);
+              else
+                dgetrf (&ni, &ni, &m(0,0), &ni, &ipiv[0], &info);
+              return;
+            }
+#endif
+          CalcLU (m, p);
+        };
+        if (inv) { lu = a; factor (lu); }
+
+        double flops = (inv ? 4.0/3 : 2.0/3) * (iscomplex ? 4 : 1) * double(n)*n*n;
+        size_t its = 1e10 / flops + 1;
+        if (its > maxits) its = maxits;
+        Timer t("LU timing");
+        t.Start();
+        for (size_t j = 0; j < its; j++)
+          {
+            ha = inv ? lu : a;
+            if (!inv)
+              factor (ha);
+#ifdef LAPACK
+            else if (lapack)
+              {
+                if constexpr (iscomplex)
+                  zgetri_ (&ni, &ha(0,0), &ni, &ipiv[0], &work[0], &lwork, &info);
+                else
+                  dgetri (&ni, &ha(0,0), &ni, &ipiv[0], &work[0], &lwork, &info);
+              }
+#endif
+            else
+              InverseFromLU (ha, p);
+          }
+        t.Stop();
+        string name = string(inv ? "InverseFromLU" : "CalcLU") + (iscomplex ? " complex" : "") + (lapack ? " lapack" : " ngbla");
+        timings.push_back(make_tuple(name, 1e-9 * flops * its / t.GetTime()));
+      };
+    if (what == 204 || what == 214 || what == 206 || what == 216)
+      timelu (Complex(0), what >= 210, (what % 10) == 6);
+    if (what == 207 || what == 217 || what == 208 || what == 218)
+      timelu (0.0, what >= 210, (what % 10) == 8);
+
     if (what == 0 || what == 205)
       {
         // CalcInverse
@@ -1252,9 +1398,14 @@ Available options timings are:
 
         size_t tot = 4*n*m*k;
         size_t its = 1e10 / tot + 1;
+        if (its > maxits) its = maxits;
         t.Start();
-        for (int j = 0; j < its; j++)
-          c=a*b;
+        if (!lapack)
+          for (int j = 0; j < its; j++)
+            c=a*b;
+        else
+          for (int j = 0; j < its; j++)
+            c=a*b | Lapack;
         t.Stop();
         t.AddFlops(tot);
         cout << "MatMat,complex, RowMajor, RowMajor, GFlops = " << 1e-9 * tot*its / t.GetTime() << endl;

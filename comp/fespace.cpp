@@ -2155,14 +2155,13 @@ lot of new non-zero entries in the matrix!\n" << endl;
               ( [&] (const TaskInfo & ti) 
                 {
                   LocalHeap lh = clh.Split(ti.thread_nr, ti.nthreads);
-                  ArrayMem<int,100> temp_dnums;
 
                   for (int mynr : sl)
                     {
                       HeapReset hr(lh);
                       FESpace::Element el(fes, 
                                           ElementId (vb, els_of_col[mynr]), 
-                                          temp_dnums, lh);
+                                          lh);
                       
                       func (std::move(el), lh);
                     }
@@ -2180,7 +2179,6 @@ lot of new non-zero entries in the matrix!\n" << endl;
       ParallelForRange( IntRange(els_of_col.Size()), [&] ( IntRange r )
       {
         LocalHeap lh = clh.Split();
-        Array<int> temp_dnums;
 
         // lh.ClearValues();
         
@@ -2189,7 +2187,7 @@ lot of new non-zero entries in the matrix!\n" << endl;
             try
               {
                 HeapReset hr(lh);
-                FESpace::Element el(fes, ElementId (vb, els_of_col[i]), temp_dnums, lh);
+                FESpace::Element el(fes, ElementId (vb, els_of_col[i]), lh);
                 
                 func (std::move(el), lh);
               }
@@ -2258,34 +2256,61 @@ lot of new non-zero entries in the matrix!\n" << endl;
       tempvec = 0.0;
 
    
+    // complex: interpolate real and imaginary part separately
+    shared_ptr<CoefficientFunction> cfre, cfim;
+    if (vec1.IsComplex() && cf.IsComplex())
+      {
+        auto spcf = const_cast<CoefficientFunction&>(cf).shared_from_this();
+        cfre = Real(spcf);
+        cfim = Imag(spcf);
+      }
+
     auto vb = reg ? reg->VB() : VOL;
-    IterateElements 
-      (*this, vb, clh, 
-       [&] (FESpace::Element el, LocalHeap & lh)
-       {
-         if (reg)
-           if (!reg->Mask().Test(el.GetIndex())) return;
-         
-         if (!DefinedOn(el)) return;
+    auto iterate = [&] (auto tscal)
+    {
+      using SCAL = decltype(tscal);
+      IterateElements
+        (*this, vb, clh,
+         [&] (FESpace::Element el, LocalHeap & lh)
+         {
+           if (reg)
+             if (!reg->Mask().Test(el.GetIndex())) return;
 
-         const FiniteElement & fel = GetFE (el, lh);
-         int ndof = fel.GetNDof();
-         int fesdim = GetDimension();
+           if (!DefinedOn(el)) return;
 
-         const ElementTransformation & eltrans = ma->GetTrafo (el, lh); 
-         FlatVector<> elvec(ndof*fesdim, lh), elvec1(ndof*fesdim, lh);
-         
-         fel.Interpolate (eltrans, cf, elvec.AsMatrix(ndof, fesdim), lh);
-         
-         TransformVec (el, elvec, TRANSFORM_SOL_INVERSE);
+           const FiniteElement & fel = GetFE (el, lh);
+           int ndof = fel.GetNDof();
+           int fesdim = GetDimension();
 
-         tempvec.GetIndirect (el.GetDofs(), elvec1);
-         elvec1 += elvec;
-         tempvec.SetIndirect (el.GetDofs(), elvec1);
-         
-         for (auto d : el.GetDofs())
-           if (IsRegularDof(d)) cnti[d]++;
-       });
+           const ElementTransformation & eltrans = ma->GetTrafo (el, lh);
+           FlatVector<SCAL> elvec(ndof*fesdim, lh), elvec1(ndof*fesdim, lh);
+
+           if constexpr (is_same_v<SCAL,double>)
+             fel.Interpolate (eltrans, cf, elvec.AsMatrix(ndof, fesdim), lh);
+           else
+             {
+               FlatVector<> re(ndof*fesdim, lh), im(ndof*fesdim, lh);
+               fel.Interpolate (eltrans, cfre ? *cfre : cf, re.AsMatrix(ndof, fesdim), lh);
+               im = 0.0;
+               if (cfim)
+                 fel.Interpolate (eltrans, *cfim, im.AsMatrix(ndof, fesdim), lh);
+               elvec = re + Complex(0,1) * im;
+             }
+
+           TransformVec (el, elvec, TRANSFORM_SOL_INVERSE);
+
+           tempvec.GetIndirect (el.GetDofs(), elvec1);
+           elvec1 += elvec;
+           tempvec.SetIndirect (el.GetDofs(), elvec1);
+
+           for (auto d : el.GetDofs())
+             if (IsRegularDof(d)) cnti[d]++;
+         });
+    };
+    if (vec1.IsComplex())
+      iterate (Complex());
+    else
+      iterate (double());
 
 #ifdef PARALLEL
     if (GetParallelDofs())
@@ -2299,16 +2324,28 @@ lot of new non-zero entries in the matrix!\n" << endl;
     ParallelForRange
       (cnti.Size(), [&] (IntRange r)
        {
-         VectorMem<10> fluxi(dim);
-         ArrayMem<int,1> dnums(1);
-         for (auto i : r)
-           if (cnti[i])
-             {
-               dnums[0] = i;
-               tempvec.GetIndirect (dnums, fluxi);               
-               fluxi /= double (cnti[i]);
-               tempvec.SetIndirect (dnums, fluxi);                              
-             }
+         auto average = [&] (auto & fluxi)
+         {
+           ArrayMem<int,1> dnums(1);
+           for (auto i : r)
+             if (cnti[i])
+               {
+                 dnums[0] = i;
+                 tempvec.GetIndirect (dnums, fluxi);
+                 fluxi /= double (cnti[i]);
+                 tempvec.SetIndirect (dnums, fluxi);
+               }
+         };
+         if (vec1.IsComplex())
+           {
+             VectorMem<10,Complex> fluxi(dim);
+             average (fluxi);
+           }
+         else
+           {
+             VectorMem<10> fluxi(dim);
+             average (fluxi);
+           }
        });
 
     vec1 = tempvec;
@@ -3511,6 +3548,11 @@ lot of new non-zero entries in the matrix!\n" << endl;
 
     SetNDof (cummulative_nd.Last());
 
+    needs_dof_transformation = false;
+    for (auto & space : spaces)
+      if (space->NeedsDofTransformation())
+        needs_dof_transformation = true;
+
     /*
     free_dofs = make_shared<BitArray> (GetNDof());
     free_dofs->Clear();
@@ -4011,6 +4053,56 @@ lot of new non-zero entries in the matrix!\n" << endl;
 				      SliceVector<Complex> vec, TRANSFORM_TYPE tt) const 
   {
     T_TransformVec (ei, vec, tt);
+  }
+
+  optional<FlatMatrix<double>> CompoundFESpace :: VGetDofTransformation (ElementId ei, LocalHeap & lh) const
+  {
+    size_t ns = spaces.Size();
+    ArrayMem<optional<FlatMatrix<double>>,8> Ti(ns);
+    bool any = false;
+    for (size_t i = 0; i < ns; i++)
+      {
+        Ti[i] = spaces[i]->GetDofTransformation (ei, lh);
+        if (Ti[i]) any = true;
+      }
+    if (!any) return nullopt;
+
+    // block diagonal, components without rectangular map give their square transformation
+    ArrayMem<size_t,8> nloc(ns), nglob(ns);
+    size_t sumloc = 0, sumglob = 0;
+    Array<DofId> dnums;
+    for (size_t i = 0; i < ns; i++)
+      {
+        nloc[i] = spaces[i]->GetFE(ei, lh).GetNDof();
+        if (Ti[i])
+          nglob[i] = Ti[i]->Width();
+        else
+          {
+            spaces[i]->GetDofNrs (ei, dnums);
+            nglob[i] = dnums.Size();
+          }
+        sumloc += nloc[i];
+        sumglob += nglob[i];
+      }
+
+    FlatMatrix<double> T(sumloc, sumglob, lh);
+    T = 0.0;
+    for (size_t i = 0, r = 0, c = 0; i < ns; r += nloc[i], c += nglob[i], i++)
+      {
+        auto block = T.Rows(r, r+nloc[i]).Cols(c, c+nglob[i]);
+        if (Ti[i])
+          block = *Ti[i];
+        else
+          {
+            if (nloc[i] != nglob[i])
+              throw Exception ("CompoundFESpace::VGetDofTransformation: components with dimension > 1 not supported");
+            FlatMatrix<double> Ii(nloc[i], nloc[i], lh);
+            Ii = Identity(nloc[i]);
+            spaces[i]->TransformMat (ei, Ii, TRANSFORM_MAT_LEFT);
+            block = Trans(Ii);
+          }
+      }
+    return T;
   }
 
 

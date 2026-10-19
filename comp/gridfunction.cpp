@@ -107,7 +107,6 @@ namespace ngcomp
       for([[maybe_unused]] auto i : Range(comp_space->GetNSpaces()))
         compgfs.Append(shared_ptr<GridFunction>(nullptr));
     // level_updated = -1;
-    // cacheblocksize = 1;
   }
 
   GridFunctionCoefficientFunction ::
@@ -146,6 +145,7 @@ namespace ngcomp
     archive & name & flags & flaglist;
     archive.Shallow(fespace);
     archive & nested & autoupdate & visual & multidim & level_updated;
+    int cacheblocksize = 1;  // kept for archive compatibility
     archive & cacheblocksize;
 
    // TODO: Multidim GF
@@ -1127,10 +1127,10 @@ namespace ngcomp
 	    shared_ptr<BaseVector> ovec = vec[i];
 	
             if ( this->GetFESpace()->IsParallel() )
-	      vec[i] = make_shared<S_ParallelBaseVectorPtr<TSCAL>> (ndof, this->GetFESpace()->GetDimension()*this->cacheblocksize,
+	      vec[i] = make_shared<S_ParallelBaseVectorPtr<TSCAL>> (ndof, this->GetFESpace()->GetDimension(),
 								    this->GetFESpace()->GetParallelDofs(), CUMULATED);
 	    else
-              vec[i] = make_shared<S_BaseVectorPtr<TSCAL>> (ndof, this->GetFESpace()->GetDimension()*this->cacheblocksize);
+              vec[i] = make_shared<S_BaseVectorPtr<TSCAL>> (ndof, this->GetFESpace()->GetDimension());
             
 	    *vec[i] = TSCAL(0);
 
@@ -1182,12 +1182,6 @@ namespace ngcomp
   shared_ptr<GridFunction> CreateGridFunction (shared_ptr<FESpace> space,
                                                const string & name, const Flags & flags)
   {
-    /*
-    shared_ptr<GridFunction> gf =
-      CreateSharedVecObject<T_GridFunction, GridFunction> 
-      (space->GetDimension() * int(flags.GetNumFlag("cacheblocksize",1)), 
-       space->IsComplex(), space, name, flags);
-    */
     shared_ptr<GridFunction> gf;
     if (space->IsComplex())
       gf = make_shared<S_GridFunction<Complex>> (space, name, flags);
@@ -1195,9 +1189,7 @@ namespace ngcomp
       gf = make_shared<S_GridFunction<float>> (space, name, flags);
     else
       gf = make_shared<S_GridFunction<double>> (space, name, flags);
-    
-    gf->SetCacheBlockSize(int(flags.GetNumFlag("cacheblocksize",1)));
-    
+
     return gf;
   }
 
@@ -1418,16 +1410,13 @@ namespace ngcomp
         return;
       }
     
-    const FiniteElement & fel = fes->GetFE (ei, lh2);
+    auto el = fes->GetElement (ei, lh2);
+    const FiniteElement & fel = el.GetFE();
     int dim = fes->GetDimension();
     
-    ArrayMem<int, 50> dnums;
-    fes->GetDofNrs (ei, dnums);
+    VectorMem<50> elu(fel.GetNDof()*dim);
     
-    VectorMem<50> elu(dnums.Size()*dim);
-
-    gf->GetElementVector (comp, dnums, elu);
-    fes->TransformVec (ei, elu, TRANSFORM_SOL);
+    gf->GetElementVector (comp, el, elu);
     if (diffop[ei.VB()])
       diffop[ei.VB()] -> Apply(fel, ip, elu, result, lh2);
     else
@@ -1474,16 +1463,13 @@ namespace ngcomp
         return;
       }
     
-    const FiniteElement & fel = fes->GetFE (ei, lh2);
+    auto el = fes->GetElement (ei, lh2);
+    const FiniteElement & fel = el.GetFE();
     int dim = fes->GetDimension();
     
-    ArrayMem<int, 50> dnums;
-    fes->GetDofNrs (ei, dnums);
-    
-    VectorMem<50, Complex> elu(dnums.Size()*dim);
+    VectorMem<50, Complex> elu(fel.GetNDof()*dim);
 
-    gf->GetElementVector (comp, dnums, elu);
-    fes->TransformVec (ei, elu, TRANSFORM_SOL);
+    gf->GetElementVector (comp, el, elu);
 
     if (diffop[vb])
       diffop[vb]->Apply (fel, ip, elu, result, lh2);
@@ -1537,16 +1523,13 @@ namespace ngcomp
       }
 
 
-    const FiniteElement & fel = fes->GetFE (ei, lh2);
+    auto el = fes->GetElement (ei, lh2);
+    const FiniteElement & fel = el.GetFE();
     int dim = fes->GetDimension();
 
-    ArrayMem<int, 50> dnums;
-    fes->GetDofNrs (ei, dnums);
-    
-    VectorMem<50> elu(dnums.Size()*dim);
+    VectorMem<50> elu(fel.GetNDof()*dim);
 
-    gf->GetElementVector (comp, dnums, elu);
-    fes->TransformVec (ElementId(vb, elnr), elu, TRANSFORM_SOL);
+    gf->GetElementVector (comp, el, elu);
 
     if (diffop[vb])
       diffop[vb]->Apply (fel, ir, elu, values, lh2);
@@ -1611,16 +1594,13 @@ namespace ngcomp
         return;
       }
     
-    const FiniteElement & fel = fes->GetFE (ei, lh2);
+    auto el = fes->GetElement (ei, lh2);
+    const FiniteElement & fel = el.GetFE();
     int dim = fes->GetDimension();
 
-    ArrayMem<int, 50> dnums;
-    fes->GetDofNrs (ei, dnums);
+    VectorMem<50,Complex> elu(fel.GetNDof()*dim);
     
-    VectorMem<50,Complex> elu(dnums.Size()*dim);
-
-    gf->GetElementVector (comp, dnums, elu);
-    fes->TransformVec (ei, elu, TRANSFORM_SOL);
+    gf->GetElementVector (comp, el, elu);
 
     /*
     if (diffop && vb==VOL)
@@ -1700,16 +1680,13 @@ namespace ngcomp
         return;
       }
     
-    const FiniteElement & fel = fes->GetFE (ei, lh2);
+    auto el = fes->GetElement (ei, lh2);
+    const FiniteElement & fel = el.GetFE();
     int dim = fes->GetDimension();
 
-    ArrayMem<int, 50> dnums;
-    fes->GetDofNrs (ei, dnums);
-    
-    VectorMem<50> elu(dnums.Size()*dim);
+    VectorMem<50> elu(fel.GetNDof()*dim);
 
-    gf->GetElementVector (comp, dnums, elu);
-    fes->TransformVec (ei, elu, TRANSFORM_SOL);
+    gf->GetElementVector (comp, el, elu);
     /*
     if (diffop && vb==VOL)
       diffop->Apply (fel, ir, elu, values); // , lh2);
@@ -1800,16 +1777,13 @@ namespace ngcomp
         return;
       }
     
-    const FiniteElement & fel = fes.GetFE (ei, lh2);
+    auto el = fes.GetElement (ei, lh2);
+    const FiniteElement & fel = el.GetFE();
     int dim = fes.GetDimension();
 
-    ArrayMem<int, 50> dnums;
-    fes.GetDofNrs (ei, dnums);
+    VectorMem<50, Complex> elu(fel.GetNDof()*dim);
     
-    VectorMem<50, Complex> elu(dnums.Size()*dim);
-
-    gf->GetElementVector (comp, dnums, elu);
-    fes.TransformVec (ei, elu, TRANSFORM_SOL);
+    gf->GetElementVector (comp, el, elu);
     /*
     if (diffop && vb==VOL)
       diffop->Apply (fel, ir, elu, values); // , lh2);
@@ -1975,26 +1949,11 @@ namespace ngcomp
 	HeapReset hr(lh);
 	
 	ElementTransformation & eltrans = ma->GetTrafo (ei, lh);
-	const FiniteElement & fel = fes.GetFE (ei, lh);
+	auto el = fes.GetElement (ei, lh);
+	const FiniteElement & fel = el.GetFE();
 
-	ArrayMem<int,200> dnums (fel.GetNDof());
-	fes.GetDofNrs (ei, dnums);
-
-	VectorMem<200,SCAL> elu(dnums.Size() * dim);
-	if(gf->GetCacheBlockSize() == 1)
-	  {
-	    gf->GetElementVector (multidimcomponent, dnums, elu);
-	  }
-	else
-	  {
-	    FlatVector<SCAL> elu2(dnums.Size()*dim*gf->GetCacheBlockSize(),lh);
-	    //gf->GetElementVector (multidimcomponent, dnums, elu2);
-	    gf->GetElementVector (0, dnums, elu2);
-	    for(int i=0; i<elu.Size(); i++)
-	      elu[i] = elu2[i*gf->GetCacheBlockSize()+multidimcomponent];
-	  }
-
-	fes.TransformVec (ei, elu, TRANSFORM_SOL);
+	VectorMem<200,SCAL> elu(fel.GetNDof() * dim);
+	gf->GetElementVector (multidimcomponent, el, elu);
 
 	IntegrationPoint ip(lam1, lam2, lam3, 0);
 	MappedIntegrationPoint<3,3> mip (ip, eltrans);
@@ -2055,26 +2014,12 @@ namespace ngcomp
 	
 	if ( !fes.DefinedOn(ei) ) return 0;
 	
-	const FiniteElement * fel = &fes.GetFE (ei, lh);
-
-	Array<int> dnums(fel->GetNDof(), lh);
-	fes.GetDofNrs (ei, dnums);
+	auto el = fes.GetElement (ei, lh);
+	const FiniteElement * fel = &el.GetFE();
 
 	FlatVector<SCAL> elu (fel->GetNDof() * dim, lh);
 
-	if(gf->GetCacheBlockSize() == 1)
-	  {
-	    gf->GetElementVector (multidimcomponent, dnums, elu);
-	  }
-	else
-	  {
-	    FlatVector<SCAL> elu2(dnums.Size()*dim*gf->GetCacheBlockSize(),lh);
-	    //gf->GetElementVector (multidimcomponent, dnums, elu2);
-	    gf->GetElementVector (0, dnums, elu2);
-	    for(int i=0; i<elu.Size(); i++)
-	      elu[i] = elu2[i*gf->GetCacheBlockSize()+multidimcomponent];
-	  }
-	fes.TransformVec (ei, elu, TRANSFORM_SOL);
+	gf->GetElementVector (multidimcomponent, el, elu);
 	
 	
 	HeapReset hr(lh);
@@ -2162,27 +2107,13 @@ namespace ngcomp
         LocalHeapMem<100000> lh("visgf::GetMultiValue");
 
 	const ElementTransformation & eltrans = ma->GetTrafo (ei, lh);
-        const FiniteElement & fel = fes.GetFE (ei, lh);
+        auto el = fes.GetElement (ei, lh);
+        const FiniteElement & fel = el.GetFE();
 
 
-	ArrayMem<int,200> dnums(fel.GetNDof());
 	VectorMem<200,SCAL> elu (fel.GetNDof() * dim);
 
-	fes.GetDofNrs (ei, dnums);
-
-        if(gf->GetCacheBlockSize() == 1)
-          {
-            gf->GetElementVector (multidimcomponent, dnums, elu);
-          }
-        else
-          {
-            FlatVector<SCAL> elu2(dnums.Size()*dim*gf->GetCacheBlockSize(),lh);
-            gf->GetElementVector (0, dnums, elu2);
-            for(int i=0; i<elu.Size(); i++)
-              elu[i] = elu2[i*gf->GetCacheBlockSize()+multidimcomponent];
-          }
-        
-        fes.TransformVec (ei, elu, TRANSFORM_SOL);
+        gf->GetElementVector (multidimcomponent, el, elu);
         
 	if (!fes.DefinedOn(VOL, eltrans.GetElementIndex()))return 0;
 
@@ -2276,27 +2207,12 @@ namespace ngcomp
 	int dim = fes.GetDimension();
 
 	LocalHeapMem<100000> lh("VisGF::GetSurfValue");
-	const FiniteElement & fel = fes.GetFE (ei, lh);
+	auto el = fes.GetElement (ei, lh);
+	const FiniteElement & fel = el.GetFE();
 
-	ArrayMem<int, 100> dnums;
-	fes.GetDofNrs (ei, dnums);
+	FlatVector<SCAL> elu (fel.GetNDof() * dim, lh);
 
-	FlatVector<SCAL> elu (dnums.Size() * dim, lh);
-
-	if(gf->GetCacheBlockSize() == 1)
-	  {
-	    gf->GetElementVector (multidimcomponent, dnums, elu);
-	  }
-	else
-	  {
-	    FlatVector<SCAL> elu2(dnums.Size()*dim*gf->GetCacheBlockSize(),lh);
-	    //gf->GetElementVector (multidimcomponent, dnums, elu2);
-	    gf->GetElementVector (0, dnums, elu2);
-	    for(int i=0; i<elu.Size(); i++)
-	      elu[i] = elu2[i*gf->GetCacheBlockSize()+multidimcomponent];
-	  }
-
-	fes.TransformVec (ei, elu, TRANSFORM_SOL);
+	gf->GetElementVector (multidimcomponent, el, elu);
 
 	ElementTransformation & eltrans = ma->GetTrafo (ei, lh);
 	if (!fes.DefinedOn(vb, eltrans.GetElementIndex())) return false;
@@ -2355,27 +2271,12 @@ namespace ngcomp
 
 	// lh.CleanUp();
         LocalHeapMem<100000> lh("VisGF::GetSurfValue");
-	const FiniteElement * fel = &fes.GetFE (ei, lh);
+	auto el = fes.GetElement (ei, lh);
+	const FiniteElement * fel = &el.GetFE();
 	
-	Array<int> dnums(fel->GetNDof(), lh);
 	FlatVector<SCAL> elu (fel->GetNDof()*dim, lh);
 
-	fes.GetDofNrs (ei, dnums);
-	
-	if(gf->GetCacheBlockSize() == 1)
-	  {
-	    gf->GetElementVector (multidimcomponent, dnums, elu);
-	  }
-	else
-	  {
-	    FlatVector<SCAL> elu2(dnums.Size()*dim*gf->GetCacheBlockSize(),lh);
-	    //gf->GetElementVector (multidimcomponent, dnums, elu2);
-	    gf->GetElementVector (0, dnums, elu2);
-	    for(int i=0; i<elu.Size(); i++)
-	      elu[i] = elu2[i*gf->GetCacheBlockSize()+multidimcomponent];
-	  }
-	
-	fes.TransformVec (ei, elu, TRANSFORM_SOL);
+	gf->GetElementVector (multidimcomponent, el, elu);
 	
 	HeapReset hr(lh);
 	ElementTransformation & eltrans = ma->GetTrafo (ei, lh);
@@ -2497,25 +2398,12 @@ namespace ngcomp
 
 	ElementTransformation & eltrans = ma->GetTrafo (ei, lh);
 
-        ArrayMem<int, 100> dnums;
-	fes.GetDofNrs (ei, dnums);
-	const FiniteElement & fel = fes.GetFE (ei, lh);
+	auto el = fes.GetElement (ei, lh);
+	const FiniteElement & fel = el.GetFE();
 
-        FlatVector<SCAL> elu(dnums.Size() * dim, lh);
-
-        if(gf->GetCacheBlockSize() == 1)
-          {
-            gf->GetElementVector (multidimcomponent, dnums, elu);
-          }
-        else
-          {
-            FlatVector<SCAL> elu2(dnums.Size()*dim*gf->GetCacheBlockSize(),lh);
-            gf->GetElementVector (0, dnums, elu2);
-            for(int i=0; i<elu.Size(); i++)
-              elu[i] = elu2[i*gf->GetCacheBlockSize()+multidimcomponent];
-          }
+        FlatVector<SCAL> elu(fel.GetNDof() * dim, lh);
         
-        fes.TransformVec (ei, elu, TRANSFORM_SOL);
+        gf->GetElementVector (multidimcomponent, el, elu);
 
         if (!fes.DefinedOn(vb, eltrans.GetElementIndex())) return false;
         

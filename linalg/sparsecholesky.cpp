@@ -135,7 +135,7 @@ namespace ngla
 
   template <class TM>
   SparseCholeskyTM<TM> :: 
-  SparseCholeskyTM (shared_ptr<const SparseMatrixTM<TM>> a,
+  SparseCholeskyTM (shared_ptr<const SparseMatrix<TM>> a,
                     shared_ptr<BitArray> ainner,
                     shared_ptr<const Array<int>> acluster,
                     bool allow_refactor)
@@ -553,7 +553,7 @@ namespace ngla
 
   template <class TM>
   void SparseCholeskyTM<TM> :: 
-  FactorNew (const SparseMatrixTM<TM> & a)
+  FactorNew (const SparseMatrix<TM> & a)
   {
     static Timer tf("SparseCholesky - fill factor");
     tf.Start();
@@ -1558,12 +1558,12 @@ namespace ngla
   
 
 
-  template <class TM, class TV_ROW, class TV_COL>
-  void SparseCholesky<TM, TV_ROW, TV_COL> :: 
+  template <class TM>
+  void SparseCholesky<TM> :: 
   Mult (const BaseVector & x, BaseVector & y) const
   {
     y = 0.0;
-    MultAdd (TSCAL64(1.0), x, y);
+    MultAdd (1.0, x, y);
     return;
   }
   
@@ -1572,15 +1572,15 @@ namespace ngla
   // template <>
   // void SparseCholesky<double, double, double> :: 
 
-  template <class TM, class TV_ROW, class TV_COL>
-  void SparseCholesky<TM, TV_ROW, TV_COL> :: 
+  template <class TM> template <typename TV>
+  void SparseCholesky<TM> :: 
   SolveBlock (int bnr, FlatVector<TV> hy) const
   {
     cerr << "general form of solveblock not implemented" << endl;
   }
 
-  template <>
-  void SparseCholesky<double,double,double> :: 
+  template <> template <>
+  void SparseCholesky<double> :: 
   SolveBlock (int bnr, FlatVector<double> hy) const
   {
     auto range = BlockDofs (bnr);
@@ -1615,17 +1615,17 @@ namespace ngla
   }
 
 
-  template <class TM, class TV_ROW, class TV_COL>
-  void SparseCholesky<TM, TV_ROW, TV_COL> :: 
+  template <class TM> template <typename TV>
+  void SparseCholesky<TM> :: 
   SolveBlockT (int bnr, FlatVector<TV> hy) const
   {
     cerr << "general form of solveblock not implemented" << endl;
   }
 
 
-  template <>
-  void SparseCholesky<double, double, double> :: 
-  SolveBlockT (int bnr, FlatVector<> hy) const
+  template <> template <>
+  void SparseCholesky<double> :: 
+  SolveBlockT (int bnr, FlatVector<double> hy) const
   {
     const size_t * hfirstinrow = &firstinrow[0];
     const size_t * hfirstinrow_ri = &firstinrow_ri[0];
@@ -1694,8 +1694,8 @@ namespace ngla
 
 
 
-  template <class TM, class TV_ROW, class TV_COL>
-  void SparseCholesky<TM, TV_ROW, TV_COL> :: 
+  template <class TM> template <typename TVX>
+  void SparseCholesky<TM> :: 
   SolveReordered (FlatVector<TVX> hy) const
   {
     static Timer timer1("SparseCholesky<d,d,d>::MultAdd fac1");
@@ -1994,107 +1994,104 @@ namespace ngla
     
   }
 
-  template <class TM, class TV_ROW, class TV_COL>
-  void SparseCholesky<TM, TV_ROW, TV_COL> :: 
-  MultAdd (TSCAL64 s, const BaseVector & x, BaseVector & y) const
+  template <class TM>
+  void SparseCholesky<TM> :: 
+  MultAdd (Scalar s, const BaseVector & x, BaseVector & y) const
   {
-    if constexpr (!ngbla::IsComplex<TVX>())
-      if (x.IsComplex() || y.IsComplex())
-        {  // real factorization, complex vectors
-          this->MultComplexByParts (s, x, y, true);
-          return;
-        }
-
-    static Timer timer("SparseCholesky<d,d,d>::MultAdd");
+    static Timer timer("SparseCholesky::MultAdd");
     RegionTimer reg (timer);
     timer.AddFlops (2.0*lfact.Size());
 
-    // int n = Height();
-    const FlatVector<TVX> fx = x.FV<TVX> ();
-    FlatVector<TVX> fy = y.FV<TVX> ();
+    DispatchVectorTypes<TSCAL,TV_ROW,TV_COL>
+      (s, x, height, y, height, "SparseCholesky::MultAdd",
+       [&] <typename TVX0, typename TVY> (auto sy)
+       {
+         // solve in the scalar of the result
+         typedef WithScalar<TV_ROW,typename mat_traits<TVY>::TSCAL> TVX;
+         const FlatVector<TVX0> fx = x.FV<TVX0> ();
+         FlatVector<TVY> fy = y.FV<TVY> ();
 
-    int nused = this->nused;
-    Vector<TVX> hy1(nused);
-    FlatVector<TVX> hy(hy1);
+         int nused = this->nused;
+         Vector<TVX> hy1(nused);
+         FlatVector<TVX> hy(hy1);
 
-    ParallelFor (Range(height), [&] (int i)
-                 {
-                   if (order[i] != -1)
-                     hy(order[i]) = fx(i);
-                 });
+         ParallelFor (Range(height), [&] (int i)
+                      {
+                        if (order[i] != -1)
+                          hy(order[i]) = fx(i);
+                      });
 
 
-    SolveReordered(hy);
+         SolveReordered(hy);
 
-    if (inner)
-      {
-        /*
-	for (int i = 0; i < n; i++)
-	  if (inner->Test(i))
-	    fy(i) += s * hy(order[i]);
-        */
-        ParallelFor (Range(height), [&] (int i)
-                     {
-                       if (inner->Test(i))
-                         fy(i) += s * hy(order[i]);
-                     });
-      }
-    else if (cluster)
-      {
-	for (int i = 0; i < height; i++)
-	  if ((*cluster)[i])
-	    fy(i) += s * hy(order[i]);
-      }
-    else
-      {
-	// for (int i = 0; i < n; i++)
-        // fy(i) += s * hy(order[i]);
-        ParallelFor (Range(height), [&] (int i)
-                     {
-                       if (order[i] != -1)
-                         fy(i) += s * hy(order[i]);
-                     });
-
-      }
-
+         if (inner)
+           {
+             ParallelFor (Range(height), [&] (int i)
+                          {
+                            if (inner->Test(i))
+                              fy(i) += sy * hy(order[i]);
+                          });
+           }
+         else if (cluster)
+           {
+             for (int i = 0; i < height; i++)
+               if ((*cluster)[i])
+                 fy(i) += sy * hy(order[i]);
+           }
+         else
+           {
+             ParallelFor (Range(height), [&] (int i)
+                          {
+                            if (order[i] != -1)
+                              fy(i) += sy * hy(order[i]);
+                          });
+           }
+       });
   }
+
   
 
 
-  template <class TM, class TV_ROW, class TV_COL>
-  void SparseCholesky<TM, TV_ROW, TV_COL> :: 
+  template <class TM>
+  void SparseCholesky<TM> :: 
   Smooth (BaseVector & u, const BaseVector & f, BaseVector & y) const
   {
     static Timer t("SparseCholesky::Smooth");
     RegionTimer reg(t);
 
-    if(dynamic_pointer_cast<const SparseMatrixSymmetric<TM,TV>>(this->matrix.lock()))
+    if(dynamic_pointer_cast<const SparseMatrixSymmetric<TM>>(this->matrix.lock()))
       {
         // use the original one ...
         SparseFactorization::Smooth(u,f,y);
         return;
       }
 
-    const FlatVector<TVX> fu = u.FV<TVX> ();
-    FlatVector<TVX> fy = y.FV<TVX> ();
-    
-    Vector<TVX> hy(this->nused);
-    auto spmat = dynamic_pointer_cast<const SparseMatrix<TM,TV,TV>> (this->matrix.lock());
+    auto spmat = dynamic_pointer_cast<const SparseMatrix<TM>> (this->matrix.lock());
     if(!spmat)
       throw Exception("A matrix not available any more, needed for Smooth!");
     auto & hmat = *spmat;
     
-    ParallelFor (this->nused, [&] (int i)
-                 {
-                   hy(i) = fy(inv_order[i]) - hmat.RowTimesVector(inv_order[i], fu);
-                 });
+    DispatchVectorType<TSCAL,TV_ROW>
+      ({ &u, &y }, height, "SparseCholesky::Smooth",
+       [&] <typename TVX> ()
+       {
+         const FlatVector<TVX> fu = u.FV<TVX> ();
+         FlatVector<TVX> fy = y.FV<TVX> ();
     
-    SolveReordered(hy);
+         Vector<TVX> hy(this->nused);
+    
+         ParallelFor (this->nused, [&] (int i)
+                      {
+                        hy(i) = fy(inv_order[i]) - hmat.RowTimesVector(inv_order[i], fu);
+                      });
+    
+         SolveReordered(hy);
 
-    ParallelFor (this->nused, [&] (int i)
-                 {
-                   fu(inv_order[i]) += hy(i);
-                 });
+         ParallelFor (this->nused, [&] (int i)
+                      {
+                        fu(inv_order[i]) += hy(i);
+                      });
+       });
   }
 
   
@@ -2304,13 +2301,12 @@ namespace ngla
   static RegisterClassForArchive<SparseCholesky<Complex>, SparseCholeskyTM<Complex>> regscc;
 
 
-  template <class TM, class TV_ROW, class TV_COL>
-  shared_ptr<BaseMatrix> SparseCholesky<TM,TV_ROW,TV_COL> ::
+  template <class TM>
+  shared_ptr<BaseMatrix> SparseCholesky<TM> ::
   CreateDeviceMatrix () const
   {
-    if constexpr ((is_same_v<TM,double> || is_same_v<TM,float>) &&
-                  is_same_v<TV_ROW,TM> && is_same_v<TV_COL,TM>)
-      if (ngs_gpu::HasDevice())
+    if constexpr (is_same_v<TM,double> || is_same_v<TM,float>)
+      if (ngs_gpu::HasDevice() && !std::holds_alternative<Complex>(vecscal))
         {
           if constexpr (is_same_v<TM,double>)
             if (GetGpuDevice()->HasFloat64())
@@ -2323,127 +2319,22 @@ namespace ngla
   template class SparseCholesky<double>;
   template class SparseCholesky<float>;  
   template class SparseCholesky<Complex>;
-  template class SparseCholesky<double, Complex, Complex>;
 
   template class SparseCholeskyTM<double>;
   template class SparseCholeskyTM<float>;  
   template class SparseCholeskyTM<Complex>;
 
-#if MAX_SYS_DIM >= 1
-  template class SparseCholesky<Mat<1,1,double> >;
-  template class SparseCholesky<Mat<1,1,Complex> >;
-  template class SparseCholeskyTM<Mat<1,1,double> >;
-  template class SparseCholeskyTM<Mat<1,1,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 2
-  template class SparseCholesky<Mat<2,2,double> >;
-  template class SparseCholesky<Mat<2,2,Complex> >;
-  template class SparseCholeskyTM<Mat<2,2,double> >;
-  template class SparseCholeskyTM<Mat<2,2,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 3
-  template class SparseCholesky<Mat<3,3,double> >;
-  template class SparseCholesky<Mat<3,3,Complex> >;
-  template class SparseCholeskyTM<Mat<3,3,double> >;
-  template class SparseCholeskyTM<Mat<3,3,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 4
-  template class SparseCholesky<Mat<4,4,double> >;
-  template class SparseCholesky<Mat<4,4,Complex> >;
-  template class SparseCholeskyTM<Mat<4,4,double> >;
-  template class SparseCholeskyTM<Mat<4,4,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 5
-  template class SparseCholesky<Mat<5,5,double> >;
-  template class SparseCholesky<Mat<5,5,Complex> >;
-  template class SparseCholeskyTM<Mat<5,5,double> >;
-  template class SparseCholeskyTM<Mat<5,5,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 6
-  template class SparseCholesky<Mat<6,6,double> >;
-  template class SparseCholesky<Mat<6,6,Complex> >;
-  template class SparseCholeskyTM<Mat<6,6,double> >;
-  template class SparseCholeskyTM<Mat<6,6,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 7
-  template class SparseCholesky<Mat<7,7,double> >;
-  template class SparseCholesky<Mat<7,7,Complex> >;
-  template class SparseCholeskyTM<Mat<7,7,double> >;
-  template class SparseCholeskyTM<Mat<7,7,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 8
-  template class SparseCholesky<Mat<8,8,double> >;
-  template class SparseCholesky<Mat<8,8,Complex> >;
-  template class SparseCholeskyTM<Mat<8,8,double> >;
-  template class SparseCholeskyTM<Mat<8,8,Complex> >;
-#endif
+#define INST(N) \
+  template class SparseCholesky<Mat<N,N,double> >; \
+  template class SparseCholesky<Mat<N,N,Complex> >; \
+  template class SparseCholeskyTM<Mat<N,N,double> >; \
+  template class SparseCholeskyTM<Mat<N,N,Complex> >;
+  NGS_FOR_SYS_DIMS(INST)
+#undef INST
 
-#ifdef CACHEBLOCKSIZE
-  template class SparseCholesky<double, Vec<CACHEBLOCKSIZE>, Vec<CACHEBLOCKSIZE> >;
-#endif
 
-#if MAX_CACHEBLOCKS >= 2
-  template class SparseCholesky<double, Vec<2,double>, Vec<2,double> >;
-#endif
-#if MAX_CACHEBLOCKS >= 3
-  template class SparseCholesky<double, Vec<3,double>, Vec<3,double> >;
-  template class SparseCholesky<double, Vec<4,double>, Vec<4,double> >;
-#endif
-#if MAX_CACHEBLOCKS >= 5
-  template class SparseCholesky<double, Vec<5,double>, Vec<5,double> >;
-  template class SparseCholesky<double, Vec<6,double>, Vec<6,double> >;
-  template class SparseCholesky<double, Vec<7,double>, Vec<7,double> >;
-  template class SparseCholesky<double, Vec<8,double>, Vec<8,double> >;
-  template class SparseCholesky<double, Vec<9,double>, Vec<9,double> >;
-  template class SparseCholesky<double, Vec<10,double>, Vec<10,double> >;
-  template class SparseCholesky<double, Vec<11,double>, Vec<11,double> >;
-  template class SparseCholesky<double, Vec<12,double>, Vec<12,double> >;
-  template class SparseCholesky<double, Vec<13,double>, Vec<13,double> >;
-  template class SparseCholesky<double, Vec<14,double>, Vec<14,double> >;
-  template class SparseCholesky<double, Vec<15,double>, Vec<15,double> >;
-#endif
 
-#if MAX_CACHEBLOCKS >= 2
-  template class SparseCholesky<double, Vec<2,Complex>, Vec<2,Complex> >;
-#endif
-#if MAX_CACHEBLOCKS >= 3
-  template class SparseCholesky<double, Vec<3,Complex>, Vec<3,Complex> >;
-  template class SparseCholesky<double, Vec<4,Complex>, Vec<4,Complex> >;
-#endif
-#if MAX_CACHEBLOCKS >= 5
-  template class SparseCholesky<double, Vec<5,Complex>, Vec<5,Complex> >;
-  template class SparseCholesky<double, Vec<6,Complex>, Vec<6,Complex> >;
-  template class SparseCholesky<double, Vec<7,Complex>, Vec<7,Complex> >;
-  template class SparseCholesky<double, Vec<8,Complex>, Vec<8,Complex> >;
-  template class SparseCholesky<double, Vec<9,Complex>, Vec<9,Complex> >;
-  template class SparseCholesky<double, Vec<10,Complex>, Vec<10,Complex> >;
-  template class SparseCholesky<double, Vec<11,Complex>, Vec<11,Complex> >;
-  template class SparseCholesky<double, Vec<12,Complex>, Vec<12,Complex> >;
-  template class SparseCholesky<double, Vec<13,Complex>, Vec<13,Complex> >;
-  template class SparseCholesky<double, Vec<14,Complex>, Vec<14,Complex> >;
-  template class SparseCholesky<double, Vec<15,Complex>, Vec<15,Complex> >;
-#endif
 
-#if MAX_CACHEBLOCKS >= 2
-  template class SparseCholesky<Complex, Vec<2,Complex>, Vec<2,Complex> >;
-#endif
-#if MAX_CACHEBLOCKS >= 3
-  template class SparseCholesky<Complex, Vec<3,Complex>, Vec<3,Complex> >;
-  template class SparseCholesky<Complex, Vec<4,Complex>, Vec<4,Complex> >;
-#endif
-#if MAX_CACHEBLOCKS >= 5
-  template class SparseCholesky<Complex, Vec<5,Complex>, Vec<5,Complex> >;
-  template class SparseCholesky<Complex, Vec<6,Complex>, Vec<6,Complex> >;
-  template class SparseCholesky<Complex, Vec<7,Complex>, Vec<7,Complex> >;
-  template class SparseCholesky<Complex, Vec<8,Complex>, Vec<8,Complex> >;
-  template class SparseCholesky<Complex, Vec<9,Complex>, Vec<9,Complex> >;
-  template class SparseCholesky<Complex, Vec<10,Complex>, Vec<10,Complex> >;
-  template class SparseCholesky<Complex, Vec<11,Complex>, Vec<11,Complex> >;
-  template class SparseCholesky<Complex, Vec<12,Complex>, Vec<12,Complex> >;
-  template class SparseCholesky<Complex, Vec<13,Complex>, Vec<13,Complex> >;
-  template class SparseCholesky<Complex, Vec<14,Complex>, Vec<14,Complex> >;
-  template class SparseCholesky<Complex, Vec<15,Complex>, Vec<15,Complex> >;
-#endif
 
 
 

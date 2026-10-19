@@ -110,6 +110,10 @@ namespace ngcomp
     double unuseddiag;
     /// check if all dofs declared used are used in assemble
     bool check_unused = true;
+    /// dofs touched by assembling, the others get unuseddiag
+    BitArray useddof;
+    // thread-safe, atomic only for the first hit
+    void MarkUsed (DofId d) { if (!useddof.Test(d)) useddof.SetBitAtomic(d); }
     /// low order bilinear-form, 0 if not used
     shared_ptr<BilinearForm> low_order_bilinear_form;
 
@@ -527,6 +531,11 @@ namespace ngcomp
     // local operators:
     ElementByElementMatrix<SCAL> *harmonicext_ptr, *harmonicexttrans_ptr, *innersolve_ptr, *innermatrix_ptr;
 
+    // static condensation of the complete element matrix (in place), masks the inner dofs in dnums,
+    // stores harmonic extension and inner solve, optionally condenses the linearform
+    void CondenseElementMatrix (ElementId ei, FlatArray<DofId> dnums, FlatMatrix<SCAL> elmat,
+                                bool condense_rhs, LocalHeap & lh);
+
     
     //data for mpi-facets; only has data if there are relevant integrators in the BLF!
     mutable bool have_mpi_facet_data = false;
@@ -620,7 +629,7 @@ namespace ngcomp
 
     ///
     virtual void DoAssemble (LocalHeap & lh) override;
-    virtual void Assemble_facetwise_skeleton_parts_VOL (Array<bool>& useddof, size_t & gcnt, LocalHeap & lh, const BaseVector * lin = nullptr);
+    virtual void Assemble_facetwise_skeleton_parts_VOL (size_t & gcnt, LocalHeap & lh, const BaseVector * lin = nullptr);
     ///
     // virtual void DoAssembleIndependent (BitArray & useddof, LocalHeap & lh);
     ///
@@ -633,6 +642,11 @@ namespace ngcomp
                                    BareSliceMatrix<SCAL> elmat,
 				   ElementId id, bool addatomic,
 				   LocalHeap & lh) = 0;
+
+    // elmat: the complete element matrix of el in its local basis, call once per element.
+    // transform, static condensation, add to matrix and preconditioners, mark used dofs
+    void AddElementMatrix (const FESpace::Element & el, FlatMatrix<SCAL> elmat,
+                           bool condense_rhs, LocalHeap & lh);
 
 
     virtual void AddDiagElementMatrix (FlatArray<int> dnums1,
@@ -672,7 +686,7 @@ namespace ngcomp
   public:
     typedef typename mat_traits<TM>::TSCAL TSCAL;
     typedef TV TV_COL;
-    typedef SparseMatrix<TM,TV,TV> TMATRIX;
+    typedef SparseMatrix<TM> TMATRIX;
     shared_ptr<TMATRIX> mymatrix;
   protected:
 
@@ -709,7 +723,7 @@ namespace ngcomp
   public:
     typedef typename mat_traits<TM>::TSCAL TSCAL;
     typedef TV TV_COL;
-    typedef SparseMatrixSymmetric<TM,TV> TMATRIX;
+    typedef SparseMatrixSymmetric<TM> TMATRIX;
     shared_ptr<TMATRIX> mymatrix;    
   protected:
     
@@ -1084,6 +1098,7 @@ namespace ngcomp
     MatFreeOptions opts;
     Array<IntRange> ranges_x, ranges_xref, ranges_y, ranges_yref;
     Array<Code> physics;    // code for d_form / d_test
+    Array<shared_ptr<CoefficientFunction>> physics_cfs;  // d_form / d_test, host evaluation
     static constexpr int SW = 4*SIMD<double>::Size();    
     shared_ptr<SharedLibrary> library;
 

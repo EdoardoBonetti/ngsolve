@@ -34,12 +34,6 @@ using netgen::NG_TCL_OK;
 using netgen::NG_TCL_ERROR;
 using netgen::h_argc;
 using netgen::h_argv;
-/*
-using netgen::NG_TCL_STATIC;
-using netgen::NG_TCL_VOLATILE;
-*/
-// NG_TCL_VOLATILE/STATIC/DYNAMIC come from meshing/visual_interface.hpp
-// (typed Ng_Tcl_FreeProc* since netgen's Tcl/Tk 9 changes)
 
 
 #ifdef SOCKETS

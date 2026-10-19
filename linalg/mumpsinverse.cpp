@@ -8,11 +8,11 @@
 #ifdef USE_MUMPS
 
 #include <la.hpp>
+#include <parallelvector.hpp>
 #include "mumpsinverse.hpp"
 
 namespace ngla
 {
-  using namespace ngcomp;
 
 #define JOB_INIT -1
 #define JOB_END -2
@@ -24,9 +24,9 @@ namespace ngla
 #define USE_COMM_WORLD -987654
 
   
-  template <class TM, class TV_ROW, class TV_COL>
-  MumpsInverse<TM,TV_ROW,TV_COL> :: 
-  MumpsInverse (const SparseMatrix<TM,TV_ROW,TV_COL> & a, 
+  template <class TM>
+  MumpsInverse<TM> :: 
+  MumpsInverse (const SparseMatrix<TM> & a, 
                 shared_ptr<BitArray> ainner,
                 shared_ptr<const Array<int>> acluster,
                 bool asymmetric)
@@ -346,10 +346,14 @@ namespace ngla
   
   
 
-  template <class TM, class TV_ROW, class TV_COL>
-  void MumpsInverse<TM,TV_ROW,TV_COL> :: 
+  template <class TM>
+  void MumpsInverse<TM> :: 
   Mult (const BaseVector & x, BaseVector & y) const
   {
+    CheckSameScalar ({ &x, &y }, "MumpsInverse::Mult");
+    if (x.GetScalarType().index() != Scalar(TSCAL(0)).index())
+      ThrowIllegalScalars ("MumpsInverse::Mult", TSCAL(0), x, y);
+
     int id = comm.Rank();
 
     static Timer timer("Mumps mult inverse");
@@ -394,8 +398,8 @@ namespace ngla
   }
   
 
-  template <class TM, class TV_ROW, class TV_COL>
-  MumpsInverse<TM,TV_ROW,TV_COL> :: ~MumpsInverse()
+  template <class TM>
+  MumpsInverse<TM> :: ~MumpsInverse()
   {
     mumps_id.job=JOB_END; 
     mumps_trait<TSCAL>::MumpsFunction (&mumps_id);
@@ -435,7 +439,7 @@ namespace ngla
     static Timer timer_factor ("Mumps Inverse - factor");
     RegionTimer reg (timer);
 
-    const SparseMatrixTM<TM> & a = dynamic_cast<const SparseMatrixTM<TM> &> (ba);
+    const SparseMatrix<TM> & a = dynamic_cast<const SparseMatrix<TM> &> (ba);
 
     
     symmetric = asymmetric;
@@ -976,41 +980,14 @@ namespace ngla
 
 
 
+  template class MumpsInverse<float>;
   template class MumpsInverse<double>;
   template class MumpsInverse<Complex>;
-  template class MumpsInverse<double,Complex,Complex>;
-#if MAX_SYS_DIM >= 1
-  template class MumpsInverse<Mat<1,1,double> >;
-  template class MumpsInverse<Mat<1,1,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 2
-  template class MumpsInverse<Mat<2,2,double> >;
-  template class MumpsInverse<Mat<2,2,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 3
-  template class MumpsInverse<Mat<3,3,double> >;
-  template class MumpsInverse<Mat<3,3,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 4
-  template class MumpsInverse<Mat<4,4,double> >;
-  template class MumpsInverse<Mat<4,4,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 5
-  template class MumpsInverse<Mat<5,5,double> >;
-  template class MumpsInverse<Mat<5,5,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 6
-  template class MumpsInverse<Mat<6,6,double> >;
-  template class MumpsInverse<Mat<6,6,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 7
-  template class MumpsInverse<Mat<7,7,double> >;
-  template class MumpsInverse<Mat<7,7,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 8
-  template class MumpsInverse<Mat<8,8,double> >;
-  template class MumpsInverse<Mat<8,8,Complex> >;
-#endif
+#define INST(N) \
+  template class MumpsInverse<Mat<N,N,double> >; \
+  template class MumpsInverse<Mat<N,N,Complex> >;
+  NGS_FOR_SYS_DIMS(INST)
+#undef INST
 
 
 
@@ -1023,85 +1000,13 @@ namespace ngla
   template class ParallelMumpsInverse<double>;
   template class ParallelMumpsInverse<Complex>;
   template class ParallelMumpsInverse<double,Complex>;
-#if MAX_SYS_DIM >= 1
-  template class ParallelMumpsInverse<Mat<1,1,double> >;
-  template class ParallelMumpsInverse<Mat<1,1,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 2
-  template class ParallelMumpsInverse<Mat<2,2,double> >;
-  template class ParallelMumpsInverse<Mat<2,2,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 3
-  template class ParallelMumpsInverse<Mat<3,3,double> >;
-  template class ParallelMumpsInverse<Mat<3,3,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 4
-  template class ParallelMumpsInverse<Mat<4,4,double> >;
-  template class ParallelMumpsInverse<Mat<4,4,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 5
-  template class ParallelMumpsInverse<Mat<5,5,double> >;
-  template class ParallelMumpsInverse<Mat<5,5,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 6
-  template class ParallelMumpsInverse<Mat<6,6,double> >;
-  template class ParallelMumpsInverse<Mat<6,6,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 7
-  template class ParallelMumpsInverse<Mat<7,7,double> >;
-  template class ParallelMumpsInverse<Mat<7,7,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 8
-  template class ParallelMumpsInverse<Mat<8,8,double> >;
-  template class ParallelMumpsInverse<Mat<8,8,Complex> >;
-#endif
+#define INST(N) \
+  template class ParallelMumpsInverse<Mat<N,N,double> >; \
+  template class ParallelMumpsInverse<Mat<N,N,Complex> >;
+  NGS_FOR_SYS_DIMS(INST)
+#undef INST
 
-  /*
-    template class MumpsInverse<double, Vec<2,double>, Vec<2,double> >;
-    template class MumpsInverse<double, Vec<3,double>, Vec<3,double> >;
-    template class MumpsInverse<double, Vec<4,double>, Vec<4,double> >;
-    template class MumpsInverse<double, Vec<5,double>, Vec<5,double> >;
-    template class MumpsInverse<double, Vec<6,double>, Vec<6,double> >;
-    template class MumpsInverse<double, Vec<7,double>, Vec<7,double> >;
-    template class MumpsInverse<double, Vec<8,double>, Vec<8,double> >;
-    template class MumpsInverse<double, Vec<9,double>, Vec<9,double> >;
-    template class MumpsInverse<double, Vec<10,double>, Vec<10,double> >;
-    template class MumpsInverse<double, Vec<11,double>, Vec<11,double> >;
-    template class MumpsInverse<double, Vec<12,double>, Vec<12,double> >;
-    template class MumpsInverse<double, Vec<13,double>, Vec<13,double> >;
-    template class MumpsInverse<double, Vec<14,double>, Vec<14,double> >;
-    template class MumpsInverse<double, Vec<15,double>, Vec<15,double> >;
-  
-    template class MumpsInverse<double, Vec<2,Complex>, Vec<2,Complex> >;
-    template class MumpsInverse<double, Vec<3,Complex>, Vec<3,Complex> >;
-    template class MumpsInverse<double, Vec<4,Complex>, Vec<4,Complex> >;
-    template class MumpsInverse<double, Vec<5,Complex>, Vec<5,Complex> >;
-    template class MumpsInverse<double, Vec<6,Complex>, Vec<6,Complex> >;
-    template class MumpsInverse<double, Vec<7,Complex>, Vec<7,Complex> >;
-    template class MumpsInverse<double, Vec<8,Complex>, Vec<8,Complex> >;
-    template class MumpsInverse<double, Vec<9,Complex>, Vec<9,Complex> >;
-    template class MumpsInverse<double, Vec<10,Complex>, Vec<10,Complex> >;
-    template class MumpsInverse<double, Vec<11,Complex>, Vec<11,Complex> >;
-    template class MumpsInverse<double, Vec<12,Complex>, Vec<12,Complex> >;
-    template class MumpsInverse<double, Vec<13,Complex>, Vec<13,Complex> >;
-    template class MumpsInverse<double, Vec<14,Complex>, Vec<14,Complex> >;
-    template class MumpsInverse<double, Vec<15,Complex>, Vec<15,Complex> >;
 
-    template class MumpsInverse<Complex, Vec<2,Complex>, Vec<2,Complex> >;
-    template class MumpsInverse<Complex, Vec<3,Complex>, Vec<3,Complex> >;
-    template class MumpsInverse<Complex, Vec<4,Complex>, Vec<4,Complex> >;
-    template class MumpsInverse<Complex, Vec<5,Complex>, Vec<5,Complex> >;
-    template class MumpsInverse<Complex, Vec<6,Complex>, Vec<6,Complex> >;
-    template class MumpsInverse<Complex, Vec<7,Complex>, Vec<7,Complex> >;
-    template class MumpsInverse<Complex, Vec<8,Complex>, Vec<8,Complex> >;
-    template class MumpsInverse<Complex, Vec<9,Complex>, Vec<9,Complex> >;
-    template class MumpsInverse<Complex, Vec<10,Complex>, Vec<10,Complex> >;
-    template class MumpsInverse<Complex, Vec<11,Complex>, Vec<11,Complex> >;
-    template class MumpsInverse<Complex, Vec<12,Complex>, Vec<12,Complex> >;
-    template class MumpsInverse<Complex, Vec<13,Complex>, Vec<13,Complex> >;
-    template class MumpsInverse<Complex, Vec<14,Complex>, Vec<14,Complex> >;
-    template class MumpsInverse<Complex, Vec<15,Complex>, Vec<15,Complex> >;
-  */
 }
 
 

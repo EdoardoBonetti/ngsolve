@@ -225,6 +225,8 @@ ANY                  1 1 1 1 | 15
     // only a few spaces (lowest order Nedelec) need the transformation
     // of element vectors
     bool needs_transform_vec = true;
+    // some elements have a rectangular dof transformation, see GetDofTransformation
+    bool needs_dof_transformation = false;
 
     
     // move ndof and ndof_level to FESpace base class
@@ -317,25 +319,29 @@ ANY                  1 1 1 1 | 15
     class Element : public Ngs_Element
     {
       const FESpace & fes;
-      Array<DofId> & temp_dnums;
       LocalHeap & lh;
+      mutable FlatArray<DofId> dnums;     // in lh, set by first GetDofs()
       mutable bool dofs_set = false;
     public:     
+      INLINE Element (const FESpace & afes, ElementId id, LocalHeap & alh)
+        : Ngs_Element ((*afes.GetMeshAccess())[id] ), fes(afes), lh(alh)
+      { ; }
+
+      [[deprecated("use Element(fes, id, lh)")]]
       INLINE Element (const FESpace & afes, ElementId id, Array<DofId> & atemp_dnums,
                       LocalHeap & alh)
-        : Ngs_Element ((*afes.GetMeshAccess())[id] ), fes(afes), 
-          temp_dnums(atemp_dnums), lh(alh) 
-      { ; }
+        : Element (afes, id, alh) { ; }
 
       INLINE Element (const Element & el) = default;
       INLINE Element (Element && el) = default;
       auto & GetFESpace() const { return fes; } 
+      // allocated in lh by the first call: don't make it inside an inner HeapReset
       INLINE FlatArray<DofId> GetDofs() const
       {
         if (!dofs_set)
-          fes.GetDofNrs (*this, temp_dnums);
+          dnums.Assign (fes.GetDofNrs (*this, lh));
         dofs_set = true;
-        return temp_dnums;
+        return dnums;
       }
 
       INLINE const ElementTransformation & GetTrafo() const
@@ -359,15 +365,14 @@ ANY                  1 1 1 1 | 15
       const FESpace & fes;
       ElementId ei;
       const FlatArray<bool> defined_on;
-      Array<DofId> & temp_dnums;      
       LocalHeap & lh;
       void * heappointer;
     public:
       INLINE ElementIterator (const FESpace & afes, ElementId aei, 
                               const FlatArray<bool> adefined_on,
-                              Array<DofId> & atemp_dnums, LocalHeap & alh)
+                              LocalHeap & alh)
         : fes(afes), ei(aei), defined_on(adefined_on), 
-          temp_dnums(atemp_dnums), lh(alh), heappointer(lh.GetPointer()) { ; }
+          lh(alh), heappointer(lh.GetPointer()) { ; }
       INLINE ElementIterator & operator++ ()
       {
         lh.CleanUp(heappointer);
@@ -378,7 +383,7 @@ ANY                  1 1 1 1 | 15
                ) ++ei;
         return *this;
       }
-      INLINE Element operator*() const { return Element (fes, ei, temp_dnums, lh); }          
+      INLINE Element operator*() const { return Element (fes, ei, lh); }
       INLINE bool operator!=(const ElementIterator & id2) const { return ei != id2.ei; }
       INLINE bool operator==(const ElementIterator & id2) const { return ei == id2.ei; }
     };
@@ -388,7 +393,6 @@ ANY                  1 1 1 1 | 15
       const FESpace & fes;
       Array<bool> definedon;
       const VorB vb;
-      mutable Array<DofId> temp_dnums;
       mutable LocalHeap mylh;
       LocalHeap & lh;
     public:
@@ -408,7 +412,7 @@ ANY                  1 1 1 1 | 15
 
       INLINE ElementRange (ElementRange && r2) 
         : IntRange(r2), fes(r2.fes), definedon(std::move(r2.definedon)), vb(r2.vb), 
-          temp_dnums(std::move(r2.temp_dnums)), mylh(std::move(r2.mylh)), 
+          mylh(std::move(r2.mylh)),
           lh( (&r2.mylh == &r2.lh) ? mylh : r2.lh)
       { ; }
 
@@ -422,12 +426,12 @@ ANY                  1 1 1 1 | 15
         while ((ei.Nr() < IntRange::end()) && 
                (definedon.Size() && !definedon[fes.GetMeshAccess()->GetElIndex(ei)]))
           ++ei;
-        return ElementIterator(fes, ei, definedon, temp_dnums, lh); 
+        return ElementIterator(fes, ei, definedon, lh);
       }
 
       INLINE ElementIterator end () const 
       {
-        return ElementIterator(fes, ElementId(vb,Next()), definedon, temp_dnums, lh); 
+        return ElementIterator(fes, ElementId(vb,Next()), definedon, lh);
       }
     };
 
@@ -442,6 +446,11 @@ ANY                  1 1 1 1 | 15
       return ElementRange (*this, vb, IntRange (0, ma->GetNE(vb)), lh);
     }
 
+    INLINE Element GetElement (ElementId ei, LocalHeap & lh) const
+    {
+      return Element (*this, ei, lh);
+    }
+
     /// returns finite element. 
     virtual FiniteElement & GetFE (ElementId ei, Allocator & lh) const = 0;
 
@@ -449,6 +458,25 @@ ANY                  1 1 1 1 | 15
     /// get dof-nrs of domain or boundary element elnr
     virtual void GetDofNrs (ElementId ei, Array<DofId> & dnums) const = 0;
     
+    /// dofs in lh: GetDofNrs fills a block of half the free lh (and may allocate
+    /// behind it), then the block is shrunk to the dofs
+    INLINE FlatArray<DofId> GetDofNrs (ElementId ei, LocalHeap & lh) const
+    {
+      void * start = lh.GetPointer();
+      size_t cap = lh.Available()/2/sizeof(DofId);
+      DofId * block = lh.Alloc<DofId> (cap);
+      void * end = lh.GetPointer();
+      Array<DofId> hdnums(cap, block);   // non-owning
+      hdnums.SetSize0();
+      GetDofNrs (ei, hdnums);
+      if (lh.GetPointer() == end)        // nothing allocated behind the block
+        lh.CleanUp (start);
+      FlatArray<DofId> dnums(hdnums.Size(), lh);
+      if (dnums.Data() != hdnums.Data()) // not in place
+        dnums = hdnums;
+      return dnums;
+    }
+
     virtual void GetDofNrs (NodeId ni, Array<DofId> & dnums) const;
     BitArray GetDofs (const Region & reg, const DifferentialOperator * diffop = nullptr) const;
     virtual IntRange GetRange (const DifferentialOperator & diffop) const;
@@ -605,6 +633,18 @@ ANY                  1 1 1 1 | 15
 
 
     bool NeedsTransformVec() const { return needs_transform_vec; }
+
+    bool NeedsDofTransformation() const { return needs_dof_transformation; }
+    /// for elements where a local shape function combines several global dofs:
+    /// local coefficients = T * element dofs, T is GetFE(ei).GetNDof() x dnums.Size().
+    /// nullopt if the element has no such map, then TransformVec/TransformMat apply
+    optional<FlatMatrix<double>> GetDofTransformation (ElementId ei, LocalHeap & lh) const
+    {
+      if (!needs_dof_transformation) return nullopt;
+      return VGetDofTransformation (ei, lh);
+    }
+    virtual optional<FlatMatrix<double>> VGetDofTransformation (ElementId ei, LocalHeap & lh) const
+    { return nullopt; }
 
     void TransformMat (ElementId ei, 
                        SliceMatrix<double> mat, TRANSFORM_TYPE type) const
@@ -1161,6 +1201,8 @@ ANY                  1 1 1 1 | 15
                        SliceVector<double> vec, TRANSFORM_TYPE tt) const override;
     void VTransformVC (ElementId ei, 
                        SliceVector<Complex> vec, TRANSFORM_TYPE tt) const override;
+
+    optional<FlatMatrix<double>> VGetDofTransformation (ElementId ei, LocalHeap & lh) const override;
 
     /// number of component spaces
     inline int GetNSpaces () const { return spaces.Size(); }

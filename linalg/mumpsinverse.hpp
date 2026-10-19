@@ -25,6 +25,7 @@ namespace ngla
 
 #ifdef USE_MUMPS
 #define OMPI_SKIP_MPICXX
+#include "smumps_c.h"
 #include "dmumps_c.h"
 #include "zmumps_c.h"
 
@@ -40,6 +41,16 @@ namespace ngla
   };
 
   template <>
+  class mumps_trait<float>
+  {
+  public:
+    typedef SMUMPS_STRUC_C MUMPS_STRUC_C;
+    typedef float MUMPS_TSCAL;
+    static void MumpsFunction (SMUMPS_STRUC_C * id)
+    { smumps_c (id); }
+  };
+
+  template <>
   class mumps_trait<Complex>
   {
   public:
@@ -51,9 +62,7 @@ namespace ngla
 
 
 
-  template<class TM, 
-	   class TV_ROW = typename mat_traits<TM>::TV_ROW, 
-	   class TV_COL = typename mat_traits<TM>::TV_COL>
+  template<class TM>
   class MumpsInverse : public BaseMatrix
   {
     typedef typename mat_traits<TM>::TV_COL TV;
@@ -75,7 +84,7 @@ namespace ngla
 
   public:
     ///
-    MumpsInverse (const SparseMatrix<TM,TV_ROW,TV_COL> & a, 
+    MumpsInverse (const SparseMatrix<TM> & a, 
                   shared_ptr<BitArray> ainner = nullptr,
                   shared_ptr<const Array<int>> acluster = nullptr,
                   bool symmetric = false);

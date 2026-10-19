@@ -134,7 +134,7 @@ namespace ngla
 
   template<class TM>
   PardisoInverseTM<TM> :: 
-  PardisoInverseTM (shared_ptr<const SparseMatrixTM<TM>> a,
+  PardisoInverseTM (shared_ptr<const SparseMatrix<TM>> a,
 		    shared_ptr<BitArray> ainner,
 		    shared_ptr<const Array<int>> acluster,
 		    int asymmetric)
@@ -254,7 +254,7 @@ namespace ngla
   
   template<class TM> template <typename TSUBSET>
   void PardisoInverseTM<TM> :: 
-  GetPardisoMatrix (const SparseMatrixTM<TM> & a, TSUBSET subset)
+  GetPardisoMatrix (const SparseMatrix<TM> & a, TSUBSET subset)
   {
     Array<int> icompress (a.Height());
     icompress = -1;
@@ -386,7 +386,7 @@ namespace ngla
 
 
   template<class TM>
-  void PardisoInverseTM<TM> :: GetPardisoMatrix (const SparseMatrixTM<TM> & a)
+  void PardisoInverseTM<TM> :: GetPardisoMatrix (const SparseMatrix<TM> & a)
   {
     if (inner)
       GetPardisoMatrix (a, SubsetFree (*inner));
@@ -508,7 +508,7 @@ namespace ngla
     static Timer timer("Pardiso Update");
     RegionTimer reg (timer);
 
-    auto a = dynamic_pointer_cast<const SparseMatrixTM<TM>> (GetAMatrix());
+    auto a = dynamic_pointer_cast<const SparseMatrix<TM>> (GetAMatrix());
     if (!a)
       throw Exception("PardisoInverse::Update: original matrix not available anymore");
 
@@ -531,11 +531,37 @@ namespace ngla
   }
 
 
-  template<class TM, class TV_ROW, class TV_COL>
-  void PardisoInverse<TM,TV_ROW,TV_COL> :: 
+  template<class TM>
+  void PardisoInverse<TM> :: 
   Mult (const BaseVector & x, BaseVector & y) const
   {
-    static Timer timer(string("Pardiso Solve, mat = ") + typeid(TM).name() + ", vec = " + typeid(TV_ROW).name());
+    CheckSameScalar ({ &x, &y }, "PardisoInverse::Mult");
+    if (x.GetScalarType().index() == Scalar(TSCAL(0)).index())
+      {
+        MultSame (x, y);
+        return;
+      }
+    if constexpr (is_same_v<TM,double>)
+      if (holds_alternative<Complex>(x.GetScalarType()))
+        {
+          MultRealComplex (x, y);
+          return;
+        }
+    ThrowIllegalScalars ("PardisoInverse::Mult", TSCAL(0), x, y);
+  }
+
+  template<class TM>
+  void PardisoInverse<TM> :: 
+  MultRealComplex (const BaseVector & x, BaseVector & y) const
+  {
+    throw Exception ("PardisoInverse: complex vectors only for scalar real matrices");
+  }
+
+  template<class TM>
+  void PardisoInverse<TM> :: 
+  MultSame (const BaseVector & x, BaseVector & y) const
+  {
+    static Timer timer(string("Pardiso Solve, mat = ") + typeid(TM).name() + ", vec = " + typeid(TVX).name());
     RegionTimer reg (timer);
 
     FlatVector<TVX> fx = x.FV<TVX> ();
@@ -609,8 +635,8 @@ namespace ngla
   }
   
   
-  template<class TM, class TV_ROW, class TV_COL>
-  void PardisoInverse<TM,TV_ROW,TV_COL> ::
+  template<class TM>
+  void PardisoInverse<TM> ::
   MultTrans (const BaseVector & x, BaseVector & y) const
   {
     const_cast<integer&>(hparams[11]) = 2; // Solve transposed matrix
@@ -625,8 +651,8 @@ namespace ngla
 
 
   template<>
-  void PardisoInverse<double,Complex,Complex> :: 
-  Mult (const BaseVector & x, BaseVector & y) const
+  void PardisoInverse<double> :: 
+  MultRealComplex (const BaseVector & x, BaseVector & y) const
   {
     static Timer timer ("Pardiso Solve, mat = d, vec = c");
     RegionTimer reg (timer);
@@ -756,114 +782,20 @@ namespace ngla
   template class PardisoInverse<double>;
   template class PardisoInverse<float>;
   template class PardisoInverse<Complex>;
-  template class PardisoInverse<double,Complex,Complex>;
-#if MAX_SYS_DIM >= 1
-  template class PardisoInverseTM<Mat<1,1,double> >;
-  template class PardisoInverseTM<Mat<1,1,Complex> >;
-  template class PardisoInverse<Mat<1,1,double> >;
-  template class PardisoInverse<Mat<1,1,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 2
-  template class PardisoInverseTM<Mat<2,2,double> >;
-  template class PardisoInverseTM<Mat<2,2,Complex> >;
-  template class PardisoInverse<Mat<2,2,double> >;
-  template class PardisoInverse<Mat<2,2,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 3
-  template class PardisoInverseTM<Mat<3,3,double> >;
-  template class PardisoInverseTM<Mat<3,3,Complex> >;
-  template class PardisoInverse<Mat<3,3,double> >;
-  template class PardisoInverse<Mat<3,3,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 4
-  template class PardisoInverseTM<Mat<4,4,double> >;
-  template class PardisoInverseTM<Mat<4,4,Complex> >;
-  template class PardisoInverse<Mat<4,4,double> >;
-  template class PardisoInverse<Mat<4,4,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 5
-  template class PardisoInverse<Mat<5,5,double> >;
-  template class PardisoInverse<Mat<5,5,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 6
-  template class PardisoInverse<Mat<6,6,double> >;
-  template class PardisoInverse<Mat<6,6,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 7
-  template class PardisoInverse<Mat<7,7,double> >;
-  template class PardisoInverse<Mat<7,7,Complex> >;
-#endif
-#if MAX_SYS_DIM >= 8
-  template class PardisoInverse<Mat<8,8,double> >;
-  template class PardisoInverse<Mat<8,8,Complex> >;
-#endif
+#define INST(N) \
+  template class PardisoInverseTM<Mat<N,N,double> >; \
+  template class PardisoInverseTM<Mat<N,N,Complex> >; \
+  template class PardisoInverse<Mat<N,N,double> >; \
+  template class PardisoInverse<Mat<N,N,Complex> >;
+  NGS_FOR_SYS_DIMS(INST)
+#undef INST
 
 
 
 
 
-#if MAX_CACHEBLOCKS >= 2
-  template class PardisoInverse<double, Vec<2,double>, Vec<2,double> >;
-#endif
-#if MAX_CACHEBLOCKS >= 3
-  template class PardisoInverse<double, Vec<3,double>, Vec<3,double> >;
-  template class PardisoInverse<double, Vec<4,double>, Vec<4,double> >;
-#endif
-#if MAX_CACHEBLOCKS >= 5
-  template class PardisoInverse<double, Vec<5,double>, Vec<5,double> >;
-  template class PardisoInverse<double, Vec<6,double>, Vec<6,double> >;
-  template class PardisoInverse<double, Vec<7,double>, Vec<7,double> >;
-  template class PardisoInverse<double, Vec<8,double>, Vec<8,double> >;
-  template class PardisoInverse<double, Vec<9,double>, Vec<9,double> >;
-  template class PardisoInverse<double, Vec<10,double>, Vec<10,double> >;
-  template class PardisoInverse<double, Vec<11,double>, Vec<11,double> >;
-  template class PardisoInverse<double, Vec<12,double>, Vec<12,double> >;
-  template class PardisoInverse<double, Vec<13,double>, Vec<13,double> >;
-  template class PardisoInverse<double, Vec<14,double>, Vec<14,double> >;
-  template class PardisoInverse<double, Vec<15,double>, Vec<15,double> >;
-#endif
 
-#if MAX_CACHEBLOCKS >= 2
-  template class PardisoInverse<double, Vec<2,Complex>, Vec<2,Complex> >;
-#endif
-#if MAX_CACHEBLOCKS >= 3
-  template class PardisoInverse<double, Vec<3,Complex>, Vec<3,Complex> >;
-  template class PardisoInverse<double, Vec<4,Complex>, Vec<4,Complex> >;
-#endif
-#if MAX_CACHEBLOCKS >= 5
-  template class PardisoInverse<double, Vec<5,Complex>, Vec<5,Complex> >;
-  template class PardisoInverse<double, Vec<6,Complex>, Vec<6,Complex> >;
-  template class PardisoInverse<double, Vec<7,Complex>, Vec<7,Complex> >;
-  template class PardisoInverse<double, Vec<8,Complex>, Vec<8,Complex> >;
-  template class PardisoInverse<double, Vec<9,Complex>, Vec<9,Complex> >;
-  template class PardisoInverse<double, Vec<10,Complex>, Vec<10,Complex> >;
-  template class PardisoInverse<double, Vec<11,Complex>, Vec<11,Complex> >;
-  template class PardisoInverse<double, Vec<12,Complex>, Vec<12,Complex> >;
-  template class PardisoInverse<double, Vec<13,Complex>, Vec<13,Complex> >;
-  template class PardisoInverse<double, Vec<14,Complex>, Vec<14,Complex> >;
-  template class PardisoInverse<double, Vec<15,Complex>, Vec<15,Complex> >;
-#endif
 
-#if MAX_CACHEBLOCKS >= 2
-  template class PardisoInverse<Complex, Vec<2,Complex>, Vec<2,Complex> >;
-#endif
-#if MAX_CACHEBLOCKS >= 3
-  template class PardisoInverse<Complex, Vec<3,Complex>, Vec<3,Complex> >;
-  template class PardisoInverse<Complex, Vec<4,Complex>, Vec<4,Complex> >;
-#endif
-#if MAX_CACHEBLOCKS >= 5
-  template class PardisoInverse<Complex, Vec<5,Complex>, Vec<5,Complex> >;
-  template class PardisoInverse<Complex, Vec<6,Complex>, Vec<6,Complex> >;
-  template class PardisoInverse<Complex, Vec<7,Complex>, Vec<7,Complex> >;
-  template class PardisoInverse<Complex, Vec<8,Complex>, Vec<8,Complex> >;
-  template class PardisoInverse<Complex, Vec<9,Complex>, Vec<9,Complex> >;
-  template class PardisoInverse<Complex, Vec<10,Complex>, Vec<10,Complex> >;
-  template class PardisoInverse<Complex, Vec<11,Complex>, Vec<11,Complex> >;
-  template class PardisoInverse<Complex, Vec<12,Complex>, Vec<12,Complex> >;
-  template class PardisoInverse<Complex, Vec<13,Complex>, Vec<13,Complex> >;
-  template class PardisoInverse<Complex, Vec<14,Complex>, Vec<14,Complex> >;
-  template class PardisoInverse<Complex, Vec<15,Complex>, Vec<15,Complex> >;
-#endif
 
 
 

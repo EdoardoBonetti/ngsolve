@@ -117,8 +117,6 @@ namespace ngcomp
     /// highest multigrid-level for which Update was called (memory allocation)
     int level_updated = -1;
 
-    /// used for many right-hand-sides
-    int cacheblocksize = 1;
     /// Component gridfunctions living somewhere - need to call update on them
     Array<weak_ptr<GridFunction>> compgfs;
     /// the actual data, array for multi-dim 
@@ -190,10 +188,6 @@ namespace ngcomp
 
     // void Visualize(const string & name);
 
-    ///
-    virtual void SetCacheBlockSize (const int size) {cacheblocksize = size;}
-    ///
-    virtual int GetCacheBlockSize (void) const { return cacheblocksize;}
     ///
     virtual bool IsUpdated () const; 
 
@@ -311,6 +305,27 @@ namespace ngcomp
 				   FlatArray<int> dnums,
 				   FlatVector<Complex> elvec) 
     { vec[comp] -> SetIndirect (dnums, elvec); }
+
+    // elvec in local element basis
+    template <typename SCAL>
+    void GetElementVector (int comp, const FESpace::Element & el,
+                           FlatVector<SCAL> elvec) const
+    {
+      auto & fes = el.GetFESpace();
+      if (auto T = fes.GetDofTransformation (el, el.GetLH()))
+        {
+          FlatVector<SCAL> gvec(T->Width(), el.GetLH());
+          GetElementVector (comp, el.GetDofs(), gvec);
+          elvec = *T * gvec;
+          return;
+        }
+      GetElementVector (comp, el.GetDofs(), elvec);
+      fes.TransformVec (el, elvec, TRANSFORM_SOL);
+    }
+
+    template <typename SCAL>
+    void GetElementVector (const FESpace::Element & el, FlatVector<SCAL> elvec) const
+    { GetElementVector (0, el, elvec); }
 
     virtual Scalar GetScalarType() const = 0;
 

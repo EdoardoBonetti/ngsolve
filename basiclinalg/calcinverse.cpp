@@ -162,13 +162,26 @@ namespace ngbla
 
 
 
-#ifdef LAPACK
   template <>
   void CalcInverse (FlatMatrix<Complex> inv, INVERSE_LIB il)
   {
-    LapackInverse (inv);
-  }
+    // crossover vs lapack: ~450 Accelerate (M4), ~60 MKL (AVX512)
+    if (il == INVERSE_LIB::INV_CHOOSE)
+      il = inv.Height() >= 150 ? INVERSE_LIB::INV_LAPACK : INVERSE_LIB::INV_NGBLA_LU;
+
+    if (il == INVERSE_LIB::INV_NGBLA_LU)
+      {
+        ArrayMem<int,100> p(inv.Height());
+        CalcLU (inv, p);
+        InverseFromLU (inv, p);
+      }
+#ifdef LAPACK
+    else if (il == INVERSE_LIB::INV_LAPACK)
+      LapackInverse (inv);
 #endif
+    else
+      T_CalcInverse (inv);
+  }
 
   /*
   extern NGS_DLL_HEADER
@@ -234,43 +247,13 @@ namespace ngbla
 
 
   
-#ifndef LAPACK
-  template void CalcInverse (FlatMatrix<Complex> inv, INVERSE_LIB il);
-#endif
 
 
 
-#if MAX_SYS_DIM >= 1
-  template void CalcInverse (FlatMatrix<Mat<1,1,double> > inv, INVERSE_LIB il);
-  template void CalcInverse (FlatMatrix<Mat<1,1,Complex> > inv, INVERSE_LIB il);
-#endif
-#if MAX_SYS_DIM >= 2
-  template void CalcInverse (FlatMatrix<Mat<2,2,double> > inv, INVERSE_LIB il);
-  template void CalcInverse (FlatMatrix<Mat<2,2,Complex> > inv, INVERSE_LIB il);
-#endif
-#if MAX_SYS_DIM >= 3
-  template void CalcInverse (FlatMatrix<Mat<3,3,double> > inv, INVERSE_LIB il);
-  template void CalcInverse (FlatMatrix<Mat<3,3,Complex> > inv, INVERSE_LIB il);
-#endif
-#if MAX_SYS_DIM >= 4
-  template void CalcInverse (FlatMatrix<Mat<4,4,double> > inv, INVERSE_LIB il);
-  template void CalcInverse (FlatMatrix<Mat<4,4,Complex> > inv, INVERSE_LIB il);
-#endif
-#if MAX_SYS_DIM >= 5
-  template void CalcInverse (FlatMatrix<Mat<5,5,Complex> > inv, INVERSE_LIB il);
-  template void CalcInverse (FlatMatrix<Mat<5,5,double> > inv, INVERSE_LIB il);
-#endif
-#if MAX_SYS_DIM >= 6
-  template void CalcInverse (FlatMatrix<Mat<6,6,double> > inv, INVERSE_LIB il);
-  template void CalcInverse (FlatMatrix<Mat<6,6,Complex> > inv, INVERSE_LIB il);
-#endif
-#if MAX_SYS_DIM >= 7
-  template void CalcInverse (FlatMatrix<Mat<7,7,double> > inv, INVERSE_LIB il);
-  template void CalcInverse (FlatMatrix<Mat<7,7,Complex> > inv, INVERSE_LIB il);
-#endif
-#if MAX_SYS_DIM >= 8
-  template void CalcInverse (FlatMatrix<Mat<8,8,double> > inv, INVERSE_LIB il);
-  template void CalcInverse (FlatMatrix<Mat<8,8,Complex> > inv, INVERSE_LIB il);
-#endif
+#define INST(N) \
+  template void CalcInverse (FlatMatrix<Mat<N,N,double> > inv, INVERSE_LIB il); \
+  template void CalcInverse (FlatMatrix<Mat<N,N,Complex> > inv, INVERSE_LIB il);
+  NGS_FOR_SYS_DIMS(INST)
+#undef INST
 
 }

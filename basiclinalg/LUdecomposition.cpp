@@ -154,37 +154,10 @@ namespace ngbla
   static Timer calcLUSearch("CalcLU - search");  
   static Timer calcLUSwap("CalcLU - swap");  
   */
-  void CalcLURec (SliceMatrix<double> a, FlatArray<int> p, IntRange r)
+  // leaf of 4 columns; works on the panel only (r.First() == 0), piv returns the pivot rows
+  INLINE void CalcLULeaf (SliceMatrix<double> a, FlatArray<int> piv, IntRange r)
   {
     size_t n = a.Height();
-    
-    /*
-    if (r.Size() == 0) return;
-    if (r.Size() == 1)
-      {
-        size_t i = r.First();
-        
-        size_t imax = i;
-        double valmax = fabs(a(i,i));
-      
-        for (size_t j = i+1; j < n; j++)
-          if (double valj = fabs(a(j,i)) > valmax)
-            {
-              valmax = valj;
-              imax = j;
-            }
-        
-        if (imax != i)
-          {
-            Swap (p[i], p[imax]);
-            SwapVectors (a.Row(i), a.Row(imax));
-          }
-        
-        if (i+1 < n)
-          a.Col(i).Range(i+1,n) *= 1.0/a(i,i);
-        return;
-      }
-    */
     constexpr size_t bs = 4;
     if (r.Size() <= bs)
       {
@@ -213,10 +186,10 @@ namespace ngbla
               rowmax = max(rowmax, fabs(a(imax,j)));
             if (!(valmax > 1e-20*rowmax))
               throw Exception ("CalcLU: matrix singular");
+            piv[i-r.First()] = imax;
             if (imax != i)
               {
                 // RegionTimer reg(calcLUSwap);                
-                Swap (p[i], p[imax]);
                 SwapVectors (a.Row(i), a.Row(imax));
               }
 
@@ -305,6 +278,86 @@ namespace ngbla
 
         return;
       }
+  }
+
+  template <typename T>
+  INLINE void SwapRowRange (SliceMatrix<T> a, size_t i, size_t j, size_t first, size_t next)
+  {
+    if (first >= next) return;
+    if constexpr (is_same_v<T,double>)
+      SwapVectors (a.Row(i).Range(first,next), a.Row(j).Range(first,next));
+    else
+      for (size_t k = first; k < next; k++)
+        Swap (a(i,k), a(j,k));
+  }
+
+  // leaf on the panel A(f:n, r). Walking down a tall column panel with a row
+  // stride of a multiple of 2 KB thrashes the cache sets, then use a contiguous copy
+  template <typename T>
+  INLINE void PackedLeaf (SliceMatrix<T> a, FlatArray<int> p, IntRange r)
+  {
+    constexpr size_t bs = 4;
+    size_t n = a.Height(), W = a.Width(), f = r.First(), w = r.Size(), h = n-f;
+    int piv[bs];
+    bool pack = (a.Dist()*sizeof(T)) % 2048 == 0 && h > 32;
+    if (pack)
+      {
+        ArrayMem<double, 2*bs*256> mem(bs*h*sizeof(T)/sizeof(double));
+        SliceMatrix<T> Pc(h, w, bs, (T*)(void*)mem.Data());
+        Pc = a.Rows(f,n).Cols(r);
+        CalcLULeaf (Pc, FlatArray<int>(w, piv), IntRange(0,w));
+        a.Rows(f,n).Cols(r) = Pc;
+      }
+    else   // the leaf swaps the columns f..W itself
+      CalcLULeaf (a.Rows(f,n).Cols(f,W), FlatArray<int>(w, piv), IntRange(0,w));
+
+    for (size_t i = 0; i < w; i++)
+      if (size_t im = f+piv[i]; im != f+i)
+        {
+          Swap (p[f+i], p[im]);
+          SwapRowRange (a, f+i, im, 0, f);
+          if (pack)
+            SwapRowRange (a, f+i, im, r.Next(), W);
+        }
+  }
+
+  void CalcLURec (SliceMatrix<double> a, FlatArray<int> p, IntRange r)
+  {
+    size_t n = a.Height();
+    
+    /*
+    if (r.Size() == 0) return;
+    if (r.Size() == 1)
+      {
+        size_t i = r.First();
+        
+        size_t imax = i;
+        double valmax = fabs(a(i,i));
+      
+        for (size_t j = i+1; j < n; j++)
+          if (double valj = fabs(a(j,i)) > valmax)
+            {
+              valmax = valj;
+              imax = j;
+            }
+        
+        if (imax != i)
+          {
+            Swap (p[i], p[imax]);
+            SwapVectors (a.Row(i), a.Row(imax));
+          }
+        
+        if (i+1 < n)
+          a.Col(i).Range(i+1,n) *= 1.0/a(i,i);
+        return;
+      }
+    */
+    constexpr size_t bs = 4;
+    if (r.Size() <= bs)
+      {
+        PackedLeaf (a, p, r);
+        return;
+      }
     
     size_t half = r.Size()/2;
     if (half > bs)
@@ -340,7 +393,144 @@ namespace ngbla
     
     CalcLURec (a, p, IntRange(n));
   }
-  
+
+
+  inline double CAbs1 (Complex z) { return fabs(z.real())+fabs(z.imag()); }
+
+  // as the double version
+  INLINE void CalcLULeaf (SliceMatrix<Complex> a, FlatArray<int> piv, IntRange r)
+  {
+    size_t n = a.Height();
+    constexpr size_t bs = 4;
+#ifndef __aarch64__
+    // x86 only: no gain over the scalar leaf on arm
+    if (r.Size() == bs)
+      {
+        // simd leaf: the 4 complex entries of a row in one SIMD<double,8>,
+        // the pivot search for the next column is fused into the update sweep
+        size_t f = r.First();
+        size_t dist = 2*a.Dist();
+        double sgnmem[8] = { -1, 1, -1, 1, -1, 1, -1, 1 };
+        SIMD<double,8> sgn(&sgnmem[0]);
+
+        size_t imax = f;
+        double valmax = CAbs1(a(f,f));
+        for (size_t j = f+1; j < n; j++)
+          if (double valj = CAbs1(a(j,f)); valj > valmax)
+            {
+              valmax = valj;
+              imax = j;
+            }
+
+        for (size_t i = f; i < f+bs; i++)
+          {
+            double rowmax = 0;
+            for (size_t j = i+1; j < r.Next(); j++)
+              rowmax = max(rowmax, CAbs1(a(imax,j)));
+            if (!(CAbs1(a(imax,i)) > 1e-20*rowmax))
+              throw Exception ("CalcLU: matrix singular");
+            piv[i-r.First()] = imax;
+            if (imax != i)
+              {
+                for (size_t k = 0; k < a.Width(); k++)
+                  Swap (a(i,k), a(imax,k));
+              }
+
+            size_t rest = i-f;
+            Complex invaii = 1.0/a(i,i);
+            double * ptr = (double*)(void*)&a(i,f);
+            SIMD<double,8> urow = If (SIMD<mask64,8>(int64_t(2*rest+2)), SIMD<double,8>(0.0), SIMD<double,8>(ptr));
+            SIMD<double,8> urows = sgn * SwapPairs(urow);
+            bool search = i+1 < f+bs;
+            double vmax = -1;
+            ptr += dist;
+            for (size_t j = i+1; j < n; j++, ptr += dist)
+              {
+                Complex fac = Complex(ptr[2*rest], ptr[2*rest+1]) * invaii;
+                SIMD<double,8> row(ptr);
+                row = FNMA (SIMD<double,8>(fac.imag()), urows, FNMA (SIMD<double,8>(fac.real()), urow, row));
+                row.Store(ptr);
+                ptr[2*rest] = fac.real();
+                ptr[2*rest+1] = fac.imag();
+                if (search)
+                  if (double v = fabs(ptr[2*rest+2])+fabs(ptr[2*rest+3]); v > vmax)
+                    {
+                      vmax = v;
+                      imax = j;
+                    }
+              }
+          }
+        return;
+      }
+#endif
+    if (r.Size() <= bs)
+      {
+        for (auto i : r)
+          {
+            size_t imax = i;
+            double valmax = CAbs1(a(i,i));
+            for (size_t j = i+1; j < n; j++)
+              {
+                double valj = CAbs1(a(j,i));
+                if (valj > valmax)
+                  {
+                    valmax = valj;
+                    imax = j;
+                  }
+              }
+            double rowmax = 0;
+            for (size_t j = i+1; j < r.Next(); j++)
+              rowmax = max(rowmax, CAbs1(a(imax,j)));
+            if (!(valmax > 1e-20*rowmax))
+              throw Exception ("CalcLU: matrix singular");
+            piv[i-r.First()] = imax;
+            if (imax != i)
+              {
+                for (size_t k = 0; k < a.Width(); k++)
+                  Swap (a(i,k), a(imax,k));
+              }
+
+            Complex invaii = 1.0/a(i,i);
+            for (size_t j = i+1; j < n; j++)
+              {
+                Complex fac = a(j,i)*invaii;
+                a(j,i) = fac;
+                for (size_t k = i+1; k < r.Next(); k++)
+                  a(j,k) -= fac*a(i,k);
+              }
+          }
+        return;
+      }
+  }
+
+  void CalcLURec (SliceMatrix<Complex> a, FlatArray<int> p, IntRange r)
+  {
+    size_t n = a.Height();
+    constexpr size_t bs = 4;
+    if (r.Size() <= bs)
+      {
+        PackedLeaf (a, p, r);
+        return;
+      }
+
+    size_t half = r.Size()/2;
+    if (half > bs)
+      half = half - (half % bs);
+    size_t mid = r.First() + half;
+    IntRange r1(r.First(), mid);
+    IntRange r2(mid, r.Next());
+
+    CalcLURec (a, p, r1);
+    TriangularSolve<LowerLeft,Normalized> (a.Rows(r1).Cols(r1), a.Rows(r1).Cols(r2));
+    a.Rows(mid,n).Cols(r2) -= a.Rows(mid,n).Cols(r1) * a.Rows(r1).Cols(r2);
+    CalcLURec (a, p, r2);
+  }
+
+  void CalcLU (SliceMatrix<Complex> a, FlatArray<int> p)
+  {
+    for (size_t i = 0; i < a.Height(); i++) p[i] = i;
+    CalcLURec (a, p, IntRange(a.Height()));
+  }
 
 
 
@@ -404,7 +594,79 @@ namespace ngbla
 
 
 
-  void InverseFromLU (SliceMatrix<double> A, FlatArray<int> p)
+  // X := X * inv(L), L unit lower triangular m x m; recursion over columns keeps X row-wise
+  template <typename T>
+  void SolveXLUnit (SliceMatrix<T> X, BareSliceMatrix<T> L, size_t m)
+  {
+    if (m <= 4)
+      {
+        for (size_t i = 0; i < X.Height(); i++)
+          {
+            T * x = &X(i,0);
+            for (size_t j = m-1; j-- > 0; )
+              {
+                T sum = x[j];
+                for (size_t k = j+1; k < m; k++)
+                  sum -= x[k] * L(k,j);
+                x[j] = sum;
+              }
+          }
+        return;
+      }
+    size_t m1 = m/2;
+    SolveXLUnit<T> (X.Cols(m1,m), L.Rows(m1,m).Cols(m1,m), m-m1);
+    X.Cols(0,m1) -= X.Cols(m1,m) * L.Rows(m1,m).Cols(0,m1).AddSize(m-m1,m1);
+    SolveXLUnit<T> (X.Cols(0,m1), L, m1);
+  }
+
+  // X := X * U, U upper triangular m x m
+  template <typename T>
+  void MultXU (SliceMatrix<T> X, BareSliceMatrix<T> U, size_t m)
+  {
+    if (m <= 4)
+      {
+        for (size_t i = 0; i < X.Height(); i++)
+          {
+            T * x = &X(i,0);
+            for (size_t j = m; j-- > 0; )
+              {
+                T sum = x[j] * U(j,j);
+                for (size_t k = 0; k < j; k++)
+                  sum += x[k] * U(k,j);
+                x[j] = sum;
+              }
+          }
+        return;
+      }
+    size_t m1 = m/2;
+    MultXU<T> (X.Cols(m1,m), U.Rows(m1,m).Cols(m1,m), m-m1);
+    X.Cols(m1,m) += X.Cols(0,m1) * U.Rows(0,m1).Cols(m1,m).AddSize(m1,m-m1);
+    MultXU<T> (X.Cols(0,m1), U, m1);
+  }
+
+  // inv(U) in place; the generic MultTriangular works on transposed (strided) rows
+  template <typename T>
+  void TriangularInvertUR (SliceMatrix<T> U)
+  {
+    size_t n = U.Height();
+    if (n < 16)
+      {
+        TriangularInvert<UpperRight> (U);
+        return;
+      }
+    size_t n1 = n/2;
+    auto U11 = U.Rows(0,n1).Cols(0,n1);
+    auto U12 = U.Rows(0,n1).Cols(n1,n);
+    auto U22 = U.Rows(n1,n).Cols(n1,n);
+    TriangularInvertUR (U11);
+    TriangularInvertUR (U22);
+    U12 *= -1;
+    TriangularMult<UpperRight> (U11, U12);
+    MultXU<T> (U12, U22, n-n1);
+  }
+
+  template <typename T>
+  void T_InverseFromLU (SliceMatrix<T> A, FlatArray<int> p)
   {
     size_t n = A.Height();
 
@@ -432,20 +694,23 @@ namespace ngbla
     // column blocks from the right. Inverting L explicitly and forming
     // inv(U)*inv(L) has the same cost but a worse residual for
     // ill-conditioned matrices (Higham, Accuracy and Stability, 14.3)
-    TriangularInvert<UpperRight> (A);
+    if (is_same_v<T,Complex> && n >= 64)
+      TriangularInvertUR (A);
+    else
+      TriangularInvert<UpperRight> (A);
 
     constexpr size_t bs = 32;
-    ArrayMem<double, bs*128> mem(bs*n);
+    ArrayMem<T, bs*128> mem(bs*n);
     for (size_t j1 = n; j1 > 0; )
       {
         size_t j0 = (j1 > bs) ? j1-bs : 0;
         IntRange J(j0, j1);
         size_t nb = j1-j0;
         // W = L(J, J) and L(j1:n, J), the strictly lower part of the columns J
-        FlatMatrix<> W(n-j0, nb, mem.Data());
+        FlatMatrix<T> W(n-j0, nb, mem.Data());
         W = 0.0;
-        for (size_t j = j0; j < j1; j++)
-          for (size_t i = j+1; i < n; i++)
+        for (size_t i = j0; i < n; i++)
+          for (size_t j = j0; j < min(i, j1); j++)
             {
               W(i-j0, j-j0) = A(i,j);
               A(i,j) = 0.0;
@@ -454,13 +719,16 @@ namespace ngbla
         // X(:,J) -= X(:, j1:n) * L(j1:n, J)
         if (j1 < n)
           A.Cols(J) -= A.Cols(j1, n) * W.Rows(nb, n-j0);
-        // X(:,J) = X(:,J) * inv(L(J,J)):  L(J,J)^T X(:,J)^T = X(:,J)^T
-        TriangularSolve<UpperRight,Normalized> (Trans(W.Rows(0,nb)), Trans(A.Cols(J)));
+        // X(:,J) = X(:,J) * inv(L(J,J))
+        if constexpr (is_same_v<T,double>)
+          SolveTriangular<LowerLeft,Normalized> (A.Cols(J), BareSliceMatrix<T>(W.Rows(0,nb)));
+        else
+          SolveXLUnit<T> (A.Cols(J), W.Rows(0,nb), nb);
         j1 = j0;
       }
 
     // RegionTimer rperm(tperm);
-    VectorMem<100> row(n);
+    VectorMem<100,T> row(n);
     for (size_t i = 0; i < n; i++)
       {
         auto rowi = A.Row(i);
@@ -468,6 +736,16 @@ namespace ngbla
           row(p[j]) = rowi(j);
         rowi = row;
       }
+  }
+
+  void InverseFromLU (SliceMatrix<double> A, FlatArray<int> p)
+  {
+    T_InverseFromLU (A, p);
+  }
+
+  void InverseFromLU (SliceMatrix<Complex> A, FlatArray<int> p)
+  {
+    T_InverseFromLU (A, p);
   }
 
 
@@ -488,14 +766,25 @@ namespace ngbla
   }
 
 
-  void SolveTransFromLU (SliceMatrix<double> A, FlatArray<int> p, SliceMatrix<double,ColMajor> X)
+  template <typename T>
+  void T_SolveTransFromLU (SliceMatrix<T> A, FlatArray<int> p, SliceMatrix<T,ColMajor> X)
   {
-    TriangularSolve<LowerLeft> (Trans(A).Bare(), X);
-    TriangularSolve<UpperRight,Normalized> (Trans(A).Bare(), X);
+    if constexpr (is_same_v<T,double>)
+      {
+        // on the row-major X^T:  X^T := X^T U^-1,  X^T := X^T L^-1
+        SliceMatrix<T> Xt = Trans(X);
+        SolveTriangular<UpperRight> (Xt, A.Bare());
+        SolveTriangular<LowerLeft,Normalized> (Xt, A.Bare());
+      }
+    else
+      {
+        TriangularSolve<LowerLeft> (Trans(A).Bare(), X);
+        TriangularSolve<UpperRight,Normalized> (Trans(A).Bare(), X);
+      }
 
     size_t n = X.Height();
 
-    VectorMem<100,double> hv(n);
+    VectorMem<100,T> hv(n);
     for (size_t i = 0; i < X.Width(); i++)
       {
         auto coli = X.Col(i);
@@ -504,6 +793,16 @@ namespace ngbla
           coli(p[j]) = hv(j);
       }
     
+  }
+
+  void SolveTransFromLU (SliceMatrix<double> A, FlatArray<int> p, SliceMatrix<double,ColMajor> X)
+  {
+    T_SolveTransFromLU (A, p, X);
+  }
+
+  void SolveTransFromLU (SliceMatrix<Complex> A, FlatArray<int> p, SliceMatrix<Complex,ColMajor> X)
+  {
+    T_SolveTransFromLU (A, p, X);
   }
 
 
