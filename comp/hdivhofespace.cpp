@@ -303,7 +303,8 @@ namespace ngcomp
 
 
    if (flags.GetDefineFlag("hoprolongation"))
-        prol = CreateVectorL2EmbeddedProlongation (this, "piola2");
+     // RT_k contains polynomials of degree k+1: embed into vector-L2 of order k+1
+     prol = CreateVectorL2EmbeddedProlongation (this, "piola2", RT ? order+1 : order);
   }
   
   HDivHighOrderFESpace:: ~HDivHighOrderFESpace () 

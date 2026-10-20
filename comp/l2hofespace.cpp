@@ -4487,7 +4487,84 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     
     ///
     virtual shared_ptr<SparseMatrix< double >> CreateProlongationMatrix( int finelevel ) const override
-    { return nullptr; }
+    {
+      // same construction as VectorL2HoProlongationTet::CreateProlongationMatrix, with the
+      // trig prolongations: every fine element is expressed through its coarsest ancestor
+      if (finelevel >= els_on_level.Size())     // space created after refinement
+        return nullptr;
+
+      int dim = ma->GetDimension();
+      int ndel = (order+1)*(order+2)/2;
+      int bs = dim*ndel;
+      size_t ne = els_on_level[finelevel];
+      size_t nec = els_on_level[finelevel-1];
+      size_t sf = ne*ndel, sc = nec*ndel;      // scalar ndof fine / coarse
+
+      Array<int> max_parent(ne);
+      for (auto i : Range(ne))
+        {
+          int parent = i;
+          max_parent[i] = i;
+          while (parent >= int(nec))
+            {
+              parent = ma->GetParentElement(ElementId(VOL, parent)).Nr();
+              if (parent != -1)
+                max_parent[i] = parent;
+            }
+        }
+
+      Array<int> indicesPerRow(dim*sf);
+      indicesPerRow = bs;
+      MatrixGraph mg(indicesPerRow, dim*sc);
+      for (size_t el = 0; el < ne; el++)
+        for (int c = 0; c < dim; c++)
+          for (int i = 0; i < ndel; i++)
+            for (int c2 = 0; c2 < dim; c2++)
+              for (int j = 0; j < ndel; j++)
+                mg.CreatePosition (c*sf + el*ndel + i, c2*sc + max_parent[el]*ndel + j);
+
+      auto spprol = make_shared<SparseMatrix<double>> (std::move(mg));
+      auto & prol = *spprol;
+      prol.AsVector() = 0.;
+
+      for (size_t el = 0; el < nec; el++)
+        for (int c = 0; c < dim; c++)
+          for (int i = 0; i < ndel; i++)
+            prol(c*sf + el*ndel + i, c*sc + el*ndel + i) = 1.;
+
+      auto getblock = [&](size_t el, FlatMatrix<double> b)
+      {
+        size_t mp = max_parent[el];
+        for (int c = 0; c < dim; c++)
+          for (int i = 0; i < ndel; i++)
+            for (int c2 = 0; c2 < dim; c2++)
+              for (int j = 0; j < ndel; j++)
+                b(c*ndel+i, c2*ndel+j) = prol(c*sf + el*ndel + i, c2*sc + mp*ndel + j);
+      };
+      auto setblock = [&](size_t el, FlatMatrix<double> b)
+      {
+        size_t mp = max_parent[el];
+        for (int c = 0; c < dim; c++)
+          for (int i = 0; i < ndel; i++)
+            for (int c2 = 0; c2 < dim; c2++)
+              for (int j = 0; j < ndel; j++)
+                prol(c*sf + el*ndel + i, c2*sc + mp*ndel + j) = b(c*ndel+i, c2*ndel+j);
+      };
+
+      Matrix<double> bparent(bs,bs), bl(bs,bs), br(bs,bs);
+      for (size_t el = nec; el < ne; el++)
+        {
+          int parent = ma->GetParentElement(ElementId(VOL, el)).Nr();
+          if (parent == -1) continue;
+          int classnr = trig_creation_class[el];
+          getblock(parent, bparent);
+          br = trigprolsR[classnr] * bparent;
+          bl = trigprolsL[classnr] * bparent;
+          setblock(el, br);
+          setblock(parent, bl);
+        }
+      return spprol;
+    }
 
     virtual size_t GetNDofLevel (int level) override
     {
@@ -6546,11 +6623,12 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     }
 
   public:
-    VectorL2EmbeddedProlongation (FESpace * afes, const string & mapping)
+    VectorL2EmbeddedProlongation (FESpace * afes, const string & mapping, int order = -1)
       : fes(afes)
     {
+      // the vector-L2 space must contain the space: RT_k needs order k+1
       Flags flagsL2;
-      flagsL2.SetFlag ("order", fes->GetOrder());
+      flagsL2.SetFlag ("order", order >= 0 ? order : fes->GetOrder());
       flagsL2.SetFlag (mapping, true);
       flagsL2.SetFlag ("hoprolongation", true);
       if (fes->IsComplex()) flagsL2.SetFlag ("complex", true);
@@ -6636,9 +6714,9 @@ WIRE_BASKET via the flag 'lowest_order_wb=True'.
     }
   };
 
-  shared_ptr<Prolongation> CreateVectorL2EmbeddedProlongation (FESpace * fes, const string & mapping)
+  shared_ptr<Prolongation> CreateVectorL2EmbeddedProlongation (FESpace * fes, const string & mapping, int order)
   {
-    return make_shared<VectorL2EmbeddedProlongation> (fes, mapping);
+    return make_shared<VectorL2EmbeddedProlongation> (fes, mapping, order);
   }
 
 

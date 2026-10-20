@@ -338,7 +338,7 @@ namespace ngcomp
 
 
   NGS_DLL_HEADER shared_ptr<Prolongation>
-  CreateVectorL2EmbeddedProlongation (FESpace * fes, const string & mapping);
+  CreateVectorL2EmbeddedProlongation (FESpace * fes, const string & mapping, int order = -1);
 
 
 
