@@ -12,22 +12,15 @@ if [ "$IMAGE_NAME" == "debug" ]
 then
   export CMAKE_CXX_FLAGS="-Og -Wall -Wno-sign-compare -DDebug"
   export CMAKE_BUILD_TYPE="Debug"
-  # export CMAKE_ARGS="$CMAKE_ARGS -DFAST_COMPILE=ON"
+  export USE_NATIVE_ARCH="OFF"
 else
+  export USE_NATIVE_ARCH="ON"
   export CMAKE_BUILD_TYPE="Release"
 fi
 
-if [ "$IMAGE_NAME" == "avx" ] || [ "$IMAGE_NAME" == "avx512" ]
+if [ "$IMAGE_NAME" == "mpi" ] || [ "$IMAGE_NAME" == "docu" ]
 then
-  export CMAKE_ARGS="$CMAKE_ARGS -DBUILD_OCC=ON"
-  export USE_NATIVE_ARCH="ON"
-else
-  export USE_NATIVE_ARCH="OFF"
-fi
-
-if [ "$IMAGE_NAME" == "mpi" ] || [ "$IMAGE_NAME" == "avx" ]
-then
-  export CMAKE_ARGS="$CMAKE_ARGS -DUSE_MPI=ON -DMKL_STATIC=ON -DMKL_SDL=OFF -DUSE_HYPRE=OFF -DUSE_MUMPS=OFF -DMKL_MULTI_THREADED=OFF -DUSE_GUI=OFF -DBUILD_STUB_FILES=OFF"
+  export CMAKE_ARGS="$CMAKE_ARGS -DUSE_MPI=ON -DMKL_STATIC=ON -DMKL_SDL=OFF -DUSE_HYPRE=OFF -DUSE_MUMPS=OFF -DMKL_MULTI_THREADED=OFF -DUSE_GUI=OFF -DBUILD_STUB_FILES=OFF -DCHECK_RANGE=ON"
 fi
 
 cd 
@@ -70,7 +63,7 @@ cmake --build .
 cmake --build . --target install
 cd ngsolve
 
-if [ "$IMAGE_NAME" == "avx" ]
+if [ "$IMAGE_NAME" == "docu" ]
 then
   python3 -m playwright install-deps
   python3 -m playwright install
