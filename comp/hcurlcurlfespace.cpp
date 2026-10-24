@@ -1751,7 +1751,8 @@ namespace ngcomp
 
 
   /*
-    Prolongation for HCurlCurl on refined tetrahedral meshes (3D, uniform order).
+    Prolongation for HCurlCurl on refined triangular (2D) and tetrahedral (3D) meshes,
+    uniform order.
 
     Refinement keeps the spaces nested: a coarse function restricted to a fine element is a
     polynomial of the same degree, so the local L2 projection onto the fine element basis
@@ -1820,7 +1821,16 @@ namespace ngcomp
 
     shared_ptr<SparseMatrix<double>> BuildProlongation ()
     {
+      if (ma->GetDimension() == 2) return BuildProlongation<2>();
+      return BuildProlongation<3>();
+    }
+
+    template <int D>
+    shared_ptr<SparseMatrix<double>> BuildProlongation ()
+    {
       static Timer t("HCurlCurlProlongation::Build"); RegionTimer reg(t);
+      constexpr ELEMENT_TYPE ET = (D == 2) ? ET_TRIG : ET_TET;
+      constexpr int NV = D + 1;
       const size_t nvc = nvlast;
       const size_t ndof_f = fes.GetNDof();
       const size_t ndof_c = ndoflevel.Last();
@@ -1840,7 +1850,7 @@ namespace ngcomp
       Array<double> vals;
       Array<bool> done(ndof_f);
       done = false;
-      const IntegrationRule & ir = SelectIntegrationRule (ET_TET, 2 * order);
+      const IntegrationRule & ir = SelectIntegrationRule (ET, 2 * order);
       LocalHeap lh(50000000, "hcurlcurl-prolongation");
 
       for (size_t i = 0; i < ma->GetNE(VOL); i++)
@@ -1848,8 +1858,8 @@ namespace ngcomp
           HeapReset hr(lh);
           ElementId ei(VOL, i);
           auto el = ma->GetElement(ei);
-          if (el.GetType() != ET_TET)
-            throw Exception ("HCurlCurlProlongation: only tetrahedral meshes");
+          if (el.GetType() != ET)
+            throw Exception ("HCurlCurlProlongation: only triangular or tetrahedral meshes");
 
           Array<DofId> fdnums;
           fes.GetDofNrs (ei, fdnums);
@@ -1861,9 +1871,9 @@ namespace ngcomp
           // parent: the coarse element spanned by the coarse ancestors of the vertices
           Array<int> anc;
           for (auto v : el.Vertices()) ancestors (v, anc);
-          if (anc.Size() != 4)
+          if (anc.Size() != NV)
             throw Exception ("HCurlCurlProlongation: parent element not found");
-          IVec<4> key = SortedKey (IVec<4>(anc[0], anc[1], anc[2], anc[3]));
+          IVec<4> key = SortedKey (IVec<4>(anc[0], anc[1], anc[2], NV == 4 ? anc[NV-1] : -1));
           int parent = -1;
           auto it = elhash.find (HashKey(key));
           if (it != elhash.end())
@@ -1872,42 +1882,43 @@ namespace ngcomp
           if (parent < 0)
             throw Exception ("HCurlCurlProlongation: parent element not found");
 
-          // parent basis (its vertex numbers) and its affine map x = p3 + F xi
+          // parent basis (its vertex numbers) and its affine map x = pl + F xi,
+          // pl the last vertex of the parent
           IVec<4> pv = elverts[parent];
           ArrayMem<int, 4> vnums;
-          for (int k = 0; k < 4; k++) vnums.Append (pv[k]);
-          auto fec = new (lh) HCurlCurlFE<ET_TET> (order);
+          for (int k = 0; k < NV; k++) vnums.Append (pv[k]);
+          auto fec = new (lh) HCurlCurlFE<ET> (order);
           fec->SetVertexNumbers (vnums);
-          for (int k = 0; k < 6; k++) fec->SetOrderEdge (k, order);
-          for (int k = 0; k < 4; k++) fec->SetOrderFacet (k, IVec<2>(order, order));
+          for (int k = 0; k < ElementTopology::GetNEdges(ET); k++) fec->SetOrderEdge (k, order);
+          for (int k = 0; k < NV; k++) fec->SetOrderFacet (k, IVec<2>(order, order));
           fec->SetOrderInner (IVec<3>(order, order, order));
           fec->ComputeNDof();
-          Matrix<> pmat(4, 3);
-          for (int k = 0; k < 4; k++)
-            for (int a = 0; a < 3; a++) pmat(k, a) = ma->GetPoint<3>(pv[k])(a);
-          FE_ElementTransformation<3,3> trafo_c (ET_TET, pmat);
-          Mat<3,3> F, Finv;
-          Vec<3> p3;
-          for (int a = 0; a < 3; a++) p3(a) = pmat(3, a);
-          for (int k = 0; k < 3; k++)
-            for (int a = 0; a < 3; a++) F(a, k) = pmat(k, a) - p3(a);
+          Matrix<> pmat(NV, D);
+          for (int k = 0; k < NV; k++)
+            for (int a = 0; a < D; a++) pmat(k, a) = ma->GetPoint<D>(pv[k])(a);
+          FE_ElementTransformation<D,D> trafo_c (ET, pmat);
+          Mat<D,D> F, Finv;
+          Vec<D> pl;
+          for (int a = 0; a < D; a++) pl(a) = pmat(D, a);
+          for (int k = 0; k < D; k++)
+            for (int a = 0; a < D; a++) F(a, k) = pmat(k, a) - pl(a);
           CalcInverse (F, Finv);
 
-          auto & fef = static_cast<const HCurlCurlFiniteElement<3>&> (fes.GetFE(ei, lh));
+          auto & fef = static_cast<const HCurlCurlFiniteElement<D>&> (fes.GetFE(ei, lh));
           auto & trafo_f = ma->GetTrafo (ei, lh);
           int ndf = fef.GetNDof(), ndc = fec->GetNDof();
-          FlatMatrix<> shf(ndf, 9, lh), wshf(ndf, 9, lh), shc(ndc, 9, lh);
+          FlatMatrix<> shf(ndf, D*D, lh), wshf(ndf, D*D, lh), shc(ndc, D*D, lh);
           FlatMatrix<> M(ndf, ndf, lh), B(ndf, ndc, lh);
           M = 0.0; B = 0.0;
           for (auto & ip : ir)
             {
-              MappedIntegrationPoint<3,3> mipf(ip, trafo_f);
+              MappedIntegrationPoint<D,D> mipf(ip, trafo_f);
               fef.CalcMappedShape (mipf, shf);
-              Vec<3> xi = Finv * (mipf.GetPoint() - p3);
-              IntegrationPoint ipc(xi(0), xi(1), xi(2), 0);
-              MappedIntegrationPoint<3,3> mipc(ipc, trafo_c);
-              Vec<3> diff = mipc.GetPoint() - mipf.GetPoint();
-              if (L2Norm (diff) > 1e-8 * (1 + L2Norm (p3)))
+              Vec<D> xi = Finv * (mipf.GetPoint() - pl);
+              IntegrationPoint ipc(xi(0), xi(1), D == 3 ? xi(D-1) : 0.0, 0);
+              MappedIntegrationPoint<D,D> mipc(ipc, trafo_c);
+              Vec<D> diff = mipc.GetPoint() - mipf.GetPoint();
+              if (L2Norm (diff) > 1e-8 * (1 + L2Norm (pl)))
                 throw Exception ("HCurlCurlProlongation: inconsistent parent map");
               fec->CalcMappedShape (mipc, shc);
               wshf = mipf.GetWeight() * shf;
@@ -2035,6 +2046,9 @@ namespace ngcomp
       evaluator[BND] = make_shared<T_DifferentialOperator<DiffOpIdBoundaryHCurlCurl<2>>>();
       evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpIdHCurlCurl<2>>>();
       flux_evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpCurlHCurlCurl<2>>>();
+      if (!discontinuous && uniform_order_edge == order && uniform_order_facet == order
+          && uniform_order_inner == order)
+        prol = make_shared<HCurlCurlProlongation> (*this);
     }
     else //dim=3
     {
