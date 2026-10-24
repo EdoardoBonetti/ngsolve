@@ -8,6 +8,13 @@ from ngsolve import *
 from netgen.geom2d import unit_square
 
 
+def interior_points(mesh, lam=(0.61, 0.27, 0.12)):
+    # One point per element at fixed barycentric coordinates, away from the element edges and from
+    # the cuts of the next refinement: the function jumps across edges, and a point within the
+    # search tolerance of an edge could be located in the neighbour on one level only.
+    return [np.dot(lam, [mesh[v].point for v in el.vertices]) for el in mesh.Elements(VOL)]
+
+
 @pytest.mark.parametrize("order", [0, 1, 2])
 @pytest.mark.parametrize("nref0", [0, 1])
 def test_hcurlcurl_prolongation_trig(order, nref0):
@@ -18,7 +25,7 @@ def test_hcurlcurl_prolongation_trig(order, nref0):
     assert fes.Prolongation() is not None
     gf = GridFunction(fes, autoupdate=True)
     gf.vec.SetRandom()
-    pts = np.random.default_rng(1).uniform(0.05, 0.95, size=(50, 2))
+    pts = interior_points(mesh)
     before = np.array([gf(mesh(*p)) for p in pts])
     nc = fes.ndof
     mesh.Refine()
