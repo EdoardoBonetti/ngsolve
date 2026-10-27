@@ -87,7 +87,48 @@ namespace ngfem
               SliceMatrix<double,ColMajor> mat, 
               LocalHeap & lh) const 
   {
-    CalcMatrix (fel, mip, mat, lh);
+    if (!vsembedding)
+      {
+        CalcMatrix (fel, mip, mat, lh);
+        return;
+      }
+    HeapReset hr(lh);
+    FlatMatrix<double,ColMajor> full(Dim(), fel.GetNDof(), lh);
+    CalcMatrix (fel, mip, full, lh);
+    mat = vsembedding_pinv * full;
+  }
+
+  void DifferentialOperator :: SetVectorSpaceEmbedding (Matrix<> emb)
+  {
+    vsembedding = emb;
+    vsdim = emb.Width();
+    Matrix<> ete = Trans(emb) * emb;
+    CalcInverse (ete);
+    vsembedding_pinv = ete * Trans(emb);
+  }
+
+  void DifferentialOperator ::
+  CalcMatrixVS (const FiniteElement & fel,
+                const SIMD_BaseMappedIntegrationRule & mir,
+                BareSliceMatrix<SIMD<double>> mat) const
+  {
+    if (!vsembedding)
+      {
+        CalcMatrix (fel, mir, mat);
+        return;
+      }
+    size_t nd = fel.GetNDof(), np = mir.Size();
+    Matrix<SIMD<double>> full(nd*Dim(), np);
+    CalcMatrix (fel, mir, full);
+    for (size_t i = 0; i < nd; i++)
+      for (int v = 0; v < vsdim; v++)
+        {
+          auto row = mat.Row(i*vsdim+v).Range(np);
+          row = SIMD<double>(0.0);
+          for (int k = 0; k < dim; k++)
+            if (double c = vsembedding_pinv(v,k); c != 0)
+              row += c * full.Row(i*dim+k);
+        }
   }
 
 
@@ -102,6 +143,28 @@ namespace ngfem
     CalcMatrix (fel, mir, mat, lh);
   }
 
+  void DifferentialOperator ::
+  CalcLinearizedMatrix (const FiniteElement & fel,
+                        const SIMD_BaseMappedIntegrationRule & mir,
+                        BareSliceVector<double> x,
+                        BareSliceMatrix<SIMD<double>> mat) const
+  {
+    if (IsNonlinear())
+      throw ExceptionNOSIMD(string("CalcLinearizedMatrix(SIMD) not overloaded, type = ") + typeid(*this).name());
+    CalcMatrix (fel, mir, mat);
+  }
+
+  void DifferentialOperator ::
+  CalcHessianAdd (const FiniteElement & fel,
+                  const SIMD_BaseMappedIntegrationRule & mir,
+                  BareSliceMatrix<SIMD<double>> wprime,
+                  BareSliceVector<> elvecu,
+                  SliceMatrix<> hessian,   
+                  LocalHeap & lh) const
+  {
+    if (IsNonlinear())
+      throw ExceptionNOSIMD(string("CalcHessianAdd(SIMD) not overloaded, type = ") + typeid(*this).name());
+  }
   
   void DifferentialOperator ::
   Apply (const FiniteElement & fel,
@@ -1260,6 +1323,28 @@ namespace ngfem
   }
 
 
+
+  // vector-space B of sym/skew/symdev matrix operators: dof (ii,s) has the scalar value in component ii
+  static void CalcScalarBlockVS (const DifferentialOperator & diffop, const FiniteElement & feli,
+                                 const SIMD_BaseMappedIntegrationRule & mir, int vsdim,
+                                 BareSliceMatrix<SIMD<double>> mat)
+  {
+    size_t ndi = feli.GetNDof(), np = mir.Size();
+    STACK_ARRAY(SIMD<double>, mem, ndi*np);
+    FlatMatrix<SIMD<double>> smat(ndi, np, &mem[0]);
+    diffop.CalcMatrix (feli, mir, smat);
+    for (int ii = 0; ii < vsdim; ii++)
+      for (size_t s = 0; s < ndi; s++)
+        {
+          size_t first = (ii*ndi+s)*vsdim;
+          for (int v = 0; v < vsdim; v++)
+            if (v == ii)
+              mat.Row(first+v).Range(np) = smat.Row(s);
+            else
+              mat.Row(first+v).Range(np) = SIMD<double>(0.0);
+        }
+  }
+
   SymMatrixDifferentialOperator ::
   SymMatrixDifferentialOperator (shared_ptr<DifferentialOperator> adiffop, 
                                  int avdim)
@@ -1317,6 +1402,14 @@ namespace ngfem
     // cout << "symmat, bmat = " << mat << endl;
   }
   
+  void SymMatrixDifferentialOperator ::
+  CalcMatrixVS (const FiniteElement & bfel,
+                const SIMD_BaseMappedIntegrationRule & mir,
+                BareSliceMatrix<SIMD<double>> mat) const
+  {
+    CalcScalarBlockVS (*diffop, static_cast<const SymMatrixFiniteElement&> (bfel).ScalFE(), mir, VSDim(), mat);
+  }
+
   void SymMatrixDifferentialOperator ::
   CalcMatrixVS (const FiniteElement & bfel,
                 const BaseMappedIntegrationPoint & mip,
@@ -1472,6 +1565,14 @@ namespace ngfem
     // cout << "symmat, bmat = " << mat << endl;
   }
   
+  void SkewMatrixDifferentialOperator ::
+  CalcMatrixVS (const FiniteElement & bfel,
+                const SIMD_BaseMappedIntegrationRule & mir,
+                BareSliceMatrix<SIMD<double>> mat) const
+  {
+    CalcScalarBlockVS (*diffop, static_cast<const SkewMatrixFiniteElement&> (bfel).ScalFE(), mir, VSDim(), mat);
+  }
+
   void SkewMatrixDifferentialOperator ::
   CalcMatrixVS (const FiniteElement & bfel,
                 const BaseMappedIntegrationPoint & mip,
@@ -1650,6 +1751,14 @@ namespace ngfem
     cout << "m2 = " << m2 << endl;
     cout << "DIFF = " << L2Norm(m2-mat) << endl;
     */
+  }
+
+  void SymDevMatrixDifferentialOperator ::
+  CalcMatrixVS (const FiniteElement & bfel,
+                const SIMD_BaseMappedIntegrationRule & mir,
+                BareSliceMatrix<SIMD<double>> mat) const
+  {
+    CalcScalarBlockVS (*diffop, static_cast<const SymMatrixFiniteElement&> (bfel).ScalFE(), mir, VSDim(), mat);
   }
 
   void SymDevMatrixDifferentialOperator ::

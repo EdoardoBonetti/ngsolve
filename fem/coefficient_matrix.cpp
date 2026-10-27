@@ -51,12 +51,6 @@ namespace ngfem
     { return "inverse"; }
 
   
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      c1->TraverseTree (func);
-      func(*this);
-    }
-
     virtual void GenerateCode(Code &code, FlatArray<int> inputs, int index) const override {
       // auto mat_type = "Mat<"+ToString(D)+","+ToString(D)+","+code.res_type+">";
       auto mat_type = "Mat<"+ToString(D)+","+ToString(D)+","+code.GetType(this->IsComplex())+">";
@@ -88,17 +82,6 @@ namespace ngfem
       }
     */
 
-    virtual void NonZeroPattern (const class ProxyUserData & ud,
-                                 FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    {
-      Vector<AutoDiffDiff<1,NonZero>> v1(c1->Dimension());
-      c1->NonZeroPattern (ud, v1);
-      AutoDiffDiff<1,NonZero> sum(false);
-      for (int i = 0; i < v1.Size(); i++)
-        sum += v1(i);
-      values = sum;
-    }
-  
     virtual void NonZeroPattern (const class ProxyUserData & ud,
                                  FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                  FlatVector<AutoDiffDiff<1,NonZero>> values) const override
@@ -224,27 +207,10 @@ namespace ngfem
       ar.Shallow(c1);
     }
 
-    virtual void TraverseTree(const function<void(CoefficientFunction &)> &func) override
-    {
-      c1->TraverseTree(func);
-      func(*this);
-    }
-
     virtual Array<shared_ptr<CoefficientFunction>>
     InputCoefficientFunctions() const override
     {
       return Array<shared_ptr<CoefficientFunction>>({c1});
-    }
-
-    virtual void NonZeroPattern(const class ProxyUserData &ud,
-                                FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    {
-      Vector<AutoDiffDiff<1,NonZero>> v1(c1->Dimension());
-      c1->NonZeroPattern(ud, v1);
-      AutoDiffDiff<1,NonZero> sum(false);
-      for (auto i : Range(v1))
-        sum += v1(i);
-      values = sum;
     }
 
     virtual void NonZeroPattern(const class ProxyUserData &ud,
@@ -489,12 +455,6 @@ namespace ngfem
       ar.Shallow(c1);
     }
   
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      c1->TraverseTree (func);
-      func(*this);
-    }
-
     shared_ptr<CoefficientFunction>
     Transform(CoefficientFunction::T_Transform& transformation) const override
     {
@@ -536,21 +496,6 @@ namespace ngfem
       nonzero_dderiv = true;
       }
     */
-    virtual void NonZeroPattern (const class ProxyUserData & ud,
-                                 FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    {
-      /*
-        AutoDiffDiff<1,NonZero> add(true);
-        add.DValue(0) = true;
-        add.DDValue(0,0) = true;
-        values = add;
-      */
-      Vector<AutoDiffDiff<1,NonZero>> in(D*D);
-      c1->NonZeroPattern (ud, in);
-      Array<FlatVector<AutoDiffDiff<1,NonZero>>> input{1UL};
-      input[0].AssignMemory(D*D, &in(0));
-      NonZeroPattern (ud, input, values);
-    }
   
     virtual void NonZeroPattern (const class ProxyUserData & ud,
                                  FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -694,12 +639,6 @@ namespace ngfem
     virtual string GetDescription () const override
     { return "cofactor"; }
   
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      c1->TraverseTree (func);
-      func(*this);
-    }
-
     shared_ptr<CoefficientFunction>
     Transform(CoefficientFunction::T_Transform& transformation) const override
     {
@@ -746,27 +685,6 @@ namespace ngfem
       }
     */
 
-    virtual void NonZeroPattern (const class ProxyUserData & ud,
-                                 FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    {
-      Vector<AutoDiffDiff<1,NonZero>> v1(c1->Dimension());
-      c1->NonZeroPattern (ud, v1);
-      /*
-        AutoDiffDiff<1,NonZero> sum(false);
-        for (int i = 0; i < v1.Size(); i++)
-        sum += v1(i);
-        values = sum;
-      */
-      Mat<D,D,AutoDiffDiff<1,NonZero>> v1mat;
-      for (int i = 0; i < D; i++)
-        for (int j = 0; j < D; j++)
-          v1mat(i,j) = v1(i*D+j);
-      auto v2mat = Cof(v1mat);
-      for (int i = 0; i < D; i++)
-        for (int j = 0; j < D; j++)
-          values(i*D+j) = v2mat(i,j);
-    }
-  
     virtual void NonZeroPattern (const class ProxyUserData & ud,
                                  FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                  FlatVector<AutoDiffDiff<1,NonZero>> values) const override
@@ -910,12 +828,6 @@ namespace ngfem
       ar.Shallow(c1);
     }
   
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      c1->TraverseTree (func);
-      func(*this);
-    }
-
     virtual string GetDescription () const override
     { return "symmetric"; }
 
@@ -927,7 +839,7 @@ namespace ngfem
         return transformation.cache[thisptr];
       if(transformation.replace.count(thisptr))
         return transformation.replace[thisptr];
-      auto newcf = make_shared<SymmetricCoefficientFunction>(c1->Transform(transformation));
+      auto newcf = SymmetricCF(c1->Transform(transformation));
       transformation.cache[thisptr] = newcf;
       return newcf;
     }
@@ -943,21 +855,6 @@ namespace ngfem
     virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
     { return Array<shared_ptr<CoefficientFunction>>({ c1 } ); }  
 
-    virtual void NonZeroPattern (const class ProxyUserData & ud,
-                                 FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    {
-      int hd = Dimensions()[0];
-      c1->NonZeroPattern (ud, values);
-
-      for (int i = 0; i < hd; i++)
-        for (int j = 0; j < hd; j++)
-          {
-            int ii = i*hd+j;
-            int jj = j*hd+i;
-            values(ii) = values(ii)+values(jj);  // logical or
-          }
-    }
-  
     virtual void NonZeroPattern (const class ProxyUserData & ud,
                                  FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                  FlatVector<AutoDiffDiff<1,NonZero>> values) const override
@@ -1061,12 +958,6 @@ namespace ngfem
       ar.Shallow(c1);
     }
   
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      c1->TraverseTree (func);
-      func(*this);
-    }
-
     virtual string GetDescription () const override
     { return "skew"; }
   
@@ -1097,20 +988,6 @@ namespace ngfem
       }
       }
     */
-
-    virtual void NonZeroPattern (const class ProxyUserData & ud,
-                                 FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    {
-      int hd = Dimensions()[0];
-      c1->NonZeroPattern (ud, values);
-      for (int i = 0; i < hd; i++)
-        for (int j = 0; j < hd; j++)
-          {
-            int ii = i*hd+j;
-            int jj = j*hd+i;
-            values(ii) = values(ii)+values(jj);   // logical or 
-          }
-    }
 
   
     virtual void NonZeroPattern (const class ProxyUserData & ud,
@@ -1309,6 +1186,13 @@ namespace ngfem
   {
     if (coef->IsZeroCF())
       return coef;
+
+    // Sym(Grad(u)) -> u.Operator("strain"), if the space provides it
+    if (auto proxy = dynamic_pointer_cast<ProxyFunction> (coef))
+      if (auto prim = dynamic_pointer_cast<ProxyFunction> (proxy->Primary()))
+        if (prim->GetAdditionalEvaluator("strain") &&
+            (proxy == prim->Deriv() || proxy == prim->GetAdditionalProxy("Grad")))
+          return prim->GetAdditionalProxy("strain");
 
     return make_shared<SymmetricCoefficientFunction> (coef);
   }

@@ -1116,158 +1116,30 @@ namespace ngbla
 
 
   
-  void MultMatMat_intern (size_t ha, size_t wa, size_t wb,
-                          BareSliceMatrix<> a, BareSliceMatrix<> b, BareSliceMatrix<> c)
+  template <OPERATION OP>
+  void REGCALL MultAB_intern (size_t ha, size_t wa, size_t wb,
+                              BareSliceMatrix<> a, BareSliceMatrix<> b, BareSliceMatrix<> c)
   {
-    if (ha == 0) return;
-    if (ha <= 4)
-      {
-        Switch<4>
-          (ha-1, [=](auto HA)
-           {
-             MatKernel2AddAB<HA.value+1,SET>(wa, wb, a.Data(), a.Dist(), b.Data(), b.Dist(), c.Data(), c.Dist());
-           });
-        return;
-      }
-
-    constexpr size_t BBH = 128;
-    if (wa <= BBH)
-      {
-        if (wb < 3*SIMD<double>::Size())
-          MultMatMat_intern2_SlimB<BBH,SET> (ha, wa, wb, a, b, c);
-        else
-          MultMatMat_intern2<BBH,SET> (ha, wa, wb, a, b, c);
-      }
-    else
-      {
-        MultMatMat_intern2<BBH,SET> (ha, BBH, wb, a, b, c);    
-
-        for (size_t i = BBH; i < wa; i += BBH)
-          {
-            a.IncPtr(BBH);
-            b.IncPtr(BBH*b.Dist());
-            size_t hbi = min2(BBH, wa-i);        
-            MultMatMat_intern2<BBH,ADD> (ha, hbi, wb, a, b, c);
-          }
-      }
-  }
-
-  void REGCALL MinusMultAB_intern (size_t ha, size_t wa, size_t wb,
-                                   BareSliceMatrix<> a, BareSliceMatrix<> b, BareSliceMatrix<> c)
-  {
-    constexpr size_t BBH = 128;
-    if (wa <= BBH)
-      {
-        if (wb < 3*SIMD<double>::Size())
-          MultMatMat_intern2_SlimB<BBH,SETNEG> (ha, wa, wb, a, b, c);
-        else
-          MultMatMat_intern2<BBH,SETNEG> (ha, wa, wb, a, b, c);
-      }
-    else
-      {
-        MultMatMat_intern2<BBH,SETNEG> (ha, BBH, wb, a, b, c);    
-
-        for (size_t i = BBH; i < wa; i += BBH)
-          {
-            a.IncPtr(BBH);
-            b.IncPtr(BBH*b.Dist());
-            size_t hbi = min2(BBH, wa-i);        
-            MultMatMat_intern2<BBH,SUB> (ha, hbi, wb, a, b, c);
-          }
-      }
-  }
-
-  
-  /*
-  void MinusMultAB_intern (size_t ha, size_t wa, size_t wb,
-                           BareSliceMatrix<> a, BareSliceMatrix<> b, BareSliceMatrix<> c)
-  {
-    constexpr size_t BBH = 128;
-    if (wb < 3*SIMD<double>::Size())
-      MultMatMat_intern2_SlimB<BBH,SETNEG> (ha, wa, wb, a, b, c);
-    else
-      {
-        for (size_t i = 0; i < wa; i += BBH, a.IncPtr(BBH), b.IncPtr(BBH*b.Dist()))
-          {
-            size_t hbi = min2(BBH, wa-i);
-            if (i == 0)
-              MultMatMat_intern2<BBH,SETNEG> (ha, hbi, wb, a, b, c);
-            else
-              MultMatMat_intern2<BBH,SUB> (ha, hbi, wb, a, b, c);              
-          }
-      }
-  }
-  */
-  
-  void REGCALL AddAB_intern (size_t ha, size_t wa, size_t wb,
-                             BareSliceMatrix<> a, BareSliceMatrix<> b, BareSliceMatrix<> c)
-  {
-    constexpr size_t BBH = 128;
-    if (wa <= BBH && wb < 3*SIMD<double>::Size())
-      MultMatMat_intern2_SlimB<BBH,ADD> (ha, wa, wb, a, b, c);
-    else
-      for (size_t i = 0; i < wa; i += BBH, a.IncPtr(BBH), b.IncPtr(BBH*b.Dist()))
+    if constexpr (OP == SET)
+      if (ha <= 4)
         {
-          size_t hbi = min2(BBH, wa-i);        
-          MultMatMat_intern2<BBH,ADD> (ha, hbi, wb, a, b, c);
+          Switch<4>
+            (ha-1, [=](auto HA)
+             {
+               MatKernel2AddAB<HA.value+1,SET>(wa, wb, a.Data(), a.Dist(), b.Data(), b.Dist(), c.Data(), c.Dist());
+             });
+          return;
         }
-  }
 
-  void REGCALL SubAB_intern (size_t ha, size_t wa, size_t wb,
-                             BareSliceMatrix<> a, BareSliceMatrix<> b, BareSliceMatrix<> c)
-  {
     constexpr size_t BBH = 128;
-    if (wa <= BBH && wb < 3*SIMD<double>::Size())
-      MultMatMat_intern2_SlimB<BBH,SUB> (ha, wa, wb, a, b, c);
-    else
-      for (size_t i = 0; i < wa; i += BBH, a.IncPtr(BBH), b.IncPtr(BBH*b.Dist()))
-        {
-          size_t hbi = min2(BBH, wa-i);        
-          MultMatMat_intern2<BBH,SUB> (ha, hbi, wb, a, b, c);
-        }
+    MultMatMat_intern2<BBH,OP> (ha, min2(BBH, wa), wb, a, b, c);
+    for (size_t i = BBH; i < wa; i += BBH)
+      {
+        a.IncPtr(BBH);
+        b.IncPtr(BBH*b.Dist());
+        MultMatMat_intern2<BBH,AddOp(OP)> (ha, min2(BBH, wa-i), wb, a, b, c);
+      }
   }
-
-
-  pmultABW dispatch_multAB[];
-  auto init_multAB = [] ()
-  {
-    Iterate<std::size(dispatch_multAB)-1> ([&] (auto i)
-    { dispatch_multAB[i] = &MultMatMat_intern2_ShortSumW<i,SET>; });
-    // Iterate<std::size(dispatch_multAB)-1> ([&] (auto i)
-    // { dispatch_multAB[i] = &MultMatMat_intern; });
-    dispatch_multAB[std::size(dispatch_multAB)-1] = &MultMatMat_intern;
-    return 1;
-  }();
-
-  pmultABW dispatch_minusmultAB[];
-  auto init_minusmultAB = [] ()
-  {
-    Iterate<std::size(dispatch_minusmultAB)-1> ([&] (auto i)
-    { dispatch_minusmultAB[i] = &MultMatMat_intern2_ShortSumW<i,SETNEG>; });
-    dispatch_minusmultAB[std::size(dispatch_minusmultAB)-1] = &MinusMultAB_intern;
-    return 1;
-  }();
-
-  pmultABW dispatch_addAB[];
-  auto init_addAB = [] ()
-  {
-    Iterate<std::size(dispatch_addAB)-1> ([&] (auto i)
-    { dispatch_addAB[i] = &MultMatMat_intern2_ShortSumW<i,ADD>; });
-    dispatch_addAB[std::size(dispatch_addAB)-1] = &AddAB_intern;
-    return 1;
-  }();
-
-  pmultABW dispatch_subAB[];
-  auto init_subAB = [] ()
-  {
-    Iterate<std::size(dispatch_subAB)-1> ([&] (auto i)
-    { dispatch_subAB[i] = &MultMatMat_intern2_ShortSumW<i,SUB>; });
-    dispatch_subAB[std::size(dispatch_subAB)-1] = &SubAB_intern;
-    return 1;
-  }();
-
-
-  
 
 
   /*
@@ -1466,23 +1338,20 @@ namespace ngbla
 
 
 
+  // c = Trans(at) * b, at = Trans(a) is k x WA
   template <size_t WA, OPERATION OP>
-  void REGCALL MultAtBSmallWA (size_t ha, size_t /* wa */, size_t wb, BareSliceMatrix<double> a, BareSliceMatrix<double> b,
-                               BareSliceMatrix<double> c)
-
+  void REGCALL MultAtBSmallWA (size_t /* ah */, size_t aw, size_t bw, BareSliceMatrix<double,ColMajor> a,
+                               BareSliceMatrix<double> b, BareSliceMatrix<double> c)
   {
-    // static Timer t("MultAtBSmallWA"); RegionTimer reg(t);
-    
-    if constexpr (WA <= 4) //  && OP == SET)
-      {
-        // MultAtBSmallWA2<WA> (ha, wb, a, b, c);
-        MatKernelAtB_SmallWA2<WA,OP> (ha, wb, a.Data(), a.Dist(), b.Data(), b.Dist(), c.Data(), c.Dist());        
-      }
+    auto at = Trans(a);
+    if constexpr (WA <= 4)
+      MatKernelAtB_SmallWA2<WA,OP> (aw, bw, at.Data(), at.Dist(), b.Data(), b.Dist(), c.Data(), c.Dist());        
     else
-      MatKernelAtB_SmallWA<WA,OP> (ha, wb, a.Data(), a.Dist(), b.Data(), b.Dist(), c.Data(), c.Dist());
+      MatKernelAtB_SmallWA<WA,OP> (aw, bw, at.Data(), at.Dist(), b.Data(), b.Dist(), c.Data(), c.Dist());
   }
 
-  // template <> pmultABW dispatch_atb<false,true>[];
+  constexpr bool IsAddOp (OPERATION op) { return op == ADD || op == SUB; }
+  constexpr bool IsPosOp (OPERATION op) { return op == ADD || op == SET; }
 
   template <OPERATION OP, size_t MAXHA>
   void REGCALL MultAtB_intern2 (size_t ha, size_t wa, size_t wb,
@@ -1528,7 +1397,7 @@ namespace ngbla
       
 
     if (i == wa) return;
-    dispatch_atb<OP==ADD || OP==SUB, OP==SET || OP==ADD>::ptrs[wa-i] (ha, wa-i, wb, a, b, c);    
+    dispatch_gemm<IsAddOp(OP),IsPosOp(OP),ColMajor,RowMajor>[wa-i] (wa-i, ha, wb, Trans(a), b, c);
   }
 
 
@@ -1610,11 +1479,12 @@ namespace ngbla
     return 1;
   }();
   
+  // c = Trans(a) * b, a = Trans(ac) is k x m
   template <OPERATION OP>
-  void REGCALL MultAtB_intern (size_t ha, size_t wa, size_t wb, BareSliceMatrix<double> a, BareSliceMatrix<double> b,
-                               BareSliceMatrix<double> c)
+  void REGCALL MultAtB_intern (size_t wa, size_t ha, size_t wb, BareSliceMatrix<double,ColMajor> ac,
+                               BareSliceMatrix<double> b, BareSliceMatrix<double> c)
   {
-    // static Timer t("MultAtB_intern"); RegionTimer reg(t);
+    auto a = Trans(ac);
     if (wb <= 8)
       {
         // if (wb > 0)
@@ -1651,65 +1521,19 @@ namespace ngbla
   }
   
 
-  template <bool ADD, bool POS>
-  pmultABW dispatch_atb<ADD,POS>::ptrs[];
-
-  auto init_atb = [] ()
-  {
-    Iterate<std::size(dispatch_atb<false,true>::ptrs)-1> ([&] (auto i)
-    {
-      dispatch_atb<false,true>::ptrs[i] = &MultAtBSmallWA<i,SET>;
-      dispatch_atb<true,true>::ptrs[i] = &MultAtBSmallWA<i,ADD>;
-      dispatch_atb<false,false>::ptrs[i] = &MultAtBSmallWA<i,SETNEG>;
-      dispatch_atb<true,false>::ptrs[i] = &MultAtBSmallWA<i,SUB>;
-    });
-    dispatch_atb<false,true>::ptrs[std::size(dispatch_atb<false,true>::ptrs)-1] = &MultAtB_intern<SET>;
-    dispatch_atb<true,true>::ptrs[std::size(dispatch_atb<true,true>::ptrs)-1] = &MultAtB_intern<ADD>;
-    dispatch_atb<false,false>::ptrs[std::size(dispatch_atb<false,false>::ptrs)-1] = &MultAtB_intern<SETNEG>;
-    dispatch_atb<true,false>::ptrs[std::size(dispatch_atb<true,false>::ptrs)-1] = &MultAtB_intern<SUB>;
-    return 1;
-  }();
-  
   /* ***************************** A * B^T *************************************** */
 
+  // c = a * Trans(bt), bt = Trans(b) is bw x SX
   template <int SX, OPERATION OP>
-  void REGCALL MultABtSmallWA (size_t ah, size_t bh, BareSliceMatrix<> a, BareSliceMatrix<> b, BareSliceMatrix<> c)
+  void REGCALL MultABtSmallWA (size_t ah, size_t /* aw */, size_t bw, BareSliceMatrix<> a,
+                               BareSliceMatrix<double,ColMajor> b, BareSliceMatrix<> c)
   {
+    auto bt = Trans(b);
     double * pa = a.Data();
     double * pc = c.Data();
     for (size_t i = 0; i < ah; i++, pa += a.Dist(), pc += c.Dist())
-      KernelMatVec<SX,OP> (bh, b.Data(), b.Dist(), pa, pc);
+      KernelMatVec<SX,OP> (bw, bt.Data(), bt.Dist(), pa, pc);
   }
-
-  /*
-  pfunc_abt dispatch_abt[25] =
-    { &MultABtSmallWA<0>, &MultABtSmallWA<1>, &MultABtSmallWA<2>, &MultABtSmallWA<3>,
-      &MultABtSmallWA<4>, &MultABtSmallWA<5>, &MultABtSmallWA<6>, &MultABtSmallWA<7>,
-      &MultABtSmallWA<8>, &MultABtSmallWA<9>, &MultABtSmallWA<10>, &MultABtSmallWA<11>,
-      &MultABtSmallWA<12>, &MultABtSmallWA<13>, &MultABtSmallWA<14>, &MultABtSmallWA<15>,
-      &MultABtSmallWA<16>, &MultABtSmallWA<17>, &MultABtSmallWA<18>, &MultABtSmallWA<19>,
-      &MultABtSmallWA<20>, &MultABtSmallWA<21>, &MultABtSmallWA<22>, &MultABtSmallWA<23>,
-      &MultABtSmallWA<24>
-    };
-  */
-
-  pfunc_abt dispatch_abt[];
-  auto init_abt = [] ()
-  {
-    Iterate<std::size(dispatch_abt)> ([&] (auto i)
-    { dispatch_abt[i] = &MultABtSmallWA<i,SET>; });
-    // dispatch_matvec[std::size(dispatch_matvec)-1] = &MultMatVec_intern;
-    return 1;
-  }();
-
-  pfunc_abt dispatch_addabt[];
-  auto init_addabt = [] ()
-  {
-    Iterate<std::size(dispatch_addabt)> ([&] (auto i)
-    { dispatch_addabt[i] = &MultABtSmallWA<i,ADD>; });
-    // dispatch_matvec[std::size(dispatch_matvec)-1] = &MultMatVec_intern;
-    return 1;
-  }();
   
   
   template <typename TAB, typename FUNC>
@@ -1816,52 +1640,125 @@ namespace ngbla
                 pa, a.Dist(), pb, b.Dist(), pc, c.Dist(), func);
   }
 
-  void MultABt_intern (SliceMatrix<double> a, SliceMatrix<double> b, BareSliceMatrix<double> c)
+  template <OPERATION OP>
+  constexpr auto ABtFunc ()
   {
-    // c = a * Trans(b);
-
-    constexpr size_t bs = 256;
-    size_t wa = a.Width();
-
-    TAddABt2 (min2(bs, wa), a.Height(), b.Height(),
-              a.Data(), a.Dist(), &b(0), b.Dist(), &c(0), c.Dist(),
-              [] (auto c, auto ab) { return ab; });
-
-    if (wa > bs)
-      TAddABt1 (a.Cols(bs, wa), b.Cols(bs, wa), c, [] (auto c, auto ab) { return c+ab; });        
+    if constexpr (OP == SET) return [] (auto c, auto ab) { return ab; };
+    if constexpr (OP == SETNEG) return [] (auto c, auto ab) { return -ab; };
+    if constexpr (OP == ADD) return [] (auto c, auto ab) { return c+ab; };
+    if constexpr (OP == SUB) return [] (auto c, auto ab) { return c-ab; };
   }
 
-  void MinusMultABt (SliceMatrix<double> a, SliceMatrix<double> b, BareSliceMatrix<double> c)
+  // c = a * Trans(bt), bt = Trans(b)
+  template <OPERATION OP>
+  void REGCALL MultABt_intern (size_t ah, size_t aw, size_t bw, BareSliceMatrix<> a,
+                               BareSliceMatrix<double,ColMajor> b, BareSliceMatrix<> c)
   {
-    // c = -a * Trans(b);
-    
-    constexpr size_t bs = 256;
-    size_t wa = a.Width();
-
-    TAddABt2 (min2(bs, wa), a.Height(), b.Height(),
-              a.Data(), a.Dist(), b.Data(), b.Dist(), c.Data(), c.Dist(),
-              [] (auto c, auto ab) { return -ab; });
-
-    if (wa > bs)
-      TAddABt1 (a.Cols(bs, wa), b.Cols(bs, wa), c, [] (auto c, auto ab) { return c-ab; });        
-  }
-
-  
-  void AddABt_intern (SliceMatrix<double> a, SliceMatrix<double> b, BareSliceMatrix<double> c)
-  {
-    // c += a * Trans(b);
-    TAddABt1 (a, b, c, [] (auto c, auto ab) { return c+ab; });
-  }
-
-  void SubABt (SliceMatrix<double> a, SliceMatrix<double> b, BareSliceMatrix<double> c)
-  {
-    // c -= a * Trans(b);
-    TAddABt1 (a, b, c, [] (auto c, auto ab) { return c-ab; });
+    constexpr size_t bs = 256; // inner-product loop
+    auto bt = Trans(b);
+    TAddABt2 (min2(bs, aw), ah, bw, a.Data(), a.Dist(), bt.Data(), bt.Dist(), c.Data(), c.Dist(),
+              ABtFunc<OP>());
+    for (size_t i = bs; i < aw; i += bs)
+      TAddABt2 (min2(bs, aw-i), ah, bw, a.Data()+i, a.Dist(), bt.Data()+i, bt.Dist(), c.Data(), c.Dist(),
+                ABtFunc<AddOp(OP)>());
   }
 
 
+  /* ***************************** A^T * B^T *************************************** */
+
+  // c = Trans(at) * Trans(bt): pack Trans(bt) blockwise and run the AtB kernels
+  template <OPERATION OP>
+  void REGCALL MultAtBt_intern (size_t ah, size_t aw, size_t bw, BareSliceMatrix<double,ColMajor> a,
+                                BareSliceMatrix<double,ColMajor> b, BareSliceMatrix<> c)
+  {
+    constexpr size_t BK = 120, BN = 120;
+    constexpr size_t N = gemm_dispatch_size<ColMajor,RowMajor>;
+    alignas(64) double mem[BK*BN];
+    auto at = Trans(a);
+    auto bt = Trans(b);
+    for (size_t k = 0; k < aw; k += BK)
+      {
+        size_t kb = min2(BK, aw-k);
+        auto atk = at.Rows(k, k+kb);
+        for (size_t j = 0; j < bw; j += BN)
+          {
+            size_t nb = min2(BN, bw-j);
+            SliceMatrix<> bkj(kb, nb, BN, mem);
+            TransposeMatrix (bt.Rows(j, j+nb).Cols(k, k+kb), bkj);
+            auto cj = c.Cols(j, j+nb);
+            if (ah < N-1 || nb <= 8)
+              {
+                size_t d = min2(ah, N-1);
+                if (k == 0)
+                  dispatch_gemm<IsAddOp(OP),IsPosOp(OP),ColMajor,RowMajor>[d] (ah, kb, nb, Trans(atk), bkj, cj);
+                else
+                  dispatch_gemm<true,IsPosOp(OP),ColMajor,RowMajor>[d] (ah, kb, nb, Trans(atk), bkj, cj);
+              }
+            else if (k == 0)
+              MultAtB_intern2<OP,BK> (kb, ah, nb, atk, bkj, cj);
+            else
+              MultAtB_intern2<AddOp(OP),BK> (kb, ah, nb, atk, bkj, cj);
+          }
+      }
+  }
 
 
+  /* ***************************** dispatch tables *************************************** */
+
+  template <> NGS_DLL_HEADER pgemm<double,RowMajor,RowMajor> dispatch_gemm<false,false,RowMajor,RowMajor>[gemm_dispatch_size<RowMajor,RowMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,RowMajor,RowMajor> dispatch_gemm<false,true,RowMajor,RowMajor>[gemm_dispatch_size<RowMajor,RowMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,RowMajor,RowMajor> dispatch_gemm<true,false,RowMajor,RowMajor>[gemm_dispatch_size<RowMajor,RowMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,RowMajor,RowMajor> dispatch_gemm<true,true,RowMajor,RowMajor>[gemm_dispatch_size<RowMajor,RowMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,RowMajor,ColMajor> dispatch_gemm<false,false,RowMajor,ColMajor>[gemm_dispatch_size<RowMajor,ColMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,RowMajor,ColMajor> dispatch_gemm<false,true,RowMajor,ColMajor>[gemm_dispatch_size<RowMajor,ColMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,RowMajor,ColMajor> dispatch_gemm<true,false,RowMajor,ColMajor>[gemm_dispatch_size<RowMajor,ColMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,RowMajor,ColMajor> dispatch_gemm<true,true,RowMajor,ColMajor>[gemm_dispatch_size<RowMajor,ColMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,ColMajor,RowMajor> dispatch_gemm<false,false,ColMajor,RowMajor>[gemm_dispatch_size<ColMajor,RowMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,ColMajor,RowMajor> dispatch_gemm<false,true,ColMajor,RowMajor>[gemm_dispatch_size<ColMajor,RowMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,ColMajor,RowMajor> dispatch_gemm<true,false,ColMajor,RowMajor>[gemm_dispatch_size<ColMajor,RowMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,ColMajor,RowMajor> dispatch_gemm<true,true,ColMajor,RowMajor>[gemm_dispatch_size<ColMajor,RowMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,ColMajor,ColMajor> dispatch_gemm<false,false,ColMajor,ColMajor>[gemm_dispatch_size<ColMajor,ColMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,ColMajor,ColMajor> dispatch_gemm<false,true,ColMajor,ColMajor>[gemm_dispatch_size<ColMajor,ColMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,ColMajor,ColMajor> dispatch_gemm<true,false,ColMajor,ColMajor>[gemm_dispatch_size<ColMajor,ColMajor>];
+  template <> NGS_DLL_HEADER pgemm<double,ColMajor,ColMajor> dispatch_gemm<true,true,ColMajor,ColMajor>[gemm_dispatch_size<ColMajor,ColMajor>];
+
+  template <OPERATION OP>
+  void InitGEMM ()
+  {
+    constexpr bool A = IsAddOp(OP), P = IsPosOp(OP);
+
+    constexpr size_t NAB = gemm_dispatch_size<RowMajor,RowMajor>;
+    Iterate<NAB-1> ([&] (auto i)
+    { dispatch_gemm<A,P,RowMajor,RowMajor>[i] = &MultMatMat_intern2_ShortSumW<i,OP>; });
+    dispatch_gemm<A,P,RowMajor,RowMajor>[NAB-1] = &MultAB_intern<OP>;
+
+    constexpr size_t NAtB = gemm_dispatch_size<ColMajor,RowMajor>;
+    Iterate<NAtB-1> ([&] (auto i)
+    { dispatch_gemm<A,P,ColMajor,RowMajor>[i] = &MultAtBSmallWA<i,OP>; });
+    dispatch_gemm<A,P,ColMajor,RowMajor>[NAtB-1] = &MultAtB_intern<OP>;
+
+    // KernelMatVec exists for SET and ADD only
+    constexpr size_t NABt = gemm_dispatch_size<RowMajor,ColMajor>;
+    Iterate<NABt-1> ([&] (auto i)
+    {
+      if constexpr (OP == SET || OP == ADD)
+        dispatch_gemm<A,P,RowMajor,ColMajor>[i] = &MultABtSmallWA<i,OP>;
+      else
+        dispatch_gemm<A,P,RowMajor,ColMajor>[i] = &MultABt_intern<OP>;
+    });
+    dispatch_gemm<A,P,RowMajor,ColMajor>[NABt-1] = &MultABt_intern<OP>;
+
+    dispatch_gemm<A,P,ColMajor,ColMajor>[0] = &MultAtBt_intern<OP>;
+  }
+
+  auto init_gemm = [] ()
+  {
+    InitGEMM<SET>();
+    InitGEMM<SETNEG>();
+    InitGEMM<ADD>();
+    InitGEMM<SUB>();
+    return 1;
+  }();
 
 
   /* ***************************** A * B^T, A,B SIMD *********************************** */
@@ -1958,6 +1855,49 @@ namespace ngbla
   }
 
 
+  // H rows of c against columns 0 .. i+H-1 (lower triangle of the diagonal block included),
+  // 4-wide steps also across the diagonal while c is wide enough: entries above the diagonal are modified
+  template <size_t H, typename TAB, typename FUNC>
+  INLINE void TAddABtSymRows (size_t i, size_t wa, size_t wc,
+                              TAB * pa, size_t da, TAB * pb, size_t db, double * pc, size_t dc,
+                              FUNC func)
+  {
+    size_t j = 0;
+    for ( ; j < i+H && j+4 <= wc; j += 4, pb += 4*db)
+      {
+        auto scal = MatKernelScalAB<H,4>(wa, pa, da, pb, db);
+        Iterate<H> ([&] (auto ii) {
+            double * pci = pc+ii.value*dc+j;
+            func (SIMD<double,4>(pci), get<ii.value>(scal)).Store(pci);
+          });
+      }
+    for ( ; j < i+H; j++, pb += db)
+      {
+        auto scal = MatKernelScalAB<H,1>(wa, pa, da, pb, db);
+        Iterate<H> ([&] (auto ii) {
+            double * pci = pc+ii.value*dc+j;
+            *pci = func (*pci, get<ii.value>(scal));
+          });
+      }
+  }
+
+  // HA x 4 blocks, the last rows as one block of their own height
+  template <size_t HA, typename TAB, typename FUNC>
+  INLINE void TAddABtSymBlocks (size_t wa, size_t hc, size_t wc,
+                                TAB * pa, size_t da, TAB * pb, size_t db, double * pc, size_t dc,
+                                FUNC func)
+  {
+    size_t i = 0;
+    for ( ; i+HA <= hc; i += HA, pa += HA*da, pc += HA*dc)
+      TAddABtSymRows<HA> (i, wa, wc, pa, da, pb, db, pc, dc, func);
+    Iterate<HA> ([&] (auto h) {
+        if constexpr (h.value > 0)
+          if (hc-i == h.value)
+            TAddABtSymRows<h.value> (i, wa, wc, pa, da, pb, db, pc, dc, func);
+      });
+  }
+
+
   void AddABtSym (SliceMatrix<double> a,
                   SliceMatrix<double> b,
                   BareSliceMatrix<double> c)
@@ -1972,9 +1912,11 @@ namespace ngbla
                   SliceMatrix<SIMD<double>> b,
                   BareSliceMatrix<double> c)
   {
-    TAddABt4Sym(a.Width(), a.Height(), b.Height(),
-                a.Data(), a.Width(), b.Data(), b.Width(), c.Data(), c.Dist(),
-                [] (auto c, auto ab) { return c+ab; });
+    // 4x4 blocks fit the triangle and leave registers to spare (32 registers), 3x4 otherwise
+    constexpr size_t HA = reg32 ? 4 : 3;
+    TAddABtSymBlocks<HA> (a.Width(), a.Height(), b.Height(),
+                          a.Data(), a.Dist(), b.Data(), b.Dist(), c.Data(), c.Dist(),
+                          [] (auto c, auto ab) { return c+ab; });
     /*
     AddABtSym (SliceMatrix<double> (AFlatMatrix<double>(a)),
                SliceMatrix<double> (AFlatMatrix<double>(b)), c);
@@ -3225,267 +3167,31 @@ void T_AddABt (SliceMatrix<Complex> a, SliceMatrix<Complex> b, BareSliceMatrix<C
   
   
   // ************************************** Complex ADB^t *********************
-  
-  /*
-  
-  void CopyMatrixInScaleRows (size_t h, size_t w,
-                              Complex * ps, size_t dists,
-                              Complex * pd, size_t distd,
-                              Complex * pscale, size_t distscale)
-  {
-    for (size_t i = 0; i < h; i++, ps += dists, pd += distd, pscale += distscale)
-      {
-        Complex scale = *pscale;
-        for (size_t j = 0; j < w; j++)
-          pd[j] = scale * ps[j];
-      }
-  }
-  
-  */
-  
-  void CopyMatrixInScaleRows (size_t h, size_t w,
-                              Complex * ps, size_t dists,
-                              Complex * pd, size_t distd,
-                              Complex * pscale, size_t distscale)
-  {
-    for (size_t i = 0; i < h; i++, ps += dists, pd += distd, pscale += distscale)
-      {
-        SIMD<Complex> scale (*pscale);
-        size_t j = 0;
-        size_t WS = SIMD<double>::Size();
-        for ( ; j+4*WS <= w; j+=4*WS)
-          {
-            SIMD<Complex> val1, val2, val3, val4;
-            val1.LoadFast(ps+j);
-            val2.LoadFast(ps+j+WS);
-            val3.LoadFast(ps+j+2*WS);
-            val4.LoadFast(ps+j+3*WS);
-            val1 = val1 * scale;
-            val2 = val2 * scale;
-            val3 = val3 * scale;
-            val4 = val4 * scale;
-            val1.StoreFast(pd+j);
-            val2.StoreFast(pd+j+WS);
-            val3.StoreFast(pd+j+2*WS);
-            val4.StoreFast(pd+j+3*WS);
-          }
-        for ( ; j+WS <= w; j+=WS)
-          {
-            SIMD<Complex> val;
-            val.LoadFast(ps+j);
-            val = val * scale;
-            val.StoreFast(pd+j);
-          }
-        SIMD<Complex> val;
-        val.LoadFast(ps+j, w-j);
-        val = val * scale;
-        val.StoreFast(pd+j, w-j);
-      }
-  }  
 
-
-
-  
-
-  
-  void KernelScal4x4Trans (Complex * pa, size_t da,
-                           Complex * pb, size_t db,
-                           Complex * pc, size_t dc,
-                           size_t ninner)
-  {
-    SIMD<Complex> sum1, sum2, sum3, sum4;
-    sum1.LoadFast (pc);
-    sum2.LoadFast (pc+dc);
-    sum3.LoadFast (pc+2*dc);
-    sum4.LoadFast (pc+3*dc);
-    for (size_t i = 0; i < ninner; i++, pa += da, pb += db)
-      {
-        SIMD<Complex> b1;
-        b1.LoadFast(pb);
-        sum1 = sum1 - SIMD<Complex> (pa[0]) * b1;
-        sum2 = sum2 - SIMD<Complex> (pa[1]) * b1;
-        sum3 = sum3 - SIMD<Complex> (pa[2]) * b1;
-        sum4 = sum4 - SIMD<Complex> (pa[3]) * b1;
-      }
-    sum1.StoreFast(pc);
-    sum2.StoreFast(pc+dc);
-    sum3.StoreFast(pc+2*dc);
-    sum4.StoreFast(pc+3*dc);
-  }
-
-  void KernelScal4x4Trans (Complex * pa, size_t da,
-                           Complex * pb, size_t db,
-                           Complex * pc, size_t dc,
-                           size_t ninner, int mask)
-  {
-    SIMD<Complex> sum1, sum2, sum3, sum4;
-    sum1.LoadFast (pc, mask);
-    sum2.LoadFast (pc+dc, mask);
-    sum3.LoadFast (pc+2*dc, mask);
-    sum4.LoadFast (pc+3*dc, mask);
-    for (size_t i = 0; i < ninner; i++, pa += da, pb += db)
-      {
-        SIMD<Complex> b1;
-        b1.LoadFast(pb, mask);
-        sum1 = sum1 - SIMD<Complex> (pa[0]) * b1;
-        sum2 = sum2 - SIMD<Complex> (pa[1]) * b1;
-        sum3 = sum3 - SIMD<Complex> (pa[2]) * b1;
-        sum4 = sum4 - SIMD<Complex> (pa[3]) * b1;
-      }
-    sum1.StoreFast(pc, mask);
-    sum2.StoreFast(pc+dc, mask);
-    sum3.StoreFast(pc+2*dc, mask);
-    sum4.StoreFast(pc+3*dc, mask);
-  }
-  
-
-   
-  void KernelScal1x4Trans (Complex * pa, size_t da,
-                           Complex * pb, size_t db,
-                           Complex * pc, size_t dc,
-                           size_t ninner)
-  {
-    SIMD<Complex> sum1;
-    sum1.LoadFast (pc);
-    for (size_t i = 0; i < ninner; i++, pa += da, pb += db)
-      {
-        SIMD<Complex> b1;
-        b1.LoadFast(pb);
-        sum1 = sum1 - SIMD<Complex> (*pa) * b1;
-      }
-    sum1.StoreFast(pc);
-  }
-  
-  void KernelScal1x4Trans (Complex * pa, size_t da,
-                           Complex * pb, size_t db,
-                           Complex * pc, size_t dc,
-                           size_t ninner, int mask)
-  {
-    SIMD<Complex> sum1;
-    sum1.LoadFast (pc, mask);
-    for (size_t i = 0; i < ninner; i++, pa += da, pb += db)
-      {
-        SIMD<Complex> b1;
-        b1.LoadFast(pb, mask);
-        sum1 = sum1 - SIMD<Complex> (*pa) * b1;
-      }
-    sum1.StoreFast(pc, mask);
-  }
-  
-  void MySubAtDB_BB (
-                      Complex * pa, size_t da,
-                      Complex * pb, size_t db,
-                      Complex * pc, size_t dc,
-                      size_t na, size_t nb, size_t ninner
-                      )
-  {
-    size_t WS = SIMD<double>::Size();
-    size_t i = 0;
-    for ( ; i+4 <= na; i+=4, pa += 4, pc += 4*dc)
-      {
-        size_t j = 0;
-        for ( ; j+WS <= nb; j+=WS)
-          KernelScal4x4Trans (pa, da, pb+j, db, pc+j, dc, ninner);
-        if (j < nb)
-          KernelScal4x4Trans (pa, da, pb+j, db, pc+j, dc, ninner, nb-j);          
-          /* maybe better for AVX, but not portable to 512
-          {
-          for ( ; j < nb; j++)
-            Complex tmpc[4] = { pc[j], pc[dc+j], pc[2*dc+j], pc[3*dc+j] };
-            KernelScal1x4Trans (pb+j, db, pa, da, tmpc, 1, ninner);
-            pc[j] = tmpc[0];
-            pc[dc+j] = tmpc[1];
-            pc[2*dc+j] = tmpc[2];
-            pc[3*dc+j] = tmpc[3];
-          }
-          */
-      }
-    for ( ; i < na; i++, pa ++, pc += dc)
-      {
-        size_t j = 0;
-        for ( ; j+WS <= nb; j+=WS)
-          KernelScal1x4Trans (pa, da, pb+j, db, pc+j, dc, ninner);
-        if (j < nb)
-          KernelScal1x4Trans (pa, da, pb+j, db, pc+j, dc, ninner, nb-j);
-      }
-  }
-
-  /*
-
-  void MySubAtDB_BB (
-                     Complex * pa, size_t da,
-                     Complex * pb, size_t db,
-                     Complex * pc, size_t dc,
-                     size_t na, size_t nb, size_t ninner
-                     )
-  {
-  // SliceMatrix<Complex> a(ninner, na, da, pa);
-  // SliceMatrix<Complex> b(ninner, nb, db, pb);
-  // SliceMatrix<Complex> c(na, nb, dc, pc);
-  // c -= Trans(a) * b; //  | Lapack;
-
-    for (size_t i = 0; i < na; i++)
-      for (size_t j = 0; j < nb; j++)
-        {
-          Complex sum = pc[i*dc+j];
-          for (size_t k = 0; k < ninner; k++)
-            sum -= pa[k*da+i] * pb[k*db+j];
-          pc[i*dc+j] = sum;
-        }
-  }
-  */
-
-
-  constexpr size_t CNA = 32;
-  constexpr size_t CNB = 32;
-  constexpr size_t CNK = 32;
-  
-  void MySubAtDB_BP (SliceMatrix<Complex> a,
-                     SliceVector<Complex> diag,
-                     SliceMatrix<Complex> b, SliceMatrix<Complex> c)
-  {
-    // alignas (64) Complex mema[CNA*CNK];   // slow !!!
-    alignas (64) double mema[2*CNA*CNK];
-    size_t na = a.Width();
-    size_t nb = b.Width();
-    size_t k = a.Height();
-    
-    CopyMatrixInScaleRows (k, na,
-                           a.Data(), a.Dist(), (Complex*)&mema[0], CNA,
-                           diag.Data(), diag.Dist());
-
-    size_t i = 0;
-    constexpr size_t bs = CNB;
-    for ( ; i+bs <= nb; i += bs)
-      MySubAtDB_BB ((Complex*)mema, CNA, &b(size_t(0),i), b.Dist(), &c(size_t(0),i), c.Dist(), na, bs,k);
-    if (i < nb)
-      MySubAtDB_BB ((Complex*)mema, CNA, &b(size_t(0),i), b.Dist(), &c(size_t(0),i), c.Dist(), na, nb-i, k);    
-  }
-  
-  void MySubAtDB_PM (SliceMatrix<Complex> a,
-                     SliceVector<Complex> diag,
-                     SliceMatrix<Complex> b, SliceMatrix<Complex> c)
-  {
-    size_t k = a.Height();
-    size_t i = 0;
-    constexpr size_t bs = CNK;
-    for ( ; i+bs <= k; i += bs) 
-      MySubAtDB_BP (a.Rows(i,i+bs), diag.Range(i,i+bs), b.Rows(i,i+bs), c);
-    if (i < k)
-      MySubAtDB_BP (a.Rows(i,k), diag.Range(i,k), b.Rows(i,k), c);      
-  }
-  
+  // c -= Trans(a) diag b, via the tuned complex GEMM
   void SubAtDB (SliceMatrix<Complex> a,
                 SliceVector<Complex> diag,
                 SliceMatrix<Complex> b, SliceMatrix<Complex> c)
   {
-    size_t na = a.Width();
-    size_t i = 0;
-    constexpr size_t bs = CNA;
-    for ( ; i+bs <= na; i += bs)
-      MySubAtDB_PM (a.Cols(i,i+bs), diag, b, c.Rows(i,i+bs));
-    if (i < na)
-      MySubAtDB_PM (a.Cols(i,na), diag, b, c.Rows(i,na));
+    constexpr size_t BA = 64, BK = 64;
+    alignas (64) double mema[2*BA*BK];   // no Complex[]: avoids zero-init
+
+    for (size_t i = 0; i < a.Width(); i += BA)
+      {
+        size_t i2 = min2(i+BA, a.Width());
+        for (size_t k = 0; k < a.Height(); k += BK)
+          {
+            size_t k2 = min2(k+BK, a.Height());
+            SliceMatrix<Complex> loca(i2-i, k2-k, BK, (Complex*)&mema[0]);
+            for (size_t kk = k; kk < k2; kk++)
+              {
+                Complex s = -diag(kk);
+                for (size_t ii = i; ii < i2; ii++)
+                  loca(ii-i, kk-k) = s * a(kk,ii);
+              }
+            c.Rows(i,i2) += loca * b.Rows(k,k2);
+          }
+      }
   }
 
 

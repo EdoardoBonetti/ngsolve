@@ -1781,6 +1781,16 @@ namespace ngcomp
 
 
   template <class SCAL>
+  void S_BilinearForm<SCAL> :: AddElementMatrix (const FESpace::Element & el_test,
+                                                 const FESpace::Element & el_trial,
+                                                 FlatMatrix<SCAL> elmat, LocalHeap & lh)
+  {
+    auto hmat = ToElementDofs (el_trial.GetFESpace(), el_trial, Trans(elmat), lh);
+    auto gmat = ToElementDofs (el_test.GetFESpace(), el_test, Trans(hmat), lh);
+    AddElementMatrix (el_test.GetDofs(), el_trial.GetDofs(), gmat, el_test, false, lh);
+  }
+
+  template <class SCAL>
   void S_BilinearForm<SCAL> :: AddElementMatrix (const FESpace::Element & el,
                                                  FlatMatrix<SCAL> elmat,
                                                  bool condense_rhs, LocalHeap & lh)
@@ -1788,17 +1798,9 @@ namespace ngcomp
     static mutex printelmat_mutex;
 
     auto & fes = el.GetFESpace();
-    if (auto T = fes.GetDofTransformation (el, lh))
-      {
-        // to the element dofs: T^T elmat T
-        FlatMatrix<SCAL> gmat(T->Width(), T->Width(), lh);
-        FlatMatrix<SCAL> hmat(elmat.Height(), T->Width(), lh);
-        hmat = elmat * *T;
-        gmat = Trans(*T) * hmat;
-        elmat.AssignMemory (gmat.Height(), gmat.Width(), gmat.Data());
-      }
-    else
-      fes.TransformMat (el, elmat, TRANSFORM_MAT_LEFT_RIGHT);
+    auto hmat = ToElementDofs (fes, el, Trans(elmat), lh);
+    auto gmat = ToElementDofs (fes, el, Trans(hmat), lh);
+    elmat.AssignMemory (gmat.Height(), gmat.Width(), gmat.Data());
 
     if (elmat_ev)
       {
@@ -2796,17 +2798,17 @@ namespace ngcomp
                   (*fespace, vb, clh,          // coloring for 1 space is enough
                    [&] (ElementId ei, LocalHeap & lh)
                    {
-                     const FiniteElement & fel1 = fespace->GetFE (ei, lh);
-                     const FiniteElement & fel2 = fespace2->GetFE (ei, lh);
-                     
-                     Array<int> dnums1(fel1.GetNDof(), lh);
-                     Array<int> dnums2(fel2.GetNDof(), lh);
+                     auto el1 = fespace->GetElement (ei, lh);
+                     auto el2 = fespace2->GetElement (ei, lh);
+                     const FiniteElement & fel1 = el1.GetFE();
+                     const FiniteElement & fel2 = el2.GetFE();
                      const ElementTransformation & eltrans = ma->GetTrafo (ei, lh);
-                     fespace->GetDofNrs (ei, dnums1);
-                     fespace2->GetDofNrs (ei, dnums2);
           
-                     FlatMatrix<SCAL> elmat(dnums2.Size()*fespace2->GetDimension(),
-                                            dnums1.Size()*fespace->GetDimension(), lh);
+                     FlatMatrix<SCAL> elmat(fel2.GetNDof()*fespace2->GetDimension(),
+                                            fel1.GetNDof()*fespace->GetDimension(), lh);
+                     FlatMatrix<SCAL> sum_elmat(elmat.Height(), elmat.Width(), lh);
+                     sum_elmat = 0.0;
+                     bool elem_has_integrator = false;
                      for (auto & bfi : VB_parts[vb])
                        {
                          if (!bfi->DefinedOn (eltrans.GetElementIndex())) continue;
@@ -2815,10 +2817,11 @@ namespace ngcomp
                          auto & mapped_trafo = eltrans.AddDeformation(bfi->GetDeformation().get(), lh);
                          MixedFiniteElement fel(fel1, fel2);
                          bfi->CalcElementMatrix (fel, mapped_trafo, elmat, lh);
-                         fespace->TransformMat(ei, elmat, TRANSFORM_MAT_RIGHT);
-                         fespace2->TransformMat(ei, elmat, TRANSFORM_MAT_LEFT);
-                         AddElementMatrix (dnums2, dnums1, elmat, ei, false, lh);
+                         sum_elmat += elmat;
+                         elem_has_integrator = true;
                        }
+                     if (elem_has_integrator)
+                       AddElementMatrix (el2, el1, sum_elmat, lh);
                    });
             
             /*

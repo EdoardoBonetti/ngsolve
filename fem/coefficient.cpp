@@ -311,11 +311,6 @@ namespace ngfem
   }
   
   
-  void CoefficientFunction :: TraverseTree (const function<void(CoefficientFunction&)> & func)
-  {
-    func(*this);
-  }
-
   void CoefficientFunction :: 
   Evaluate (const BaseMappedIntegrationRule & ir, BareSliceMatrix<double> hvalues) const
   {
@@ -397,7 +392,48 @@ namespace ngfem
   void CoefficientFunction :: 
   NonZeroPattern (const class ProxyUserData & ud, FlatVector<AutoDiffDiff<1,NonZero>> values) const
   {
-    values = AutoDiffDiff<1,NonZero> (true);
+    NonZeroPatternDAG(*this).Evaluate (ud, values);
+  }
+
+  NonZeroPatternDAG :: NonZeroPatternDAG (const CoefficientFunction & cf)
+  {
+    const_cast<CoefficientFunction&>(cf).TraverseDAG
+      ([&] (CoefficientFunction & node) { steps.Append (&node); });
+
+    std::map<const CoefficientFunction*, int> nr;
+    offsets.Append (0);
+    first_input.Append (0);
+    for (int i : Range(steps))
+      {
+        nr[steps[i]] = i;
+        offsets.Append (offsets.Last() + steps[i]->Dimension());
+        auto incfs = steps[i]->InputCoefficientFunctions();
+        for (auto & incf : incfs)
+          inputs.Append (incf ? nr[incf.get()] : -1);
+        first_input.Append (inputs.Size());
+        max_inputs = max(max_inputs, incfs.Size());
+      }
+  }
+
+  void NonZeroPatternDAG ::
+  Evaluate (const ProxyUserData & ud, FlatVector<AutoDiffDiff<1,NonZero>> values) const
+  {
+    typedef AutoDiffDiff<1,NonZero> T;
+    ArrayMem<T,1000> mem(offsets.Last());
+    ArrayMem<FlatVector<T>,100> in(max_inputs);
+    auto result = [&] (int i) { return FlatVector<T> (offsets[i+1]-offsets[i], mem.Data()+offsets[i]); };
+
+    for (int i : Range(steps))
+      {
+        auto ini = inputs.Range(first_input[i], first_input[i+1]);
+        for (int j : Range(ini))
+          if (ini[j] == -1)
+            new (&in[j]) FlatVector<T> (0, mem.Data());
+          else
+            new (&in[j]) FlatVector<T> (result(ini[j]));
+        steps[i] -> NonZeroPattern (ud, in.Range(0, ini.Size()), result(i));
+      }
+    values = result(steps.Size()-1);
   }
 
   // shared_ptr<CoefficientFunction> shape = make_shared<ConstantCoefficientFunction>(1);
@@ -478,6 +514,8 @@ namespace ngfem
   shared_ptr<CoefficientFunction>
   ConstantCoefficientFunction :: DiffJacobi (const CoefficientFunction * var, T_DJC & cache) const
   {
+    if (this == var)
+      return make_shared<ConstantCoefficientFunction>(1);
     return ZeroCF(var->Dimensions());
   }
 
@@ -692,8 +730,6 @@ namespace ngfem
   public:
     ///
     DomainConstantCoefficientFunction (const Array<double> & aval);
-    ///
-    virtual int NumRegions () override { return val.Size(); }
     ///
     virtual ~DomainConstantCoefficientFunction ();
     ///
@@ -1393,11 +1429,6 @@ public:
   }
 
 
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    func(*this);
-  }
-
   virtual void GenerateCode(Code &code, FlatArray<int> inputs, int index) const override
   {
     for (int i : Range(Dimension()))
@@ -1446,13 +1477,6 @@ public:
 
 
 
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    values = AutoDiffDiff<1,NonZero>(false);
-    values(coord) = AutoDiffDiff<1,NonZero>(true);
-  }
-  
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                FlatVector<AutoDiffDiff<1,NonZero>> values) const override
@@ -1509,11 +1533,6 @@ public:
     return "OneVectorCF";
   }
 
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    func(*this);
-  }
-
   virtual void GenerateCode(Code &code, FlatArray<int> inputs, int index) const override
   {
     for (int i : Range(Dimension()))
@@ -1549,12 +1568,6 @@ public:
     values.AddSize(Dimension(), ir.Size()) = T(1.0);
   }
 
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    values = AutoDiffDiff<1,NonZero>(true);
-  }
-  
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                FlatVector<AutoDiffDiff<1,NonZero>> values) const override
@@ -1628,11 +1641,6 @@ public:
 
   virtual bool IsZeroCF() const override { return true; }
 
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    func(*this);
-  }
-
   void CalcEquivalenceKey () override
   {
     std::stringstream ss;
@@ -1693,12 +1701,6 @@ public:
 
 
 
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    values = AutoDiffDiff<1,NonZero>(false);
-  }
-  
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                FlatVector<AutoDiffDiff<1,NonZero>> values) const override
@@ -1771,12 +1773,6 @@ public:
     code.Declare (index, this->Dimensions(), IsComplex());  
     for (int i = 0; i < Dimension(); i++)
       code.body += Var(index,i,this->Dimensions()).Assign(Var(scal) * Var(inputs[0],i,c1->Dimensions()), false);      
-  }
-
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
   }
 
   shared_ptr<CoefficientFunction>
@@ -1918,11 +1914,6 @@ public:
     c1->NonZeroPattern (ud, nonzero, nonzero_deriv, nonzero_dderiv);
   }
   */
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    c1->NonZeroPattern (ud, values);
-  }
   
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -1979,12 +1970,6 @@ public:
   // virtual bool IsComplex() const { return true; }
   // virtual int Dimension() const { return c1->Dimension(); }
 
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
-  }
-
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
   { return Array<shared_ptr<CoefficientFunction>>({ c1 }); }
   
@@ -2038,9 +2023,11 @@ public:
     c1->NonZeroPattern (ud, nonzero, nonzero_deriv, nonzero_dderiv);
   }
   */
-  virtual void NonZeroPattern (const class ProxyUserData & ud, FlatVector<AutoDiffDiff<1,NonZero>> values) const override
+  virtual void NonZeroPattern (const class ProxyUserData & ud,
+                               FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
+                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
   {
-    c1->NonZeroPattern (ud, values);
+    values = input[0];
   }
   
   shared_ptr<CoefficientFunction> Diff (const CoefficientFunction * var,
@@ -2086,13 +2073,6 @@ public:
     SetDimensions (c2->Dimensions());
   }
   
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    c2->TraverseTree (func);
-    func(*this);
-  }
-
   void DoArchive(Archive& ar) override
   {
     BASE::DoArchive(ar);
@@ -2187,8 +2167,9 @@ public:
   {
     size_t w = ir.Size();
     __assume (w > 0);
-    STACK_ARRAY(T, hmem1, w);
-    FlatMatrix<T,ORD> temp1(1, w, &hmem1[0]);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> temp1(1, w, lh);
     
     c1->Evaluate (ir, temp1);
     c2->Evaluate (ir, values);
@@ -2264,16 +2245,6 @@ public:
       }
   }
   */
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    int dim = Dimension();
-    Vector<AutoDiffDiff<1,NonZero>> v1(1), v2(dim);
-    c1->NonZeroPattern (ud, v1);
-    c2->NonZeroPattern (ud, v2);
-    for (size_t j = 0; j < dim; j++)
-      values(j) = v1(0) * v2(j);
-  }
 
 
   
@@ -2323,13 +2294,6 @@ public:
     // code.Declare (code.res_type, index, Dimensions());
     code.Declare (index, Dimensions(), IsComplex());  
     code.body += Var(index).Assign(result.S(), false);
-  }
-
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    c2->TraverseTree (func);
-    func(*this);
   }
 
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
@@ -2437,16 +2401,6 @@ public:
     nonzero_dderiv = nzdd;
   }
   */
-  virtual void NonZeroPattern (const class ProxyUserData & ud, FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> v1(dim1), v2(dim1);
-    c1->NonZeroPattern (ud, v1);
-    c2->NonZeroPattern (ud, v2);
-    AutoDiffDiff<1,NonZero> sum(false);
-    for (int i = 0; i < dim1; i++)
-      sum += v1(i)*v2(i);
-    values(0) = sum;
-  }
 
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -2554,13 +2508,6 @@ public:
     for (int i = 0; i < c1->Dimension(); i++)
       result += Var(inputs[0], i, c1->Dimensions()) * Var(inputs[1], i, c2->Dimensions());
     code.body += Var(index).Assign(result.S(), false);
-  }
-
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    c2->TraverseTree (func);
-    func(*this);
   }
 
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
@@ -2711,18 +2658,6 @@ public:
   
   
 
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> v1(DIM), v2(DIM);
-    c1->NonZeroPattern (ud, v1);
-    c2->NonZeroPattern (ud, v2);
-    AutoDiffDiff<1,NonZero> sum(false);
-    for (int i = 0; i < DIM; i++)
-      sum += v1(i)*v2(i);
-    values(0) = sum;
-  }
-
   
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -2781,12 +2716,6 @@ public:
     for (int i = 0; i < c1->Dimension(); i++)
       result += Var(inputs[0], i, c1->Dimensions()) * Var(inputs[0], i, c1->Dimensions());
     code.body += Var(index).Assign(result.S(), false);
-  }
-
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
   }
 
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
@@ -2905,17 +2834,6 @@ public:
   }
   
 
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> v1(DIM);
-    c1->NonZeroPattern (ud, v1);
-    AutoDiffDiff<1,NonZero> sum(false);
-    for (int i = 0; i < DIM; i++)
-      sum += v1(i)*v1(i);
-    values(0) = sum;
-  }
-
   
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -3013,12 +2931,6 @@ public:
     ar.Shallow(c1) & dim1;
   }
   
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
-  }
-
   shared_ptr<CoefficientFunction> Transform
   (CoefficientFunction::T_Transform& transformation) const override
   {
@@ -3071,8 +2983,9 @@ public:
   {
     size_t np = ir.Size();
     size_t dim1 = c1->Dimension();
-    STACK_ARRAY(T,mem, np*dim1);
-    FlatMatrix<T,ORD> m1(dim1, np, &mem[0]);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> m1(dim1, np, lh);
     c1->Evaluate (ir, m1);
     
     for (size_t i = 0; i < np; i++)
@@ -3129,20 +3042,6 @@ public:
     nonzero_dderiv = nzd || nzdd;
   }
   */
-
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> v1(dim1);
-    c1->NonZeroPattern (ud, v1);
-
-    AutoDiffDiff<1,NonZero> sum(false);
-    for (int i = 0; i < dim1; i++)
-      sum += v1(i);
-    values(0).Value() = sum.Value();
-    values(0).DValue(0) = sum.DValue(0);
-    values(0).DDValue(0) = sum.DValue(0) || sum.DDValue(0);
-  }
 
   
   virtual void NonZeroPattern (const class ProxyUserData & ud,
@@ -3221,12 +3120,6 @@ public:
     ar.Shallow(c1) & dim1;
   }
   
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
-  }
-
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
   { return Array<shared_ptr<CoefficientFunction>>({ c1 }); }  
   
@@ -3310,10 +3203,11 @@ public:
     nonzero_dderiv = nzd || nzdd;
   }
   */
-  virtual void NonZeroPattern (const class ProxyUserData & ud, FlatVector<AutoDiffDiff<1,NonZero>> values) const override
+  virtual void NonZeroPattern (const class ProxyUserData & ud,
+                               FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
+                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
   {
-    Vector<AutoDiffDiff<1,NonZero>> v1(dim1);
-    c1->NonZeroPattern (ud, v1);
+    auto v1 = input[0];
     AutoDiffDiff<1,NonZero> sum(false);
     for (int i = 0; i < dim1; i++)
       sum = sum + v1(i);
@@ -3365,13 +3259,6 @@ public:
   // virtual bool IsComplex() const { return c1->IsComplex() || c2->IsComplex(); }
   // virtual int Dimension() const { return dims[0]; }
   // virtual Array<int> Dimensions() const { return Array<int> (dims); } 
-
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    c2->TraverseTree (func);
-    func(*this);
-  }
 
   shared_ptr<CoefficientFunction> Transform
   (CoefficientFunction::T_Transform& transformation) const override
@@ -3451,20 +3338,6 @@ public:
         }
   }
   */
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    // FlatArray<int> hdims = Dimensions();
-    Vector<AutoDiffDiff<1,NonZero>> va(Dimension()*inner_dim), vb(inner_dim);
-    c1->NonZeroPattern (ud, va);
-    c2->NonZeroPattern (ud, vb);
-    
-    values = NonZero(false);
-    
-    for (size_t i = 0; i < Dimension(); i++)
-      for (size_t j = 0; j < inner_dim; j++)
-        values(i) += va(i*inner_dim+j) * vb(j);
-  }
   
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -3524,10 +3397,10 @@ public:
   {
     // FlatArray<int> hdims = Dimensions();
     int dim = Dimension();
-    STACK_ARRAY(T, hmem1, ir.Size()*dim*inner_dim);
-    STACK_ARRAY(T, hmem2, ir.Size()*inner_dim);
-    FlatMatrix<T,ORD> temp1(dim*inner_dim, ir.Size(), &hmem1[0]);
-    FlatMatrix<T,ORD> temp2(inner_dim, ir.Size(), &hmem2[0]);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> temp1(dim*inner_dim, ir.Size(), lh);
+    FlatMatrix<T,ORD> temp2(inner_dim, ir.Size(), lh);
     c1->Evaluate (ir, temp1);
     c2->Evaluate (ir, temp2);
     values.AddSize(Dimension(),ir.Size()) = T(0.0);
@@ -3624,13 +3497,6 @@ public:
   virtual string GetDescription () const override
   { return "cross-product"; }
   
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    c2->TraverseTree (func);
-    func(*this);
-  }
-
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
   { return Array<shared_ptr<CoefficientFunction>>({ c1, c2 }); }
 
@@ -3642,18 +3508,6 @@ public:
     code.body += Var(index, 2).Assign (Var(inputs[0],0)*Var(inputs[1],1)-Var(inputs[0],1)*Var(inputs[1],0), false);
   }
 
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> va(3), vb(3);
-    c1->NonZeroPattern (ud, va);
-    c2->NonZeroPattern (ud, vb);
-    
-    values(0) = va(1)*vb(2)+va(2)*vb(1);
-    values(1) = va(2)*vb(0)+va(0)*vb(2);
-    values(2) = va(0)*vb(1)+va(1)*vb(0);    
-  }
-  
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                FlatVector<AutoDiffDiff<1,NonZero>> values) const override
@@ -3694,10 +3548,10 @@ public:
   template <typename MIR, typename T, ORDERING ORD>
   void T_Evaluate (const MIR & ir, BareSliceMatrix<T,ORD> values) const
   {
-    STACK_ARRAY(T, hmem1, ir.Size()*3);
-    STACK_ARRAY(T, hmem2, ir.Size()*3);
-    FlatMatrix<T,ORD> temp1(3, ir.Size(), &hmem1[0]);
-    FlatMatrix<T,ORD> temp2(3, ir.Size(), &hmem2[0]);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> temp1(3, ir.Size(), lh);
+    FlatMatrix<T,ORD> temp2(3, ir.Size(), lh);
     c1->Evaluate (ir, temp1);
     c2->Evaluate (ir, temp2);
     for (size_t k = 0; k < ir.Size(); k++)
@@ -4445,12 +4299,6 @@ public:
     code.body += Var(index).Assign( Var(inputs[0], comp, c1->Dimensions() ), false);    
   }
 
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
-  }
-
   shared_ptr<CoefficientFunction> Transform
   (CoefficientFunction::T_Transform& transformation) const override
   {
@@ -4511,8 +4359,9 @@ public:
   template <typename MIR, typename T, ORDERING ORD>
   void T_Evaluate (const MIR & ir, BareSliceMatrix<T,ORD> values) const
   {
-    STACK_ARRAY(T, hmem, ir.Size()*dim1);
-    FlatMatrix<T,ORD> temp(dim1, ir.Size(), &hmem[0]);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> temp(dim1, ir.Size(), lh);
     
     c1->Evaluate (ir, temp);
     size_t nv = ir.Size();
@@ -4570,13 +4419,6 @@ public:
     nonzero_dderiv(0) = dd1(comp);
   }  
   */
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> v1(c1->Dimension());
-    c1->NonZeroPattern (ud, v1);
-    values(0) = v1(comp);
-  }
 
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -4722,12 +4564,6 @@ public:
       code.body += Var(index, i, num).Assign( Var(inputs[0], mapping[i], dims1), false);
   }
   
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
-  }
-
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
   { return Array<shared_ptr<CoefficientFunction>>({ c1 }); }
 
@@ -4750,8 +4586,9 @@ public:
   template <typename MIR, typename T, ORDERING ORD>
   void T_Evaluate (const MIR & ir, BareSliceMatrix<T,ORD> values) const
   {
-    STACK_ARRAY(T, hmem, ir.Size()*dim1);
-    FlatMatrix<T,ORD> temp(dim1, ir.Size(), &hmem[0]);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> temp(dim1, ir.Size(), lh);
     
     c1->Evaluate (ir, temp);
     for (size_t i = 0; i < mapping.Size(); i++)
@@ -4811,21 +4648,11 @@ public:
   }  
   
 
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> v1(c1->Dimension());
-    c1->NonZeroPattern (ud, v1);
-    for (auto i : Range(mapping))
-      values(i) = v1(mapping[i]);
-  }
-
 
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                FlatVector<AutoDiffDiff<1,NonZero>> values) const override
   {
-    c1->NonZeroPattern (ud, input[0]);
     for (auto i : Range(mapping))
       values(i) = input[0](mapping[i]);
   }
@@ -5060,12 +4887,6 @@ public:
   }
 
   
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
-  }
-
 //  virtual string GetDescription () const override
 //  { return "extend-dimension"; }
   
@@ -5076,8 +4897,9 @@ public:
   template <typename MIR, typename T, ORDERING ORD>
   void T_Evaluate (const MIR & ir, BareSliceMatrix<T,ORD> values) const
   {
-    STACK_ARRAY(T, hmem, ir.Size()*dim1);
-    FlatMatrix<T,ORD> temp(dim1, ir.Size(), &hmem[0]);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> temp(dim1, ir.Size(), lh);
     
     c1->Evaluate (ir, temp);
 
@@ -5131,16 +4953,6 @@ public:
     auto res = MakeExtendDimensionCoefficientFunction (diffc1, std::move(resdims), Array<int>(pos), std::move(resstride));
     cache[thisptr] = res;
     return res;
-  }
-
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> v1(c1->Dimension());
-    c1->NonZeroPattern (ud, v1);
-    values = NonZero(false);
-    for (int i = 0; i < mapping.Size(); i++)
-      values[mapping[i]] = v1[i];
   }
 
   virtual void NonZeroPattern (const class ProxyUserData & ud,
@@ -5218,14 +5030,6 @@ public:
   }
   */
   
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    for (auto v : vectors)
-      v->TraverseTree (func);
-    func(*this);
-  }
-
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
   {
     
@@ -5241,9 +5045,9 @@ public:
   template <typename MIR, typename T, ORDERING ORD>
   void T_Evaluate (const MIR & ir, BareSliceMatrix<T,ORD> values) const
   {
-    STACK_ARRAY(T, hmem, ir.Size()*c1->Dimension());
-    FlatMatrix<T,ORD> temp(c1->Dimension(), ir.Size(), &hmem[0]);
-    STACK_ARRAY(T, hmem2, ir.Size()*c1->Dimension());  // 
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> temp(c1->Dimension(), ir.Size(), lh);
     
     c1->Evaluate (ir, temp);
 
@@ -5252,7 +5056,8 @@ public:
 
     for (int dir = 0; dir < vectors.Size(); dir++)
       {
-        FlatMatrix<T,ORD> vi(vectors[dir]->Dimension(), ir.Size(), &hmem2[0]);
+        HeapReset hrdir(lh);
+        FlatMatrix<T,ORD> vi(vectors[dir]->Dimension(), ir.Size(), lh);
         vectors[dir]->Evaluate(ir, vi);
 
         size_t newdim = actdim / vi.Height();
@@ -5283,8 +5088,9 @@ public:
                    FlatArray<BareSliceMatrix<T,ORD>> input,                       
                    BareSliceMatrix<T,ORD> values) const
   {
-    STACK_ARRAY(T, hmem, ir.Size()*c1->Dimension());
-    FlatMatrix<T,ORD> temp(c1->Dimension(), ir.Size(), &hmem[0]);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> temp(c1->Dimension(), ir.Size(), lh);
     
     // c1->Evaluate (ir, temp);
     temp = input[0];
@@ -5312,30 +5118,6 @@ public:
   }
 
 
-
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> temp(c1->Dimension());
-    
-    c1->NonZeroPattern (ud, temp);
-
-    size_t actdim = c1->Dimension();
-    for (int dir = 0; dir < vectors.Size(); dir++)
-      {
-        Vector<AutoDiffDiff<1,NonZero>> vi(vectors[dir]->Dimension());
-        vectors[dir]->NonZeroPattern(ud, vi);
-        
-        size_t newdim = actdim / vi.Height();
-        for (size_t i = 0; i < newdim; i++)
-          temp(i) = temp(i)*vi(0);
-        for (size_t j = 1; j < vi.Height(); j++)
-          for (size_t i = 0; i < newdim; i++)
-            temp(i) += temp(j*newdim+i)*vi(j);
-        actdim = newdim;
-      }
-    values(0) = temp(0);
-  }
 
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -5472,13 +5254,6 @@ public:
   virtual void GenerateCode(Code &code, FlatArray<int> inputs, int index) const override
   */
   
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    vec->TraverseTree (func);
-    func(*this);
-  }
-
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
   { return Array<shared_ptr<CoefficientFunction>>({ c1, vec }); }
   
@@ -5488,12 +5263,12 @@ public:
   template <typename MIR, typename T, ORDERING ORD>
   void T_Evaluate (const MIR & ir, BareSliceMatrix<T,ORD> hvalues) const
   {
-    STACK_ARRAY(T, hmem, ir.Size()*c1->Dimension());
-    FlatMatrix<T,ORD> temp(c1->Dimension(), ir.Size(), &hmem[0]);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<T,ORD> temp(c1->Dimension(), ir.Size(), lh);
     c1->Evaluate (ir, temp);
 
-    STACK_ARRAY(T, hmem2, ir.Size()*vec->Dimension());
-    FlatMatrix<T,ORD> vi(vec->Dimension(), ir.Size(), &hmem2[0]);
+    FlatMatrix<T,ORD> vi(vec->Dimension(), ir.Size(), lh);
     vec->Evaluate(ir, vi);
 
     size_t nv = ir.Size();
@@ -5526,22 +5301,6 @@ public:
           values.Row(i*dimafter+k) += pw_mult(vi.Row(j), temp.Row(ii));
   }
 
-
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    Vector<AutoDiffDiff<1,NonZero>> temp(c1->Dimension()), vi(vec->Dimension());
-    c1->NonZeroPattern (ud, temp);
-    vec->NonZeroPattern (ud, vi);
-    
-    values.Range(Dimension()) = NonZero(false);
-    values = NonZero(false);
-
-    for (int i = 0, ii = 0; i < dimbefore; i++)
-      for (int j = 0; j < vec->Dimension(); j++)
-        for (int k = 0; k < dimafter; k++, ii++)
-          values(i*dimafter+k) += vi(j)*temp(ii);
-  }
 
 
   virtual void NonZeroPattern (const class ProxyUserData & ud,
@@ -5669,14 +5428,6 @@ public:
       code.body += "  "+Var(index, i, Dimensions()).Assign(string("0.0"), false);      
     code.body += "  break;\n";
     code.body += "}\n";
-  }
-
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    for (auto & cf : ci)
-      if (cf)
-        cf->TraverseTree (func);
-    func(*this);
   }
 
   shared_ptr<CoefficientFunction> Transform
@@ -5863,20 +5614,6 @@ public:
         }
   }
   */
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override 
-  {
-    size_t dim = Dimension();
-    Vector<AutoDiffDiff<1,NonZero>> nzi(dim);
-    values = AutoDiffDiff<1,NonZero> (false);
-    for (auto & aci : ci)
-      if (aci)
-        {
-          aci -> NonZeroPattern(ud, nzi);
-          for (size_t i = 0; i < values.Size(); i++)
-            values(i) += nzi(i);
-        }
-  }
   
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -5975,12 +5712,6 @@ public:
       return diff_cf;
 
     return make_shared<OtherCoefficientFunction>(diff_cf);
-  }
-
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
   }
 
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
@@ -6157,12 +5888,11 @@ class IfPosCoefficientFunction : public T_CoefficientFunction<IfPosCoefficientFu
       size_t np = ir.Size();
       size_t dim = Dimension();
       
-      STACK_ARRAY(T, hmem1, np);
-      FlatMatrix<T,ORD> if_values(1, np, hmem1);
-      STACK_ARRAY(T, hmem2, np*dim);
-      FlatMatrix<T,ORD> then_values(dim, np, hmem2);
-      STACK_ARRAY(T, hmem3, np*dim);
-      FlatMatrix<T,ORD> else_values(dim, np, hmem3);
+      auto & lh = TLHeap();
+      HeapReset hr(lh);
+      FlatMatrix<T,ORD> if_values(1, np, lh);
+      FlatMatrix<T,ORD> then_values(dim, np, lh);
+      FlatMatrix<T,ORD> else_values(dim, np, lh);
       
       cf_if->Evaluate (ir, if_values);
       cf_then->Evaluate (ir, then_values);
@@ -6251,30 +5981,12 @@ class IfPosCoefficientFunction : public T_CoefficientFunction<IfPosCoefficientFu
       }
     }
     
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      cf_if->TraverseTree (func);
-      cf_then->TraverseTree (func);
-      cf_else->TraverseTree (func);
-      func(*this);
-    }
-    
     virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
     {
       return Array<shared_ptr<CoefficientFunction>>( { cf_if, cf_then, cf_else } );
     }
 
 
-    virtual void NonZeroPattern (const class ProxyUserData & ud,
-                                 FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    {
-      int dim = Dimension();
-      Vector<AutoDiffDiff<1,NonZero>> v1(dim), v2(dim);
-      cf_then->NonZeroPattern (ud, v1);
-      cf_else->NonZeroPattern (ud, v2);
-      values = v1+v2;
-    }
-    
     virtual void NonZeroPattern (const class ProxyUserData & ud,
                                  FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                  FlatVector<AutoDiffDiff<1,NonZero>> values) const override
@@ -6381,13 +6093,6 @@ public:
     return newcf;
   }
 
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    for (auto cf : ci)
-      cf->TraverseTree (func);
-    func(*this);
-  }
-
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
   {
     Array<shared_ptr<CoefficientFunction>> cfa;
@@ -6413,17 +6118,6 @@ public:
       }
   }
   */
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    int base = 0;
-    for (auto cf : ci)
-      {
-        int dimi = cf->Dimension();
-        cf->NonZeroPattern(ud, values.Range(base,base+dimi));
-        base += dimi;
-      }
-  }
   
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -6615,12 +6309,6 @@ class NGS_DLL_HEADER FrozenCoefficientFunction
   
   ~FrozenCoefficientFunction() { ; }
   
-  void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    cf->TraverseTree (func);
-    func(*this);
-  }
-
   string GetDescription () const override
   {
     return "frozen";
@@ -7065,13 +6753,6 @@ class CompiledCoefficientFunction : public CompiledCoefficientFunctionInterface 
         }
     }
 
-    void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      cf -> TraverseTree (func);
-      // func(*cf);
-      func(*this);      
-    }
-
     // virtual bool IsComplex() const { return cf->IsComplex(); }
     // virtual int Dimension() const { return cf->Dimension(); }
     // virtual Array<int> Dimensions() const  { return cf->Dimensions(); } 
@@ -7172,39 +6853,6 @@ class CompiledCoefficientFunction : public CompiledCoefficientFunctionInterface 
         }
     }
     */
-    void NonZeroPattern (const class ProxyUserData & ud, FlatVector<AutoDiffDiff<1,NonZero>> nonzero) const override
-    {
-      typedef AutoDiffDiff<1,NonZero> T;
-      ArrayMem<T, 1000> hmem(totdim);
-      size_t mem_ptr = 0;
-      ArrayMem<FlatVector<T>,100> temp(steps.Size());
-      ArrayMem<FlatVector<T>,100> in(max_inputsize);
-
-      // used if nullptr are in tree
-      FlatVector<T> zerovec(0, hmem.Data());
-
-      for (size_t i = 0; i < steps.Size(); i++)
-        {
-          new (&temp[i]) FlatVector<T> (dim[i], &hmem[mem_ptr]);
-          mem_ptr += dim[i];
-        }
-      
-      for (size_t i = 0; i < steps.Size(); i++)
-        {
-          auto inputi = inputs[i];
-          for (int nr : Range(inputi))
-          {
-            if(inputi[nr] == -1)
-              new (&in[nr]) FlatVector<T> (zerovec);
-            else
-              new (&in[nr]) FlatVector<T> (temp[inputi[nr]]);
-          }
-          steps[i] -> NonZeroPattern (ud, in.Range(0, inputi.Size()), temp[i]);
-        }
-      auto & last = temp.Last();
-      for (size_t i = 0; i < nonzero.Size(); i++)
-        nonzero(i) = last(i);
-    }
     
     void Evaluate (const BaseMappedIntegrationRule & ir, BareSliceMatrix<double> values) const override
     {
@@ -7349,12 +6997,6 @@ class RealCF : public CoefficientFunctionNoDerivative
       return "RealCF";
     }
 
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      cf->TraverseTree (func);
-      func(*this);
-    }
-
     void GenerateCode(Code &code, FlatArray<int> inputs, int index) const override
     {
       for (int i = 0; i < Dimension(); i++)
@@ -7439,12 +7081,6 @@ class RealCF : public CoefficientFunctionNoDerivative
       return "ImagCF";
     }
 
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      cf->TraverseTree (func);
-      func(*this);
-    }
-    
     virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
     { return Array<shared_ptr<CoefficientFunction>>({ cf }); }
     
@@ -7523,12 +7159,6 @@ class RealImagCF : public CoefficientFunctionNoDerivative
     virtual string GetDescription() const override
     {
       return "RealImagCF";
-    }
-
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      cf->TraverseTree (func);
-      func(*this);
     }
 
     void GenerateCode(Code &code, FlatArray<int> inputs, int index) const override
@@ -7675,23 +7305,12 @@ public:
     }
 
   void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> nonzero) const override
-    {
-      func->NonZeroPattern(ud, nonzero);
-    }
-
-  void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                FlatVector<AutoDiffDiff<1,NonZero>> values) const override
     {
-      func->NonZeroPattern(ud, input, values);
+      values = input[0];
     }
 
-  void TraverseTree (const function<void(CoefficientFunction&)> & func_) override
-    {
-      func->TraverseTree(func_);
-      func_(*this);
-    }
 };
 
 shared_ptr<CoefficientFunction> LoggingCF(shared_ptr<CoefficientFunction> func, string logfile)
@@ -7716,7 +7335,7 @@ public:
     : T_CoefficientFunction<CacheCoefficientFunction>(f->Dimension(), f->IsComplex()),
     func(f)
   {
-    func->TraverseTree([&](CoefficientFunction &nodecf) {
+    func->TraverseDAG([&](CoefficientFunction &nodecf) {
       if (dynamic_cast<ProxyFunction *>(&nodecf))
         throw Exception("CacheCoefficientFunction: func to be cache must not contain proxy functions");
     });
@@ -7806,24 +7425,12 @@ public:
   }
   
   void NonZeroPattern (const class ProxyUserData & ud,
-                       FlatVector<AutoDiffDiff<1,NonZero>> nonzero) const override
-  {
-    func->NonZeroPattern(ud, nonzero);
-  }
-  
-  void NonZeroPattern (const class ProxyUserData & ud,
                        FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                        FlatVector<AutoDiffDiff<1,NonZero>> values) const override
   {
     values = input[0];
   }
   
-  void TraverseTree (const function<void(CoefficientFunction&)> & func_) override
-  {
-    func->TraverseTree(func_);
-    func_(*this);
-  }
-
   shared_ptr<CoefficientFunction>
   Diff (const CoefficientFunction * var, shared_ptr<CoefficientFunction> dir) const override
   {

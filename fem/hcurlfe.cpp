@@ -652,12 +652,18 @@ namespace ngfem
 
     FlatMatrix<> mat(nd, nd, lh);
     FlatVector<> rhs(nd, lh);
+    FlatVector<> diag(nd, lh);
     mat = 0.0;
     rhs = 0.0;
+    diag = 0.0;
+    constexpr size_t W = SIMD<double>::Size();
 
     // edge, face, cell moments; weight*measure gives functionals of the covariant pull-back
+    // edge block is diagonal, edge dofs come first
+    size_t nedge = 0;
     for (int el_vb = D-1; el_vb >= 0; el_vb--)
       {
+        bool isedge = el_vb == D-1;
         Facet2ElementTrafo f2el (ElementType(), VorB(el_vb));
         for (int locfnr : Range(f2el.GetNFacets()))
           {
@@ -678,18 +684,58 @@ namespace ngfem
             for (size_t j : Range(np))
               duals.Col(j) *= mir[j].IP().Weight() * mir[j].GetMeasure();
 
-            auto shapesRS = shapes.Reshape(nd, dimspace*np);
             auto dualsRS = duals.Reshape(nd, dimspace*np);
-            AddABt (dualsRS, shapesRS, mat);
-            for (size_t i : Range(nd))
-              rhs(i) += HSum(InnerProduct(fvals.AsVector(), dualsRS.Row(i)));
+            FlatMatrix<> dualsD(nd, dimspace*np*W, (double*)duals.Data());
+            FlatMatrix<> shapesD(nd, dimspace*np*W, (double*)shapes.Data());
+            if (isedge)
+              {
+                for (size_t i : Range(nd))
+                  if (L2Norm(dualsD.Row(i)) > 0)
+                    {
+                      diag(i) += InnerProduct(dualsD.Row(i), shapesD.Row(i));
+                      rhs(i) += HSum(InnerProduct(fvals.AsVector(), dualsRS.Row(i)));
+                      nedge = max(nedge, i+1);
+                    }
+              }
+            else
+              {
+                // only rows with duals on this face/cell
+                size_t r0 = nd, r1 = nedge;
+                for (size_t i : Range(nedge, nd))
+                  if (L2Norm(dualsD.Row(i)) > 0)
+                    {
+                      r0 = min(r0, i);
+                      r1 = i+1;
+                    }
+                if (r0 >= r1) continue;
+                mat.Rows(r0, r1) += dualsD.Rows(r0, r1) * Trans(shapesD);
+                for (size_t i : Range(r0, r1))
+                  rhs(i) += HSum(InnerProduct(fvals.AsVector(), dualsRS.Row(i)));
+              }
           }
       }
 
-    if (L2Norm(mat) == 0)
+    if (nedge == 0 && L2Norm(mat) == 0)
       throw Exception(string("HCurlFE::Interpolate: no dual shapes for ") + typeid(*this).name());
-    CalcInverse (mat);
-    coefs.Col(0) = mat * rhs;
+
+    auto ue = coefs.Col(0).Range(0, nedge);
+    for (size_t i : Range(nedge))
+      {
+        if (diag(i) == 0)
+          throw Exception(string("HCurlFE::Interpolate: singular edge moments for ") + typeid(*this).name());
+        ue(i) = rhs(i) / diag(i);
+      }
+    if (nedge < nd)
+      {
+        auto rf = rhs.Range(nedge, nd);
+        rf -= mat.Rows(nedge, nd).Cols(0, nedge) * ue;
+        auto mff = mat.Rows(nedge, nd).Cols(nedge, nd);
+        size_t nf = nd-nedge;
+        FlatArray<int> piv(nf, lh);
+        CalcLU (mff, piv);
+        SolveFromLU (mff, piv, SliceMatrix<double,ColMajor>(nf, 1, nf, rf.Data()));
+        coefs.Col(0).Range(nedge, nd) = rf;
+      }
   }
 
 

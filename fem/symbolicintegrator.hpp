@@ -224,24 +224,8 @@ public:
                                       FlatVector<bool> nonzero_dderiv) const;
 
   virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override;
-  
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    NonZeroPattern (ud, values);
-    /*
-    Vector<bool> nz(values.Size()), nzd(values.Size()), nzdd(values.Size());
-    NonZeroPattern (ud, nz, nzd, nzdd);
-    for (size_t i = 0; i < values.Size(); i++)
-      {
-        values(i).Value() = nz(i);
-        values(i).DValue(0) = nzd(i);
-        values(i).DDValue(0) = nzdd(i);
-      }
-    */
-  }
+                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override;
 
   
   virtual shared_ptr<CoefficientFunction>
@@ -873,6 +857,7 @@ public:
     Matrix<bool> nonzeros;    // do components interact ? 
     Matrix<bool> nonzeros_proxies; // do proxies interact ?
     Array<shared_ptr<CoefficientFunction>> dcf, ddcf;
+    bool has_nonlinear_proxy = false;  // simd apply assumes linear diffops
     
   public:
     SymbolicEnergy (shared_ptr<CoefficientFunction> acf, VorB avb, VorB aelement_vb);

@@ -206,6 +206,8 @@ ANY                  1 1 1 1 | 15
 
     
     Table<int> element_coloring[4]; 
+    // locality-preserving: blocks of elements sorted by min vertex, blocks colored
+    Table<int> element_blocks[4], block_coloring[4];
     Table<int> facet_coloring;  // elements on facet in own colors (DG)
     Array<COUPLING_TYPE> ctofdof;
 
@@ -268,6 +270,8 @@ ANY                  1 1 1 1 | 15
 
     const Table<int> & ElementColoring(VorB vb = VOL) const 
     { return element_coloring[vb]; }
+    const Table<int> & ElementBlocks(VorB vb = VOL) const { return element_blocks[vb]; }
+    const Table<int> & BlockColoring(VorB vb = VOL) const { return block_coloring[vb]; }
 
     const Table<int> & FacetColoring() const;
     
@@ -914,6 +918,25 @@ ANY                  1 1 1 1 | 15
 			       VorB vb, 
 			       LocalHeap & clh, 
 			       const function<void(FESpace::Element,LocalHeap&)> & func);
+
+  // rows of elmat from the local basis of fes to the element dofs: T^T elmat.
+  // for the columns call it with Trans(elmat), which flips the ordering
+  template <typename SCAL, ORDERING ORD>
+  FlatMatrix<SCAL,ORD> ToElementDofs (const FESpace & fes, ElementId ei,
+                                      FlatMatrix<SCAL,ORD> elmat, LocalHeap & lh)
+  {
+    if (auto T = fes.GetDofTransformation (ei, lh))
+      {
+        FlatMatrix<SCAL,ORD> hmat(T->Width(), elmat.Width(), lh);
+        hmat = Trans(*T) * elmat;
+        return hmat;
+      }
+    if constexpr (ORD == RowMajor)
+      fes.TransformMat (ei, elmat, TRANSFORM_MAT_LEFT);
+    else
+      fes.TransformMat (ei, Trans(elmat), TRANSFORM_MAT_RIGHT);
+    return elmat;
+  }
  
 
 

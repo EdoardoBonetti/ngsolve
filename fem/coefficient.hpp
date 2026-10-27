@@ -81,7 +81,6 @@ namespace ngfem
     virtual void CalcEquivalenceKey();
     const string & EquivalenceKey();
     ///
-    virtual int NumRegions () { return INT_MAX; }
     virtual bool DefinedOn (const ElementTransformation & trafo) { return true; }
     ///
     virtual double Evaluate (const BaseMappedIntegrationPoint & ip) const = 0;
@@ -235,14 +234,6 @@ namespace ngfem
       result = dres;
     }
     
-    virtual void EvaluateDeriv (const BaseMappedIntegrationRule & ir,
-                                FlatMatrix<Complex> result,
-                                FlatMatrix<Complex> deriv) const
-    {
-      Evaluate (ir, result);
-      deriv = 0;
-    }
-
     bool ElementwiseConstant () const { return elementwise_constant; }
     virtual bool IsZeroCF() const;
     // virtual void NonZeroPattern (const class ProxyUserData & ud, FlatVector<bool> nonzero) const;
@@ -253,29 +244,19 @@ namespace ngfem
                                  FlatVector<bool> nonzero_deriv,
                                  FlatVector<bool> nonzero_dderiv) const;
     */
-    virtual void NonZeroPattern (const class ProxyUserData & ud,
-                                 FlatVector<AutoDiffDiff<1,NonZero>> nonzero) const;
+    // non-virtual, evaluates the in-out version along the DAG
+    void NonZeroPattern (const class ProxyUserData & ud,
+                         FlatVector<AutoDiffDiff<1,NonZero>> values) const;
 
     virtual void NonZeroPattern (const class ProxyUserData & ud,
                                  FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                  FlatVector<AutoDiffDiff<1,NonZero>> values) const
     {
-      cout << string("nonzero in-out not overloaded for type")+typeid(*this).name() << endl;
-      /*
-      Vector<bool> nz(values.Size()), nzd(values.Size()), nzdd(values.Size());
-      NonZeroPattern (ud, nz, nzd, nzdd);
-      for (size_t i = 0; i < values.Size(); i++)
-        {
-          values(i).Value() = nz(i);
-          values(i).DValue(0) = nzd(i);
-          values(i).DDValue(0) = nzdd(i);
-        }
-      */
-      NonZeroPattern (ud, values);
+      values = AutoDiffDiff<1,NonZero> (true);
     }
     
     virtual void PrintReport (ostream & ost) const;
-    virtual void PrintReportRec (ostream & ost, int level) const;
+    void PrintReportRec (ostream & ost, int level) const;
     virtual string GetDescription () const;
     void SetDescription (string desc) { description = desc; }
 
@@ -301,7 +282,12 @@ namespace ngfem
     virtual shared_ptr<CoefficientFunction> Operator (const string & name) const;
     virtual shared_ptr<CoefficientFunction> Operator (shared_ptr<class DifferentialOperator> diffop) const;
     
-    virtual void TraverseTree (const function<void(CoefficientFunction&)> & func);
+    void TraverseTree (const function<void(CoefficientFunction&)> & func)
+    {
+      for (auto & incf : InputCoefficientFunctions())
+        if (incf) incf->TraverseTree (func);
+      func(*this);
+    }
 
     typedef std::set<CoefficientFunction*> T_Visited;
     // like TraverseTree, but visits every node of the expression DAG once.
@@ -324,6 +310,19 @@ namespace ngfem
   };
 
   
+  // DAG schedule for NonZeroPattern, build once and evaluate for many ProxyUserData
+  class NGS_DLL_HEADER NonZeroPatternDAG
+  {
+    Array<CoefficientFunction*> steps;
+    Array<size_t> offsets;      // result position of step i
+    Array<int> inputs;          // input step numbers, -1 for nullptr
+    Array<size_t> first_input;
+    size_t max_inputs = 0;
+  public:
+    NonZeroPatternDAG (const CoefficientFunction & cf);
+    void Evaluate (const class ProxyUserData & ud, FlatVector<AutoDiffDiff<1,NonZero>> values) const;
+  };
+
   inline ostream & operator<< (ostream & ost, const CoefficientFunction & cf)
   {
     cf.PrintReport (ost);
@@ -482,12 +481,6 @@ namespace ngfem
       nonzero_dderiv = false;
     }
     */
-
-    virtual void NonZeroPattern (const class ProxyUserData & ud,
-                                 FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    {
-      values = AutoDiffDiff<1,NonZero> (true);
-    }
 
     virtual void NonZeroPattern (const class ProxyUserData & ud,
                                  FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -695,12 +688,6 @@ namespace ngfem
     virtual void GenerateCode(Code &code, FlatArray<int> inputs, int index) const override; 
     
     virtual void NonZeroPattern (const class ProxyUserData & ud,
-                                 FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    {
-      values = AutoDiffDiff<1,NonZero> (val != 0.0);
-    }
-
-    virtual void NonZeroPattern (const class ProxyUserData & ud,
                                  FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                  FlatVector<AutoDiffDiff<1,NonZero>> values) const override
     {
@@ -806,25 +793,12 @@ namespace ngfem
     void Evaluate(const BaseMappedIntegrationPoint & ip,
                   FlatVector<Complex> result) const override
     { cf->Evaluate(ip, result); }
-    void EvaluateDeriv(const BaseMappedIntegrationRule & ir,
-                       FlatMatrix<Complex> result,
-                       FlatMatrix<Complex> deriv) const override
-    { cf->EvaluateDeriv(ir, result, deriv); }
-
-    void NonZeroPattern (const class ProxyUserData & ud,
-                         FlatVector<AutoDiffDiff<1,NonZero>> nonzero) const override
-    { cf->NonZeroPattern(ud, nonzero); }
 
     void NonZeroPattern (const class ProxyUserData & ud,
                          FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                          FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-    { cf->NonZeroPattern(ud, input, values); }
+    { values = input[0]; }
 
-    void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-    {
-      cf->TraverseTree(func);
-      func(*this);
-    }
     Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
     { return { cf }; }
   };
@@ -850,8 +824,6 @@ namespace ngfem
 
     ///
     virtual ~DomainVariableCoefficientFunction ();
-    ///
-    virtual int NumRegions () { return (fun.Size() == 1) ? INT_MAX : fun.Size(); }
     ///
     virtual double Evaluate (const BaseMappedIntegrationPoint & ip) const;
 
@@ -1219,12 +1191,6 @@ public:
     return newcf;
   }
 
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    func(*this);
-  }
-
   virtual Array<shared_ptr<CoefficientFunction>> InputCoefficientFunctions() const override
   { return Array<shared_ptr<CoefficientFunction>>({ c1 }); }
 
@@ -1368,30 +1334,6 @@ public:
   }
   */
 
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override                               
-  {
-    size_t dim = this->Dimension();    
-    Vector<AutoDiffDiff<1,NonZero>> v1(dim);
-    c1->NonZeroPattern(ud, v1);
-    for (int i = 0; i < values.Size(); i++)
-      {
-        if (name == "-" || name == " ") // "-" actually not used that way
-          {
-            values = v1;
-          }
-        else
-          {
-            for (size_t i = 0; i < values.Size(); i++)
-              {
-                values[i].Value() = v1[i].Value();
-                values[i].DValue(0) = v1[i].DValue(0);
-                values[i].DDValue(0) = v1[i].DValue(0) || v1[i].DDValue(0);
-              }
-          }
-      }
-  }
-
   
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
@@ -1528,13 +1470,6 @@ public:
             code.body += Var(index,i,this->Dimensions()).Assign( expr, false );
           }
       }
-  }
-
-  virtual void TraverseTree (const function<void(CoefficientFunction&)> & func) override
-  {
-    c1->TraverseTree (func);
-    c2->TraverseTree (func);
-    func(*this);
   }
 
   virtual bool DefinedOn (const ElementTransformation & trafo) override
@@ -1741,28 +1676,6 @@ public:
   }
   */
 
-  virtual void NonZeroPattern (const class ProxyUserData & ud,
-                               FlatVector<AutoDiffDiff<1,NonZero>> values) const override
-  {
-    size_t dim = Dimension();    
-    Vector<AutoDiffDiff<1,NonZero>> v1(dim), v2(dim);
-    c1->NonZeroPattern(ud, v1);
-    c2->NonZeroPattern(ud, v2);
-    for (int i = 0; i < values.Size(); i++)
-      {
-        if (opname == "+" || opname == "-")
-          values(i) = v1(i) + v2(i);
-        else if (opname == "*")
-          values(i) = v1(i) * v2(i);
-        else
-          {
-            values(i).Value() = v1(i).Value() || v2(i).Value();
-            values(i).DValue(0) = v1(i).DValue(0) || v2(i).DValue(0);
-            values(i).DDValue(0) = v1(i).DValue(0) || v2(i).DValue(0) || v1(i).DDValue(0) || v2(i).DDValue(0);
-          }
-      }
-  }
-  
   virtual void NonZeroPattern (const class ProxyUserData & ud,
                                FlatArray<FlatVector<AutoDiffDiff<1,NonZero>>> input,
                                FlatVector<AutoDiffDiff<1,NonZero>> values) const override

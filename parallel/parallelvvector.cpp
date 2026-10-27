@@ -346,7 +346,7 @@ namespace ngla
       Distribute();
 
     Complex localsum = conjugate ?
-      ngbla::InnerProduct (Conj(FV<Complex>()), dynamic_cast<const S_BaseVector<Complex>&>(*parv2).FV<Complex>()) :
+      ngbla::InnerProduct (FV<Complex>(), Conj(dynamic_cast<const S_BaseVector<Complex>&>(*parv2).FV<Complex>())) :
       ngbla::InnerProduct (FV<Complex>(), dynamic_cast<const S_BaseVector<Complex>&>(*parv2).FV<Complex>());
 
     // not parallel
