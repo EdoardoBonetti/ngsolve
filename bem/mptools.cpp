@@ -140,12 +140,13 @@ namespace ngsbem
   {
     auto [theta, phi] = Polar(x);
 
-    ArrayMem<real_type,1600> mem(sqr(order+1));
-    FlatMatrix<real_type> legfunc(order+1, order+1, mem.Data());
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatMatrix<real_type> legfunc(order+1, order+1, lh);
     real_type costheta = cos(theta);
     NormalizedLegendreFunctions (order, order, costheta, legfunc);
     
-    VectorMem<50,complex_type> exp_imphi(order+1);
+    FlatVector<complex_type> exp_imphi(order+1, lh);
     complex_type exp_iphi(cos(phi), sin(phi));
     
     complex_type prod = 1.0/sqrt(4*M_PI);
@@ -247,11 +248,12 @@ namespace ngsbem
 
 
   template <typename SH, typename APPLY>
-  static void RotateYImpl (SH & sh, double alpha, bool parallel, size_t apply_heapsize, APPLY apply)
+  static void RotateYImpl (SH & sh, double alpha, bool parallel, APPLY apply)
   {
     using real_type = typename SH::real_type;
     int order = sh.Order();
-    LocalHeap lh(8*6*sqr(order) + 8*15*order + apply_heapsize + 500, nullptr, parallel);
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
     // static Timer t("mptool sh RotateY"+ToString(sizeof(entry_type)/sizeof(Complex)));
     // RegionTimer rg(t, order);
     
@@ -380,11 +382,12 @@ namespace ngsbem
           transformN (n, slh);          
       }, TasksPerThread(4));
       */
-      ParallelForRange (IntRange(1,order+1), [&lh, transformN] (IntRange r)
+      ParallelForRange (IntRange(1,order+1), [transformN] (IntRange r)
       {
-        auto slh = lh.Split();
+        // each worker its own heap, Split() would give only 1/nthreads
+        auto & tlh = TLHeap();
         for (auto n : r)
-          transformN (n, slh);
+          transformN (n, tlh);
       }, TasksPerThread(4));
   }
 
@@ -408,7 +411,7 @@ namespace ngsbem
           }
       };
 
-    RotateYImpl(*this, alpha, parallel, 2*sizeof(entry_type)*(order+3), apply);
+    RotateYImpl(*this, alpha, parallel, apply);
   }
 
   template <typename T>
@@ -452,9 +455,7 @@ namespace ngsbem
           }
       };
 
-    RotateYImpl(*this, alpha, parallel,
-                sizeof(real_type)*sqr(2*order+1)
-                + 2*sizeof(TSCAL)*dim*(order+3), apply);
+    RotateYImpl(*this, alpha, parallel, apply);
   }
 
 
@@ -1210,7 +1211,9 @@ namespace ngsbem
   entry_type SphericalExpansion<RADIAL,entry_type,T_Kappa> :: EvalDirectionalDerivative (Vec<3> x, Vec<3> d) const
   {
     if (sh.Order() < 0) return entry_type{0.0};
-    SphericalExpansion<RADIAL, entry_type,T_Kappa> tmp(Order(), kappa, RTyp());
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    SphericalExpansion<RADIAL, entry_type,T_Kappa> tmp(Order(), kappa, RTyp(), lh);
     this->SH().DirectionalDiffAdd(d, tmp.SH(), Scale());
     return complex_type(kappa) * tmp.Eval(x);
   }
@@ -1225,8 +1228,10 @@ namespace ngsbem
       throw Exception("AddCharge assumes singular MP");
     
     using radial_type = std::conditional_t<IsComplex<T_Kappa>(),complex_type,real_type>;
-    VectorMem<50,radial_type> radial(sh.Order()+1);
-    VectorMem<1000,complex_type> sh_shapes(sqr (sh.Order()+1));
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    FlatVector<radial_type> radial(sh.Order()+1, lh);
+    FlatVector<complex_type> sh_shapes(sqr (sh.Order()+1), lh);
     
     // SphericalBessel(sh.Order(), kappa*L2Norm(x), Scale(), radial);
     besseljs3d<radial_type>(sh.Order(), radial_type(kappa)*real_type(L2Norm(x)), Scale(), radial);
@@ -1254,7 +1259,9 @@ namespace ngsbem
     if constexpr (!std::is_same<RADIAL,Singular>())
       throw Exception("AddDipole assumes singular MP");
 
-    SphericalExpansion<Singular, entry_type, T_Kappa> tmp(Order(), kappa, RTyp());
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    SphericalExpansion<Singular, entry_type, T_Kappa> tmp(Order(), kappa, RTyp(), lh);
     if constexpr (std::is_same_v<real_type,float>)
       {
         // kappa^2 c underflows in float for Laplace (kappa = 1e-16): only the phase of the second kappa here,
@@ -1277,7 +1284,9 @@ namespace ngsbem
     if constexpr (!std::is_same<RADIAL,Regular>())
       throw Exception("AddPlaneWave assumes regular MP");
 
-    SphericalExpansion<RADIAL, entry_type, T_Kappa> tmp(Order(), kappa, RTyp());
+    auto & lh = TLHeap();
+    HeapReset hr(lh);
+    SphericalExpansion<RADIAL, entry_type, T_Kappa> tmp(Order(), kappa, RTyp(), lh);
     entry_type fac = complex_type(kappa) / real_type(sqrt(M_PI)) * c;
     for (int i = 0; i <= Order(); i++)
       {
