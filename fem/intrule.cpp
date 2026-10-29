@@ -4048,7 +4048,10 @@ namespace ngfem
           {
             auto & mip = hmips[i];        
             Vec<3,SIMD<double>> tau = mip.GetJacobian() * tau_ref;
-            mip.SetMeasure(L2Norm(tau));
+            SIMD<double> len = L2Norm(tau);
+            mip.SetMeasure(len);
+            tau *= SIMD<double>(1.0) / len;     // as the scalar version: unit edge tangent
+            mip.SetTV(tau);
           }
         return;
       }
