@@ -22,6 +22,22 @@ if(NETGEN_USE_PYTHON)
             COMPONENT ngsolve
             )
 
+    # ngsjit from the submodule, importable as ngsjit and as ngsolve.jit
+    set(NGSJIT_DIR ${PROJECT_SOURCE_DIR}/external_dependencies/ngsolve-jit/ngsjit)
+    if(EXISTS ${NGSJIT_DIR}/__init__.py)
+        install (DIRECTORY ${NGSJIT_DIR}
+                DESTINATION ${NGSOLVE_INSTALL_DIR_PYTHON}
+                COMPONENT ngsolve
+                PATTERN __pycache__ EXCLUDE
+                )
+        install (FILES jit.py
+                DESTINATION ${NGSOLVE_INSTALL_DIR_PYTHON}/ngsolve
+                COMPONENT ngsolve
+                )
+    else()
+        message(STATUS "ngsolve-jit submodule not checked out: ngsolve.jit is not installed")
+    endif()
+
 # build stub files for pybind11 packages
 if(BUILD_STUB_FILES)
 execute_process(COMMAND ${NETGEN_PYTHON_EXECUTABLE} -c "from importlib.metadata import version; print(version('pybind11-stubgen'))" OUTPUT_VARIABLE stubgen_version RESULT_VARIABLE pybind11_stubgen)

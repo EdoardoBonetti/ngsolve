@@ -2,3 +2,6 @@
 	path = external_dependencies/netgen
 	url = https://github.com/EdoardoBonetti/netgen.git
 	ignore = dirty
+[submodule "external_dependencies/ngsolve-jit"]
+	path = external_dependencies/ngsolve-jit
+	url = https://github.com/EdoardoBonetti/ngsolve-jit.git
