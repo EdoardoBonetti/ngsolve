@@ -36,7 +36,7 @@ namespace ngsbem
 
     Matrix<real_type> legfunc(order+1, order+1);
     real_type costheta = cos(theta);
-    NormalizedLegendreFunctions (order, order, costheta, legfunc);
+    NormalizedLegendreFunctions::EvalAll (order, costheta, legfunc);
     Vector<complex_type> exp_imphi(order+1);
     complex_type exp_iphi(cos(phi), sin(phi));
     complex_type prod = 1.0;
@@ -51,9 +51,9 @@ namespace ngsbem
     for (int n = 0; n <= order; n++)
       {
         for (int m = -n; m < 0; m++, ii++)
-          sum += conj(exp_imphi(-m)) * legfunc(-m, n) * coefs(ii);
+          sum += conj(exp_imphi(-m)) * legfunc(n, -m) * coefs(ii);
         for (int m = 0; m <= n; m++, ii++)
-          sum += exp_imphi(m) * legfunc(m, n) * coefs(ii);
+          sum += exp_imphi(m) * legfunc(n, m) * coefs(ii);
       }
 
     sum /= sqrt(4*M_PI);
@@ -70,7 +70,7 @@ namespace ngsbem
       
     Matrix<real_type> legfunc(order+1, order+1);
     real_type costheta = cos(theta);
-    NormalizedLegendreFunctions (order, order, costheta, legfunc);
+    NormalizedLegendreFunctions::EvalAll (order, costheta, legfunc);
     Vector<complex_type> exp_imphi(order+1);
     complex_type exp_iphi(cos(phi), sin(phi));
     complex_type prod = 1.0;
@@ -86,9 +86,9 @@ namespace ngsbem
     // for (int n = 0; n <= order; n++)
     {
       for (int m = -n; m < 0; m++, ii++)
-        sum += conj(exp_imphi(-m)) * legfunc(-m, n) * coefsn(ii);
+        sum += conj(exp_imphi(-m)) * legfunc(n, -m) * coefsn(ii);
       for (int m = 0; m <= n; m++, ii++)
-        sum += exp_imphi(m) * legfunc(m, n) * coefsn(ii);
+        sum += exp_imphi(m) * legfunc(n, m) * coefsn(ii);
     }
 
     sum /= sqrt(4*M_PI);
@@ -108,7 +108,7 @@ namespace ngsbem
     ArrayMem<real_type,1600> mem(sqr(order+1));
     FlatMatrix<real_type> legfunc(order+1, order+1, mem.Data());
     real_type costheta = cos(theta);
-    NormalizedLegendreFunctions (order, order, costheta, legfunc);
+    NormalizedLegendreFunctions::EvalAll (order, costheta, legfunc);
 
     VectorMem<40,complex_type> exp_imphi(order+1);
     complex_type exp_iphi(cos(phi), sin(phi));
@@ -123,11 +123,11 @@ namespace ngsbem
       {
         auto coefsn = CoefsN(n);
         
-        entry_type sum1{exp_imphi(0)*legfunc(0,n)*coefsn(n)}, sum2{0.0};
+        entry_type sum1{exp_imphi(0)*legfunc(n,0)*coefsn(n)}, sum2{0.0};
         for (int m = 1; m <= n; m++)
           {
-            sum1 += exp_imphi(m) * legfunc(m, n) * coefsn(n+m);
-            sum2 += conj(exp_imphi(m)) * legfunc(m, n) * coefsn(n-m);
+            sum1 += exp_imphi(m) * legfunc(n, m) * coefsn(n+m);
+            sum2 += conj(exp_imphi(m)) * legfunc(n, m) * coefsn(n-m);
           }
         
         vals(n) = sum1+sum2;        
@@ -144,7 +144,7 @@ namespace ngsbem
     HeapReset hr(lh);
     FlatMatrix<real_type> legfunc(order+1, order+1, lh);
     real_type costheta = cos(theta);
-    NormalizedLegendreFunctions (order, order, costheta, legfunc);
+    NormalizedLegendreFunctions::EvalAll (order, costheta, legfunc);
     
     FlatVector<complex_type> exp_imphi(order+1, lh);
     complex_type exp_iphi(cos(phi), sin(phi));
@@ -160,11 +160,11 @@ namespace ngsbem
     for (int n = 0; n <= order; n++)
       {
         size_t base = ii+n;
-        shapes(base) = exp_imphi(0)*legfunc(0,n);
+        shapes(base) = exp_imphi(0)*legfunc(n,0);
         for (ptrdiff_t m = 1; m <= n; m++)
           {
-            shapes(base-m) = conj(exp_imphi(m))*legfunc(m,n);
-            shapes(base+m) = exp_imphi(m)*legfunc(m,n);
+            shapes(base-m) = conj(exp_imphi(m))*legfunc(n,m);
+            shapes(base+m) = exp_imphi(m)*legfunc(n,m);
           }
         ii = base+n+1;
       }
@@ -272,11 +272,11 @@ namespace ngsbem
     double c = cos(alpha);
 
     FlatMatrix<> normalized_leg_func(order+2, order+2, lh);
-    NormalizedLegendreFunctions(order+1, order+1, c, normalized_leg_func);
+    NormalizedLegendreFunctions::EvalAll(order+1, c, normalized_leg_func);
 
     if (alpha < 0)
       for (int i = 1; i <= order+1; i+=2)
-        normalized_leg_func.Row(i) *= -1;
+        normalized_leg_func.Col(i) *= -1;
       
     // cout << "leg = " << endl << normalized_leg_func << endl;
 
@@ -297,11 +297,11 @@ namespace ngsbem
 
         // Step 2
         // H(0,m)
-        trafo.Col(n) = 1.0/sqrt(2*n+1) * normalized_leg_func.Col(n).Range(n+1);
+        trafo.Col(n) = 1.0/sqrt(2*n+1) * normalized_leg_func.Row(n).Range(n+1);
         for (int m = 1; m <= n; m += 2) trafo(m,n) *= -1;
         // Step 3
         // H(1,m)
-        FlatVector<double> tmp = 1.0/sqrt(2*n+3) * normalized_leg_func.Col(n+1).Range(n+2) | lh;
+        FlatVector<double> tmp = 1.0/sqrt(2*n+3) * normalized_leg_func.Row(n+1).Range(n+2) | lh;
         for (int m = 1; m < tmp.Size(); m += 2) tmp(m) *= -1;
         for (int m = 1; m <= n; m++)
           trafo.Col(n+1)(m) = 1/sh.CalcBmn(0,n+1) * (  sh.CalcBmn(-m-1, n+1)*(1-c)/2 * tmp(m+1)
@@ -509,7 +509,8 @@ namespace ngsbem
     target.SH().Coefs()=0.0;
 
     size_t entry_size = is_dynamic ? sizeof(complex_type)*dim : sizeof(entry_type);
-    LocalHeap lh(( 32*( (os+ot+1)*(os+ot+1) + (os+1 + ot+1) ) + 2*entry_size*(os+ot+3)+ 8*4*(os+ot+1) + 500));
+    TempHeap tlh(( 32*( (os+ot+1)*(os+ot+1) + (os+1 + ot+1) ) + 2*entry_size*(os+ot+3)+ 8*4*(os+ot+1) + 500));
+    LocalHeap & lh = tlh;
 
     using trafo_type =
         std::conditional_t<
@@ -876,225 +877,6 @@ namespace ngsbem
 
 
 
-
-  // https://fortran-lang.discourse.group/t/looking-for-spherical-bessel-and-hankel-functions-of-first-and-second-kind-and-arbitrary-order/2308/2
-
-  // adapted from fmm3d
-  template <typename Tz> 
-  void besseljs3d (int nterms, Tz z, double scale,
-                     SliceVector<Tz> fjs, SliceVector<Tz> fjder)
-  {
-    using real_type = typename scal_traits<Tz>::TSCAL_REAL;
-    const real_type rscale = scale;
-    const real_type upper2 = std::is_same_v<real_type,float> ? 1e20f : 1e40;
-    const real_type rescale = std::is_same_v<real_type,float> ? 1e-10f : 1e-40;
-    /*
-      c**********************************************************************
-      c
-      c PURPOSE:
-      c
-      c	This subroutine evaluates the first NTERMS spherical Bessel 
-      c	functions and if required, their derivatives.
-      c	It incorporates a scaling parameter SCALE so that
-      c       
-      c		fjs_n(z)=j_n(z)/SCALE^n
-      c		fjder_n(z)=\frac{\partial fjs_n(z)}{\partial z}
-      c
-      c INPUT:
-      c
-      c    nterms (integer): order of expansion of output array fjs 
-      c    z     (complex *16): argument of the spherical Bessel functions
-      c    scale    (real *8) : scaling factor (discussed above)
-      c    ifder  (integer): flag indicating whether to calculate "fjder"
-      c		          0	NO
-      c		          1	YES
-      c OUTPUT:
-      c    fjs   (complex *16): array of scaled Bessel functions.
-      c    fjder (complex *16): array of derivs of scaled Bessel functions.
-      c
-      c
-    */
-
-  
-    // c ... Initializing ...
-
-    // For FP32, only exact zero may bypass the scaled small-z series.
-    if (std::is_same_v<real_type,float> ? z == Tz(0) : abs(z) < 1e-200)
-      {
-        fjs(0) = 1;
-        for (int i = 1; i <= nterms; i++)
-          fjs(i) = 0.0;
-
-        if (fjder.Size())
-          {
-            fjder = 0.0;
-            if (nterms >= 1)
-              fjder(1) = 1/(3*rscale);
-          }
-        return;
-      }
-
-    if constexpr (std::is_same_v<real_type,float>)
-      if (abs(z) < 1e-2f)
-        {
-          Tz leading = 1;
-          Tz dleading = 0;
-          Tz zscaled = z/rscale;
-          for (int n = 0; n <= nterms; n++)
-            {
-              Tz term = 1;
-              Tz dterm = 0;
-              Tz sum = 1;
-              Tz dsum = 0;
-              for (int k = 0; k < 3; k++)
-                {
-                  real_type denom = 2*(k+1)*(2*n+2*k+3);
-                  Tz factor = -z*z/denom;
-                  dterm = dterm*factor-term*real_type(2)*z/denom;
-                  term *= factor;
-                  sum += term;
-                  dsum += dterm;
-                }
-
-              fjs(n) = leading*sum;
-              if (fjder.Size())
-                fjder(n) = dleading*sum+leading*dsum;
-
-              // Advance independently of leading, which may already have underflowed.
-              if (n == 0)
-                dleading = Tz(1)/(3*rscale);
-              else
-                dleading *= real_type(n+1)*zscaled/real_type(n*(2*n+3));
-              leading *= zscaled/real_type(2*n+3);
-            }
-          return;
-        }
-
-
-    //  ... Step 1: recursion up to find ntop, starting from nterms
-
-    Tz zinv=Tz(1.0)/z;
-
-    Tz fjm1 = 0.0;
-    Tz fj0 = 1.0;
-
-    /*
-      c
-      cc     note max point for upward recurrence is
-      c      hard coded to nterms + 1000,
-      c      this might cause loss of accuracy for some
-      c      arguments in the complex plane for large 
-      c      nterms. For example, it is a terrible idea
-      c      to use this code for z>>nterms^2
-    */
-  
-    // int lwfjs = nterms + 100000;
-    int ntop = nterms+1000;
-
-    for (int i = nterms; ; i++)
-      {
-        real_type dcoef = 2*i+1;
-        Tz fj1 = dcoef*zinv*fj0-fjm1;
-        real_type dd = sqr(abs(fj1));
-        if (dd > upper2)
-          {
-            ntop=i+1;
-            break;
-          }
-        fjm1 = fj0;
-        fj0 = fj1;
-        if (i > nterms+100000)
-          throw Exception("bessel failed 1");
-      }
-    
-    Array<bool> iscale(ntop+1);
-    Vector<Tz> fjtmp(ntop+1);
-
-    /*
-      c ... Step 2: Recursion back down to generate the unscaled jfuns:
-      c             if magnitude exceeds UPBOUND2, rescale and continue the 
-      c	      recursion (saving the order at which rescaling occurred 
-      c	      in array iscale.
-    */
-
-    iscale = false;
-
-    fjtmp(ntop) = 0.0;
-    fjtmp(ntop-1) = 1.0;
-    for (int i = ntop-1; i>=1; i--)
-      {
-        real_type dcoef = 2*i+1;
-        fjtmp(i-1) = dcoef*zinv*fjtmp(i)-fjtmp(i+1);
-        real_type dd = sqr(abs(fjtmp(i-1)));
-        if (dd > upper2)
-          {
-            fjtmp(i) *= rescale;
-            fjtmp(i-1) *= rescale;
-            iscale[i] = true;
-          }
-      }
-
-    /*
-      c
-      c ...  Step 3: go back up to the top and make sure that all
-      c              Bessel functions are scaled by the same factor
-      c              (i.e. the net total of times rescaling was invoked
-      c              on the way down in the previous loop).
-      c              At the same time, add scaling to fjs array.
-      c
-    */
-  
-    real_type scalinv = 1/rscale;
-    real_type sctot = 1.0;
-    for (int i = 1; i <= ntop; i++)
-      {
-        sctot *= scalinv;
-        if (iscale[i-1])
-          sctot *= rescale;
-        fjtmp(i) *= sctot;
-      }
-  
-    //  Determine the normalization parameter:
-  
-    fj0=sin(z)*zinv;
-    Tz fj1=fj0*zinv-cos(z)*zinv;
-    if (abs(z) < 1e-2)
-      {
-        fj1 = real_type(1.0/3.0) * z - real_type(1.0/30.0) * z*z*z + real_type(1.0/840.0) * z*z*z*z*z;
-        // |err| < 8/9! * 0.01**7  = 2e-19
-      }
-    
-    real_type d0=abs(fj0);
-    real_type d1=abs(fj1);
-    Tz zscale;
-    if (d1 > d0) 
-      zscale=fj1/(fjtmp(1)*rscale);
-    else
-      zscale=fj0/fjtmp(0);
-
-    // Scale the jfuns by zscale:
-      
-    Tz ztmp=zscale;
-    for (int i = 0; i <= nterms; i++)
-      fjs(i)=fjtmp(i)*ztmp;
-
-
-    // Finally, calculate the derivatives if desired:
-
-    if (fjder.Size())
-      {
-        fjder(0) = -(fjtmp(1)*ztmp)*rscale;
-        for (int i = 1; i <= nterms; i++)
-          {
-            real_type dc1=real_type(i)/(2*i+1);
-            real_type dc2=1-dc1;
-            dc1=dc1*scalinv;
-            dc2=dc2*rscale;
-            fjder(i)=(dc1*fjtmp(i-1)-dc2*fjtmp(i+1))*ztmp;
-          }
-      }
-  }
-  
 
   template void besseljs3d (int, double, double, SliceVector<double>, SliceVector<double>);
   template void besseljs3d (int, float, double, SliceVector<float>, SliceVector<float>);
