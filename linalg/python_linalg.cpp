@@ -1492,6 +1492,32 @@ inverse : string
   bind_devicescalar (double(), "DeviceScalarD", "scalar on the gpu, fp64");
   bind_devicescalar (float(), "DeviceScalarF", "scalar on the gpu, fp32");
 
+  // num / den, but 0 where den == 0 - for Krylov coefficients, which are
+  // 0/0 once the method has converged exactly
+  auto safe_div = [] (py::object num, py::object den) -> PyDevScalExpr
+  {
+    auto expr = [] (py::object o) -> PyDevScalExpr
+    {
+      if (py::isinstance<PyDevScalExpr>(o)) return py::cast<PyDevScalExpr>(o);
+      if (py::isinstance<DeviceScalar<double>>(o) || py::isinstance<DeviceScalar<float>>(o))
+        return py::cast<PyDevScalExpr>(o.attr("expr")());
+      throw Exception("SafeDiv: operands must be device scalars or expressions");
+    };
+    PyDevScalExpr en = expr(num), ed = expr(den);
+    if (en.type != ed.type) throw Exception("DeviceScalar: expression mixes precisions");
+    return { en.type, [en, ed] (string & code, string & params, std::vector<KernelArg> & args)
+      {
+        code += "(("; ed.emit (code, params, args); code += ") != 0 ? (";
+        en.emit (code, params, args); code += ")/("; ed.emit (code, params, args); code += ") : 0)";
+      } };
+  };
+  for (const char * name : { "DeviceScalarD", "DeviceScalarF", "DeviceScalarExpr" })
+    {
+      py::object cls = m.attr(name);
+      cls.attr("SafeDiv") = py::cpp_function (safe_div, py::is_method(cls),
+                                              "self / den, or 0 where den == 0");
+    }
+
   auto bind_devicevector = [&m] (auto proto, const char * name, const char * doc)
   {
     typedef DeviceVector<decltype(proto)> DV;
