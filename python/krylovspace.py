@@ -323,7 +323,9 @@ scalar operations on the device.
 The coefficients alpha and beta live in device scalars and are computed
 by device kernels, so an iteration issues no host synchronisation. The
 residual is read back to the host only every `check` iterations, where
-the convergence test, callbacks and printing happen.
+the convergence test, callbacks and printing happen. If CG converges
+exactly in between (e.g. with an exact preconditioner), alpha and beta
+are set to 0 instead of 0/0, and the solution stays put.
 
 Matrix and preconditioner must be device operators (CreateDeviceMatrix),
 rhs and solution device vectors; the real case only.
@@ -363,13 +365,13 @@ record : bool = False
             nonlocal s
             q.data = self.mat * s
             s.InnerProduct(q, as_s)
-            alpha.data = wd / as_s
+            alpha.data = wd.SafeDiv(as_s)      # 0, not 0/0, once r = s = 0
             neg_alpha.data = -alpha
             sol.data += alpha * s
             r.data += neg_alpha * q
             w.data = self.pre * r
             w.InnerProduct(r, wdn)
-            beta.data = wdn / wd
+            beta.data = wdn.SafeDiv(wd)
             s *= beta
             s.data += w
             wd.data = wdn
@@ -397,7 +399,9 @@ and scalar operations on the device, for non-symmetric systems.
 The coefficients live in device scalars and are computed by device
 kernels, so an iteration issues no host synchronisation. The residual
 estimate is read back to the host only every `check` iteration pairs,
-where the convergence test, callbacks and printing happen.
+where the convergence test, callbacks and printing happen. Coefficients
+that become 0/0 once the method has converged exactly in between are
+set to 0, and the solution stays put.
 
 Matrix and preconditioner must be device operators (CreateDeviceMatrix),
 rhs and solution device vectors; the real case only.
@@ -450,11 +454,12 @@ record : bool = False
         def halfstep():
             nonlocal d
             w.data += neg_alpha * uhat
-            coeff.data = theta * theta * eta / alpha
+            # SafeDiv: 0, not 0/0, once the method has converged exactly
+            coeff.data = (theta * theta * eta).SafeDiv(alpha)
             d *= coeff
             d.data += u
             w.InnerProduct(w, wnorm2)
-            theta.data = wnorm2.Sqrt() / tau
+            theta.data = wnorm2.Sqrt().SafeDiv(tau)
             c.data = (1.0 / (1.0 + theta * theta)).Sqrt()
             tau.data = tau * theta * c
             eta.data = c * c * alpha
@@ -464,7 +469,7 @@ record : bool = False
             nonlocal u, v
             # even step
             v.InnerProduct(rstar, vtrstar)
-            alpha.data = rho / vtrstar
+            alpha.data = rho.SafeDiv(vtrstar)
             neg_alpha.data = -alpha
             unext.data = u
             unext.data += neg_alpha * v
@@ -476,7 +481,7 @@ record : bool = False
             # odd step
             halfstep()
             w.InnerProduct(rstar, rho)
-            beta.data = rho / rholast
+            beta.data = rho.SafeDiv(rholast)
             beta2.data = beta * beta
             u *= beta
             u.data += w
