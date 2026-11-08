@@ -1428,6 +1428,8 @@ namespace ngcomp
                           
             vnums1 = ma->GetElVertices (ei1);
             vnums2 = ma->GetElVertices (ei2);
+            if (fac2 != i)   // periodic facet pair: same facet coordinates on both sides
+              ma->MapPeriodicFacetVertices (fac2, vnums2);
             if(fel1.GetNDof() != dnums1.Size() || ((elnums.Size()>1) && (fel2.GetNDof() != dnums2.Size() )))
             {
               cout << "facet, neighbouring fel(1): GetNDof() = " << fel1.GetNDof() << endl;
@@ -2355,6 +2357,8 @@ namespace ngcomp
                              
                              vnums1 = ma->GetElVertices (ei1);
                              vnums2 = ma->GetElVertices (ei2);
+                             if (facet2 != fnums1[facnr1])   // periodic facet pair: same facet coordinates on both sides
+                               ma->MapPeriodicFacetVertices (facet2, vnums2);
                              if(fel1.GetNDof() != dnums1.Size() || ((elnums.Size()>1) && (fel2.GetNDof() != dnums2.Size() )))
                                {
                                  cout << "facet, neighbouring fel(1): GetNDof() = " << fel1.GetNDof() << endl;
@@ -2978,6 +2982,8 @@ namespace ngcomp
                           
                         vnums1 = ma->GetElVertices (ei1);
                         vnums2 = ma->GetElVertices (ei2);
+                        if (fac2 != i)   // periodic facet pair: same facet coordinates on both sides
+                          ma->MapPeriodicFacetVertices (fac2, vnums2);
 
                         bool inconsistent_ndof = false;
                         inconsistent_ndof |= fel1_test.GetNDof() != dnums1_test.Size();
@@ -4656,6 +4662,8 @@ namespace ngcomp
                        fespace->GetDofNrs (ei2, dnums2);
                        vnums1 = ma->GetElVertices (ei1);
                        vnums2 = ma->GetElVertices (ei2);
+                       if (facet2 != facet)   // periodic facet pair: same facet coordinates on both sides
+                         ma->MapPeriodicFacetVertices (facet2, vnums2);
                        
                        Array<int> dnums(fel1.GetNDof()+fel2.GetNDof(), lh);
                        dnums.Range(0, dnums1.Size()) = dnums1;
@@ -4798,6 +4806,8 @@ namespace ngcomp
                        
                        vnums1 = ma->GetElVertices (ei1);
                        vnums2 = ma->GetElVertices (ei2);
+                       if (facet2 != facet)   // periodic facet pair: same facet coordinates on both sides
+                         ma->MapPeriodicFacetVertices (facet2, vnums2);
                        
                        if(fel1.GetNDof() != dnums1.Size() || ((elnums.Size()>1) && (fel2.GetNDof() != dnums2.Size() )))
                          {
@@ -5239,6 +5249,8 @@ namespace ngcomp
                        fespace2->GetDofNrs (ei2, dnums2_test);
                        vnums1 = ma->GetElVertices (ei1);
                        vnums2 = ma->GetElVertices (ei2);
+                       if (facet2 != facet)   // periodic facet pair: same facet coordinates on both sides
+                         ma->MapPeriodicFacetVertices (facet2, vnums2);
 
                        Array<int> dnums_trial(fel1_trial.GetNDof()+fel2_trial.GetNDof(), lh);
                        dnums_trial.Range(0, dnums1_trial.Size()) = dnums1_trial;

@@ -374,6 +374,8 @@ namespace ngcomp
                             
                         vnums1 = ma->GetElVertices (ei1);
                         vnums2 = ma->GetElVertices (ei2);
+                        if (fac2 != i)   // periodic facet pair: same facet coordinates on both sides
+                          ma->MapPeriodicFacetVertices (fac2, vnums2);
 
                         for (int j = 0; j < parts.Size(); j++)
                           {

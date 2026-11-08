@@ -213,6 +213,10 @@ namespace ngcomp
     Array<shared_ptr <PML_Transformation>> pml_trafos;
     
     Array<std::tuple<int,int>> identified_facets;
+    /// for a periodic facet f: the vertices of its partner facet, matched by the
+    /// periodic identification, in the order of GetFacetPNums(f) (unused entries -1).
+    /// Empty if the mesh has no periodic facets.
+    Array<IVec<4>> periodic_facet_partner_pnums;
 
     /// store periodic vertex mapping for each identification number
     // shared ptr because Meshaccess is copy constructible
@@ -707,6 +711,14 @@ namespace ngcomp
       else
 	return fnr;
     }
+
+    /// Facet integrals map their integration points through the vertex numbers of the
+    /// element (Facet2ElementTrafo). The two elements at a periodic facet pair see two
+    /// different facets, whose vertex numbers need not be in the same order. Replaces, in
+    /// the vertex numbers vnums of an element containing facet fnr, every vertex of fnr by
+    /// its periodic partner on GetPeriodicFacet(fnr), so that both sides use the same
+    /// facet coordinates. Does nothing if fnr is not periodic.
+    void MapPeriodicFacetVertices (int fnr, FlatArray<int> vnums) const;
 
 
     /// element order stored in Netgen

@@ -1521,6 +1521,62 @@ namespace ngcomp
 	  for(auto l : Range(2))
 	    identified_facets[pair[l]] = std::tuple<int,int>(pair[1-l],2);
       }
+
+    // vertex correspondence of the periodic facet pairs
+    periodic_facet_partner_pnums.SetSize0();
+    Array<int> vmap, pnums_m, pnums_s;
+    for(auto id : Range(GetNPeriodicIdentifications()))
+      {
+        auto dim  = mesh.GetDimension();
+	const auto& pairs = GetPeriodicNodes(dim == 3 ? NT_FACE : (dim == 2 ? NT_EDGE : NT_VERTEX),id);
+        if (pairs.Size() == 0) continue;
+        if (periodic_facet_partner_pnums.Size() == 0)
+          {
+            periodic_facet_partner_pnums.SetSize(identified_facets.Size());
+            periodic_facet_partner_pnums = IVec<4>(-1);
+          }
+        // vertex map of this identification: minion -> master
+        vmap.SetSize(GetNP());
+        for (auto i : Range(vmap))
+          vmap[i] = i;
+        for (const auto & vpair : GetPeriodicNodes(NT_VERTEX, id))
+          vmap[vpair[1]] = vpair[0];
+
+        for (const auto & pair : pairs)
+          {
+            if (pair[0] == pair[1]) continue;
+            GetFacetPNums (pair[0], pnums_m);
+            GetFacetPNums (pair[1], pnums_s);
+            IVec<4> partner_m(-1), partner_s(-1);
+            bool match = pnums_m.Size() == pnums_s.Size();
+            for (auto k : Range(pnums_s))
+              {
+                int vm = vmap[pnums_s[k]];
+                auto pos = pnums_m.Pos(vm);
+                if (pos == pnums_m.ILLEGAL_POSITION) { match = false; break; }
+                partner_s[k] = vm;
+                partner_m[pos] = pnums_s[k];
+              }
+            if (!match) continue;   // keep the facet vertex numbers as they are
+            periodic_facet_partner_pnums[pair[0]] = partner_m;
+            periodic_facet_partner_pnums[pair[1]] = partner_s;
+          }
+      }
+  }
+
+  void MeshAccess :: MapPeriodicFacetVertices (int fnr, FlatArray<int> vnums) const
+  {
+    if (periodic_facet_partner_pnums.Size() == 0) return;
+    const IVec<4> & partner = periodic_facet_partner_pnums[fnr];
+    if (partner[0] == -1) return;
+    ArrayMem<int,4> pnums;
+    GetFacetPNums (fnr, pnums);
+    for (auto & v : vnums)
+      {
+        auto pos = pnums.Pos(v);
+        if (pos != pnums.ILLEGAL_POSITION)
+          v = partner[pos];
+      }
   }
 
   void MeshAccess :: GetVertexElements (size_t vnr, Array<int> & elnrs) const
