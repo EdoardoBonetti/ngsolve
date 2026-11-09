@@ -3,7 +3,7 @@
 Purpose: after ab.sh built ~/musica-ab-<variant>, confirm that it imports, reports the expected
 commit, and has UMFPACK (needed by the ArnoldiSolver baseline).
 Run:  ./ab.sh fork|upstream smoke_ab.py --gpus 0 --cpus 4 --time 00:05:00
-Correct: prints the version (fork: ...-gcfd8f92b6, upstream: ...-g6e701b568) and "umfpack ok".
+Correct: prints the version (fork: ...-gddcd4c270, upstream: ...-g6e701b568) and "umfpack ok".
 """
 import ngsolve, netgen
 from ngsolve import *

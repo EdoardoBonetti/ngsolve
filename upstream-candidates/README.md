@@ -71,10 +71,13 @@ Proposal PDF for Joachim: `report/proposal.pdf` (2 pages; `report/proposal.tex`,
 `latexmk -lualatex`). Figure and table: `python3 plot_sweep.py` from `results/musica/*.json`.
 
 Both variants built on MUSICA with identical options (Release, CPU only, UMFPACK; `musica/remote-setup-ab.sh`)
-from pinned clones (fork cfd8f92b6, master 6e701b568; `musica/ab.sh`). One CPU node share per job (48 cores,
+from pinned clones (fork ddcd4c270, master 6e701b568; `musica/ab.sh`). One CPU node share per job (48 cores,
 192 GB); each upstream/fork pair runs back to back in the same job. The regular CPU queue had multi-day waits,
 so the sweep ran as eleven 10-minute jobs on the dev QOS (`musica/submit_sweep.sh`, chunks in
 `musica/sweep_ab.py`), several sharing a node: expect a few % of timing noise. Times are the operation only.
+Commit names: the fork commits were rewritten before they were published (sources unchanged), and the
+result JSONs keep the names of the run: `ngsolve_version` …-g**cfd8f92b6** is ddcd4c270, and
+`script_commit` **bdcda8481** is 77e38beb8.
 
 | item | small | medium | large |
 |---|---|---|---|
