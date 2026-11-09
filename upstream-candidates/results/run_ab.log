@@ -253,7 +253,7 @@ netgen/test_refine1d.py                       rc=   1  5 failed in 0.20s
   "seconds": 0.4139867089688778
  }
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/tests_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/tests_upstream.json
 {
  "ne": 9081,
  "nedges": 12217,
@@ -268,7 +268,7 @@ netgen/test_refine1d.py                       rc=   1  5 failed in 0.20s
  "simd_evaluate": false,
  "mat_norm": 114.46010461432247
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/simd_edgeface_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/simd_edgeface_upstream.json
 {
  "ne": 46531,
  "lines": 2000,
@@ -284,7 +284,7 @@ netgen/test_refine1d.py                       rc=   1  5 failed in 0.20s
   "value": 104736
  }
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/fieldlines_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/fieldlines_upstream.json
 {
  "uniform": [
   {
@@ -331,14 +331,14 @@ netgen/test_refine1d.py                       rc=   1  5 failed in 0.20s
   }
  ]
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/refine_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/refine_upstream.json
 {
  "keys": 0,
  "compile_s": 2.6566202079993673,
  "ok": true,
  "rel_diff": 0.0
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k0_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k0_upstream.json
 Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
 Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
 Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
@@ -361,7 +361,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  "ok": true,
  "rel_diff": 0.0
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k1_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k1_upstream.json
 {
  "ndof": 62821,
  "order": 3,
@@ -372,7 +372,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  "solve_s": 0.0023077920195646584,
  "error": "SparseCholesky::MultAdd: illegal combination of scalar types, matrix double, x Complex, y double"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/complex_precond_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/complex_precond_upstream.json
 {'ndof': 56273, 'refine_s': 0.021310999989509583, 'fes_update_s': 0.006979125028010458, 'gf_update_s': 4.832982085645199e-06, 'err': 7.07715895047749e-15}
 {'ndof': 142937, 'refine_s': 0.04332583403447643, 'fes_update_s': 0.006964832951780409, 'gf_update_s': 8.083006832748652e-06, 'err': 7.170248927001654e-15}
 {'ndof': 360977, 'refine_s': 0.11004604201298207, 'fes_update_s': 0.01602412498323247, 'gf_update_s': 8.66700429469347e-06, 'err': 7.30789635826771e-15}
@@ -420,7 +420,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  ],
  "total_update_s": 0.16287637391360477
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/hoprol_hoprolongation_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/hoprol_hoprolongation_upstream.json
 {
  "method": "arnoldi",
  "ndof": 5728,
@@ -452,7 +452,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  ],
  "inverse": "umfpack"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.12_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.12_upstream.json
 {
  "method": "arnoldi",
  "ndof": 19380,
@@ -484,7 +484,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  ],
  "inverse": "umfpack"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.08_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.08_upstream.json
 {
  "method": "arnoldi",
  "ndof": 36716,
@@ -516,7 +516,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  ],
  "inverse": "umfpack"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.06_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.06_upstream.json
 {
  "method": "arnoldi",
  "ndof": 62933,
@@ -548,7 +548,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  ],
  "inverse": "umfpack"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.045_upstream.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.045_upstream.json
 === fork: 6.2.2608-332-ga4b5bfd04
 test_edgefacetangential_simd.py               rc=   0  2 passed in 0.57s
 test_tangential_simd_bbnd.py                  rc=   0  3 passed in 0.58s
@@ -806,7 +806,7 @@ netgen/test_refine1d.py                       rc=   0  5 passed in 0.19s
   "seconds": 0.39386645797640085
  }
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/tests_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/tests_fork.json
 {
  "ne": 9081,
  "nedges": 12217,
@@ -821,7 +821,7 @@ netgen/test_refine1d.py                       rc=   0  5 passed in 0.19s
  "simd_evaluate": true,
  "mat_norm": 114.46010461432247
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/simd_edgeface_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/simd_edgeface_fork.json
 {
  "ne": 46531,
  "lines": 2000,
@@ -837,7 +837,7 @@ netgen/test_refine1d.py                       rc=   0  5 passed in 0.19s
   "value": 108563
  }
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/fieldlines_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/fieldlines_fork.json
 {
  "uniform": [
   {
@@ -884,14 +884,14 @@ netgen/test_refine1d.py                       rc=   0  5 passed in 0.19s
   }
  ]
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/refine_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/refine_fork.json
 {
  "keys": 0,
  "compile_s": 2.3051039580022916,
  "ok": true,
  "rel_diff": 0.0
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k0_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k0_fork.json
 Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
 Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
 Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
@@ -914,7 +914,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  "ok": true,
  "rel_diff": 0.0
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k1_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k1_fork.json
 {
  "ndof": 62821,
  "order": 3,
@@ -925,7 +925,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  "solve_s": 0.24799599999096245,
  "error": null
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/complex_precond_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/complex_precond_fork.json
 {'ndof': 56273, 'refine_s': 0.017198082990944386, 'fes_update_s': 0.0026346250087954104, 'gf_update_s': 2.667016815394163e-06, 'err': 7.0795929908091226e-15}
 {'ndof': 142937, 'refine_s': 0.04073283396428451, 'fes_update_s': 0.005410000041592866, 'gf_update_s': 4.875008016824722e-06, 'err': 7.17237762500965e-15}
 {'ndof': 360977, 'refine_s': 0.09776966599747539, 'fes_update_s': 0.014245208993088454, 'gf_update_s': 7.0829992182552814e-06, 'err': 7.305901422551604e-15}
@@ -973,7 +973,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  ],
  "total_update_s": 0.14201250107726082
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/hoprol_hoprolongation_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/hoprol_hoprolongation_fork.json
 {'ndof': 56273, 'refine_s': 0.007293874979950488, 'fes_update_s': 0.0013723340234719217, 'gf_update_s': 2.415967173874378e-06, 'err': 1.0659098763275449e-14}
 {'ndof': 142937, 'refine_s': 0.019228874996770173, 'fes_update_s': 0.003381374990567565, 'gf_update_s': 3.00002284348011e-06, 'err': 1.2571271944258855e-14}
 {'ndof': 360977, 'refine_s': 0.03755029197782278, 'fes_update_s': 0.00911495799664408, 'gf_update_s': 2.5420449674129486e-06, 'err': 1.3528031740713379e-14}
@@ -1021,7 +1021,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  ],
  "total_update_s": 0.08112112601520494
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/hoprol_localhoprolongation_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/hoprol_localhoprolongation_fork.json
 {
  "method": "arnoldi",
  "ndof": 5728,
@@ -1053,7 +1053,7 @@ Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunctio
  ],
  "inverse": "umfpack"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.12_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.12_fork.json
 WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
 {
  "method": "gplhr",
@@ -1086,7 +1086,7 @@ WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
  ],
  "pre": "bddc(-Laplace)"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.12_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.12_fork.json
 {
  "method": "arnoldi",
  "ndof": 19380,
@@ -1118,7 +1118,7 @@ WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
  ],
  "inverse": "umfpack"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.08_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.08_fork.json
 WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
 {
  "method": "gplhr",
@@ -1151,7 +1151,7 @@ WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
  ],
  "pre": "bddc(-Laplace)"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.08_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.08_fork.json
 {
  "method": "arnoldi",
  "ndof": 36716,
@@ -1183,7 +1183,7 @@ WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
  ],
  "inverse": "umfpack"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.06_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.06_fork.json
 WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
 {
  "method": "gplhr",
@@ -1216,7 +1216,7 @@ WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
  ],
  "pre": "bddc(-Laplace)"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.06_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.06_fork.json
 {
  "method": "arnoldi",
  "ndof": 62933,
@@ -1248,7 +1248,7 @@ WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
  ],
  "inverse": "umfpack"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.045_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.045_fork.json
 WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
 {
  "method": "gplhr",
@@ -1281,5 +1281,5 @@ WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
  ],
  "pre": "bddc(-Laplace)"
 }
--> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.045_fork.json
+-> ~/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.045_fork.json
 === done

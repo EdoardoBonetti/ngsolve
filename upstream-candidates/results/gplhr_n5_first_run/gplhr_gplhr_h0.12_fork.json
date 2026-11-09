@@ -3,7 +3,7 @@
  "variant": "fork",
  "ngsolve_version": "6.2.2608-332-ga4b5bfd04",
  "netgen_version": "6.2.2608.post82.dev0",
- "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "ngsolve_path": "~/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
  "data": {
   "method": "gplhr",
   "ndof": 5728,
@@ -37,7 +37,7 @@
  },
  "wall_s": 7.333962749980856,
  "peak_mem_mb": 195.703125,
- "machine": "e241-018.eduroam.tuwien.ac.at",
+ "machine": "mac",
  "threads": 10,
  "cpu_count": 10,
  "command": "python3 bench_gplhr.py --method gplhr --maxh 0.12",

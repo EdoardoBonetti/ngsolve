@@ -23,7 +23,7 @@ T=$(mktemp -d "${TMPDIR:-/tmp}/musica-ab-$V.XXXX")
 cp "$SKILL/musica-run.sh" "$T/"
 cp "$HERE/remote-setup-ab.sh" "$T/remote-setup.sh"
 cat > "$T/config.sh" <<CFG
-MUSICA_USER=
+MUSICA_USER=                 # the ssh alias musica (~/.ssh/config) carries the user
 HOST=musica
 NGSOLVE_SRC=$SRC
 PACKAGES=()

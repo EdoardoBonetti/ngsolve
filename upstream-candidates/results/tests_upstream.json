@@ -3,7 +3,7 @@
  "variant": "upstream",
  "ngsolve_version": "6.2.2608-262-g6e701b568",
  "netgen_version": "6.2.2608.post92.dev0",
- "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/upstream-ref/install/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "ngsolve_path": "~/Applications/ngsuite/upstream-ref/install/Contents/Resources/lib/python3.13/site-packages/ngsolve",
  "data": {
   "test_edgefacetangential_simd.py": {
    "returncode": 1,
@@ -243,7 +243,7 @@
  },
  "wall_s": 60.392221333051566,
  "peak_mem_mb": 93.78125,
- "machine": "e241-018.eduroam.tuwien.ac.at",
+ "machine": "mac",
  "threads": null,
  "cpu_count": 10,
  "command": "python3 tests_ab.py",

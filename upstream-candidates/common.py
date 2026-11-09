@@ -1,10 +1,19 @@
 """Shared helpers for the fork-vs-upstream A/B runs: timing, peak memory and the provenance JSON
-required by WORKING_RULES.md (wall time, peak memory, machine, cores, command, git commit)."""
-import json, os, resource, socket, subprocess, sys, time
+required by WORKING_RULES.md (wall time, peak memory, machine, cores, command, git commit).
+
+The JSONs are published with the fork: "machine" is a label (NGS_MACHINE, default "mac"), never the host
+name, and paths under the home folder are written as ~/..."""
+import json, os, resource, subprocess, sys, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
+HOME = str(Path.home())
+
+
+def public(s):
+    """s with the home folder written as ~ (no user name in published results)"""
+    return s.replace(HOME, "~") if isinstance(s, str) else s
 
 
 def build_info():
@@ -12,7 +21,7 @@ def build_info():
     return {"variant": os.environ.get("NGS_VARIANT", "unknown"),
             "ngsolve_version": ngsolve.__version__,
             "netgen_version": getattr(netgen, "__version__", None),
-            "ngsolve_path": str(Path(ngsolve.__file__).parent)}
+            "ngsolve_path": public(str(Path(ngsolve.__file__).parent))}
 
 
 def script_commit():
@@ -35,15 +44,16 @@ def save(name, data, t_start, threads):
         name = f"{name}_{os.environ['NGS_TAG']}"
     out = {"name": name, **build_info(), "data": data,
            "wall_s": time.perf_counter() - t_start, "peak_mem_mb": peak_mem_mb(),
-           "machine": socket.gethostname(), "cluster": os.environ.get("NGS_MACHINE", "mac"), "threads": threads, "cpu_count": os.cpu_count(),
-           "command": " ".join([sys.executable.split("/")[-1]] + sys.argv),
+           "machine": os.environ.get("NGS_MACHINE", "mac"), "cluster": os.environ.get("NGS_MACHINE", "mac"),
+           "threads": threads, "cpu_count": os.cpu_count(),
+           "command": public(" ".join([sys.executable.split("/")[-1]] + sys.argv)),
            "script_commit": script_commit(),
            "date": time.strftime("%Y-%m-%d %H:%M:%S")}
     RESULTS.mkdir(exist_ok=True)
     f = RESULTS / f"{name}_{out['variant']}.json"
     f.write_text(json.dumps(out, indent=1))
     print(json.dumps(out["data"], indent=1))
-    print("->", f)
+    print("->", public(str(f)))
     return out
 
 
