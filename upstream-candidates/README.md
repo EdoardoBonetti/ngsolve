@@ -1,5 +1,9 @@
 # Upstream candidates: what this fork could give back to NGSolve
 
+**Contributing back (Edoardo, 2026-11-09):** no pull requests to NGSolve on GitHub. Bugs and fixes are written down
+here and fixed locally in the fork (one local branch per fix, with a test). Later Edoardo asks for merging on the
+NGSolve **GitLab**, as merge requests of **cherry-picked** commits, never the whole fork.
+
 Fork branch `ngsolve` at a4b5bfd04 (upstream master merged on 2026-11-09) against pristine upstream
 master 6e701b568 (netgen 9d852668). Both built the same way (RelWithDebInfo, no GUI, OCC, UMFPACK,
 Accelerate) on the Mac (M1 Max, 10 cores, 32 GB). Everything here reruns with one command:
@@ -79,4 +83,14 @@ Already upstream: OCC < 7.8 shape hasher, NG_TCL macros.
   vertex numbers, which `PeriodicFESpace::GetFE` then renumbers: `Set(cf, dual=True)` and `Interpolate` on
   `Periodic(H1/HCurl/HDiv/HCurlCurl)` are wrong from order 3/2/2/1. Fix on branch `fix-periodic-dual-inverse`
   (b878c4c28, on master), merged here; test `test_periodic.py::test_periodic_dual_set` (8 of 10 fail on master).
-  PR text: `pr-periodic-dual-inverse.md`. **This is a bug in current master.**
+  Merge-request text (for GitLab, later): `pr-periodic-dual-inverse.md`. **This is a bug in current master.**
+  Sent as GitHub PR NGSolve/ngsolve#102 on 2026-11-09: leave it as it is (do not modify). Later fixes follow the rule above.
+
+## Found, not fixed yet (local fix to do)
+- `MultiVector.Orthogonalize()` **without `ipmat`** is wrong for 4 or more vectors (largest off-diagonal Gram entry
+  2e-2 … 1e-1 for 4 … 16 random vectors; exact for 2–3 vectors, with `ipmat=IdentityMatrix(n)` and with
+  `AppendOrthogonalize`). Found 2026-11-09 on 6.2.2608-332. Suspect: the recursive block branch of
+  `MultiVector::T_Orthogonalize` (`linalg/multivector.cpp`, `ipmat == nullptr`), which only goes wrong once the first
+  half holds ≥ 2 vectors, as if the `InnerProduct(mv1, mv2)` block were used transposed. Reproducer: fill a
+  `MultiVector(gf.vec, 5)` with random vectors, call `Orthogonalize()`, check the Gram matrix against the identity.
+  Workaround in the skill `ngs-native`.

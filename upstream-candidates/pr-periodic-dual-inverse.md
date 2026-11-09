@@ -1,6 +1,7 @@
-# Draft PR: cached dual inverse is wrong on Periodic spaces
+# Draft merge request (NGSolve GitLab, later): cached dual inverse is wrong on Periodic spaces
 
-Branch: `fix-periodic-dual-inverse` (one commit on master 6e701b568). Not pushed; needs Edoardo's OK.
+Branch: `fix-periodic-dual-inverse` (one commit on master 6e701b568). To be cherry-picked into a GitLab merge request
+when Edoardo asks for it. (Already sent as GitHub PR NGSolve/ngsolve#102 on 2026-11-09: do not modify it.)
 
 ---
 
