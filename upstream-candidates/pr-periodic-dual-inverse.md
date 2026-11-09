@@ -58,7 +58,6 @@ HDivDiv, orders 0 (1 for H1) to 3, compares the dual Set on `Periodic(V)` with t
 
 Tested on the fork build (master 6e701b568 plus the fork's patches; the code touched here is identical in master),
 Mac M1 Max: the full `tests/pytest` (without mpi_only) passes, 552 passed and 33 skipped (542 before plus the
-10 new cases). The add-on reggeminus, whose periodic Regge kernel test found the bug, passes again
-(`test_B1_curl_kernel_is_hess_lag[periodic-R1]`, `[periodic-R2]`). Not built on pristine master on its own.
+10 new cases). Not built on pristine master on its own.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
