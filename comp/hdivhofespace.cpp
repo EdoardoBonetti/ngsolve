@@ -305,8 +305,14 @@ namespace ngcomp
 
 
    if (flags.GetDefineFlag("hoprolongation"))
-     // RT_k contains polynomials of degree k+1: embed into vector-L2 of order k+1
-     prol = CreateVectorL2EmbeddedProlongation (this, "piola2", RT ? order+1 : order);
+     {
+       // RT_k contains polynomials of degree k+1: embed into vector-L2 of order k+1
+       // if any element type of the mesh is RT (et_RT, see hdiv_ndof::SetupRT)
+       bool rt = false;
+       for (auto el : ma->Elements(VOL))
+         if (et_RT[el.GetType()]) { rt = true; break; }
+       prol = CreateVectorL2EmbeddedProlongation (this, "piola2", rt ? order+1 : order);
+     }
   }
   
   HDivHighOrderFESpace:: ~HDivHighOrderFESpace () { ClearDualInverse(); }
