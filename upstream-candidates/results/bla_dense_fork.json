@@ -1,0 +1,48 @@
+{
+ "name": "bla_dense",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-343-g8597c3544",
+ "netgen_version": "6.2.2608.post82.dev0",
+ "ngsolve_path": "~/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "numpy": "2.2.6",
+  "numpy_lapack": "accelerate",
+  "svd_200x200": {
+   "bla_s": 0.004458708979655057,
+   "numpy_s": 0.004326208028942347,
+   "ratio_numpy_over_bla": 0.9702826644848749,
+   "rel_err_s": 1.5240563849979082e-15
+  },
+  "svd_2000x200": {
+   "bla_s": 0.021662582992576063,
+   "numpy_s": 0.02118233300279826,
+   "ratio_numpy_over_bla": 0.9778304373978676,
+   "rel_err_s": 5.7207939985759535e-15
+  },
+  "qr_pivoting_200": {
+   "bla_s": 0.001212832983583212,
+   "numpy_s": 0.0008968330221250653,
+   "ratio_numpy_over_bla": 0.7394530279638738
+  },
+  "eigh_200": {
+   "bla_s": 0.0025872080004774034,
+   "numpy_s": 0.002630000002682209,
+   "ratio_numpy_over_bla": 1.016539838388297,
+   "rel_err_lam": 3.6092999638991774e-15
+  },
+  "solve_200": {
+   "bla_s": 0.0001653329818509519,
+   "numpy_s": 0.00018224999075755477,
+   "ratio_numpy_over_bla": 1.1023208359107295,
+   "rel_err_x": 1.152502063023237e-14
+  }
+ },
+ "wall_s": 1.318875917000696,
+ "peak_mem_mb": 131.6875,
+ "machine": "mac",
+ "threads": null,
+ "cpu_count": 10,
+ "command": "python3 bench_bla_dense.py --reps 20",
+ "script_commit": "18694a474",
+ "date": "2026-11-09 14:44:29"
+}

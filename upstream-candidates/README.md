@@ -98,5 +98,31 @@ Already upstream: OCC < 7.8 shape hasher, NG_TCL macros.
   6.7e-16 (complex), and the worst |V_old − V_new R| / |V_old| is 4.0e-16. **This is a bug in current master.**
   Not sent anywhere (rule above).
 
+## New features on local branches
+- **Dense linear algebra on `bla.Matrix`** (2026-11-09, gap `ngs-dense-linalg`): branch `feature-bla-dense-linalg`
+  (356a2a604 + test fix f6e645036, on master 6e701b568), merged here (18694a474); in the fork from 6.2.2608-343.
+  New `basiclinalg/dense_linalg.{hpp,cpp}` (C++: `DenseEigh`, `DenseEig`, `DenseSVD`, `DenseQR`, `DenseCholesky`,
+  `DenseSolve`, double and Complex) on top of LAPACK, and the Python methods of `FlatMatrixD`/`FlatMatrixC` (so of
+  `MatrixD`/`MatrixC`), with numpy's conventions and bla results:
+  - `Eigh()` → (lam ascending, V), A = V diag(lam) V^H (`?syevd`/`?heevd`);
+  - `Eig()` → complex (lam, V), A V = V diag(lam) (`?geev`);
+  - `SVD(full_matrices=False)` → (U, s, Vh) (`?gesdd`; reduced by default, unlike numpy);
+  - `QR(pivoting=False)` → (Q, R) reduced; `pivoting=True` → (Q, R, perm), A[:, perm] = Q R, rank revealing
+    (`?geqp3`), which numpy does not offer;
+  - `Cholesky()` → L lower, A = L L^H (`?potrf`); `Solve(b)` for a vector or matrix b (`?gesv`).
+
+  The input is never modified. Test `tests/pytest/test_bla_dense_linalg.py`: 61 cases (real and complex, square
+  and rectangular, rank-deficient pivoted QR, error cases), all agree with numpy to 1e-12, 0.7 s.
+  Speed (`bench_bla_dense.py`, `results/bla_dense_fork.json`, best of 20, the Mac; numpy 2.2.6 also on Accelerate):
+  parity, so the gain is NGSolve-native code and pivoted QR, not time.
+
+  | call | bla.Matrix | numpy.linalg | agreement |
+  |---|---|---|---|
+  | SVD 200 × 200 | 4.46 ms | 4.33 ms (`full_matrices=False`) | s to 1.5e-15 |
+  | SVD 2000 × 200 | 21.7 ms | 21.2 ms | s to 5.7e-15 |
+  | QR with pivoting 200 × 200 | 1.21 ms | 0.90 ms (plain QR, no pivoting) | – |
+  | Eigh 200 × 200 | 2.59 ms | 2.63 ms | lam to 3.6e-15 |
+  | Solve 200 × 200 | 0.165 ms | 0.182 ms | x to 1.2e-14 |
+
 ## Found, not fixed yet (local fix to do)
 (none)
