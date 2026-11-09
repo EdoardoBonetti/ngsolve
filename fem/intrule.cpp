@@ -505,8 +505,9 @@ namespace ngfem
           Vec<3,T> tau = MappedEdgeTangent<ET> (facetnr, J);
           T len = L2Norm(tau);
           mip.SetMeasure(len);
-          if constexpr (is_same_v<T,double>)
-            mip.SetTV((1/len) * tau);
+          // unit edge tangent, also for SIMD points (specialcf.tangential in SIMD edge forms)
+          if constexpr (is_same_v<T,double> || is_same_v<T,SIMD<double>>)
+            mip.SetTV((T(1.0)/len) * tau);
           return;
         }
     Vec<D,T> normal = MappedFacetNormal<ET> (facetnr, J);
