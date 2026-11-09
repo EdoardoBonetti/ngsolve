@@ -430,6 +430,98 @@ void ExportImmediateOperators(TPYCLASS &c)
       c.def("__imul__", [] (T &self, TSCAL &rhs) { self*=rhs; return self; });
   }
 
+// dense factorizations and eigenvalue problems through LAPACK (dense_linalg.hpp), numpy conventions
+template <typename T, typename TPYCLASS>
+void ExportDenseLinalg (TPYCLASS & c)
+{
+  typedef FlatMatrix<T> TFM;
+  c.def("Eigh", [](TFM & self)
+        {
+          size_t n = self.Height();
+          Vector<double> lam(n);
+          Matrix<T> v(n, n);
+          DenseEigh (self, lam, v);
+          return py::make_tuple(lam, v);
+        }, R"raw_string(
+Eigenvalues and eigenvectors of a real symmetric / complex Hermitian matrix (LAPACK ?syevd / ?heevd;
+only the lower triangle is used). Returns (lam, V): lam ascending, the eigenvectors are the columns of V,
+A = V diag(lam) V^H. Like numpy.linalg.eigh.
+)raw_string");
+
+  c.def("Eig", [](TFM & self)
+        {
+          size_t n = self.Height();
+          Vector<Complex> lam(n);
+          Matrix<Complex> v(n, n);
+          DenseEig (self, lam, v);
+          return py::make_tuple(lam, v);
+        }, R"raw_string(
+Eigenvalues and right eigenvectors of a general square matrix (LAPACK ?geev). Returns complex (lam, V) with
+A V = V diag(lam), columns of unit 2-norm. Like numpy.linalg.eig (the order of the eigenvalues is LAPACK's).
+)raw_string");
+
+  c.def("SVD", [](TFM & self, bool full_matrices)
+        {
+          size_t m = self.Height(), n = self.Width(), k = min(m, n);
+          Matrix<T> u(m, full_matrices ? m : k), vh(full_matrices ? n : k, n);
+          Vector<double> s(k);
+          DenseSVD (self, u, s, vh, full_matrices);
+          return py::make_tuple(u, s, vh);
+        }, py::arg("full_matrices")=false, R"raw_string(
+Singular value decomposition A = U diag(s) Vh (LAPACK ?gesdd), s descending. Returns (U, s, Vh).
+
+full_matrices : bool
+  False (default, unlike numpy): U is m x k and Vh is k x n, k = min(m,n). True: U is m x m, Vh is n x n.
+)raw_string");
+
+  c.def("QR", [](TFM & self, bool pivoting) -> py::tuple
+        {
+          size_t m = self.Height(), n = self.Width(), k = min(m, n);
+          Matrix<T> q(m, k), r(k, n);
+          Array<int> perm(pivoting ? n : 0);
+          DenseQR (self, q, r, perm);
+          if (!pivoting)
+            return py::make_tuple(q, r);
+          py::list p;
+          for (int i : perm) p.append(i);
+          return py::make_tuple(q, r, p);
+        }, py::arg("pivoting")=false, R"raw_string(
+Reduced QR factorization A = Q R (LAPACK ?geqrf / ?geqp3 and ?orgqr / ?ungqr): Q is m x k with orthonormal
+columns, R is k x n upper triangular, k = min(m,n). Returns (Q, R), like numpy.linalg.qr.
+
+pivoting : bool
+  True: rank-revealing QR with column pivoting, A[:, perm] = Q R with |R[0,0]| >= |R[1,1]| >= ...;
+  returns (Q, R, perm), perm a list of column indices (like scipy.linalg.qr(..., pivoting=True)).
+)raw_string");
+
+  c.def("Cholesky", [](TFM & self)
+        {
+          size_t n = self.Height();
+          Matrix<T> l(n, n);
+          DenseCholesky (self, l);
+          return l;
+        }, R"raw_string(
+Cholesky factor L (lower triangular) of a symmetric / Hermitian positive definite matrix, A = L L^H
+(LAPACK ?potrf). Like numpy.linalg.cholesky. Raises an exception if A is not positive definite.
+)raw_string");
+
+  c.def("Solve", [](TFM & self, FlatVector<T> b)
+        {
+          Vector<T> x(b.Size());
+          DenseSolve (self, FlatMatrix<T>(b.Size(), 1, b.Data()), FlatMatrix<T>(x.Size(), 1, x.Data()));
+          return x;
+        }, py::arg("b"), R"raw_string(
+Solves A x = b for a square matrix A (LU with partial pivoting, LAPACK ?gesv); b is a vector or a matrix
+(one right-hand side per column). Like numpy.linalg.solve. Raises an exception if A is singular.
+)raw_string");
+  c.def("Solve", [](TFM & self, FlatMatrix<T> b)
+        {
+          Matrix<T> x(b.Height(), b.Width());
+          DenseSolve (self, b, x);
+          return x;
+        }, py::arg("b"));
+}
+
 void NGS_DLL_HEADER ExportNgbla(py::module & m) {
 
     ///////////////////////////////////////////////////////////////////////////////////////
@@ -706,6 +798,7 @@ vals : tuple
         class_FMD.def("__str__", &ToString<FMD>);
         class_FMD.def("__repr__", &ToString<FMD>);
         PyDefMatBuffer<FMD>(class_FMD);
+        ExportDenseLinalg<double>(class_FMD);
 
 
     typedef FlatMatrix<Complex> FMC;
@@ -758,6 +851,7 @@ vals : tuple
           .def_property_readonly("I", py::cpp_function([](FMC & self) { return Inverse(self); }))
         ;
     PyDefMatBuffer<FMC>(class_FMC);
+    ExportDenseLinalg<Complex>(class_FMC);
 
     auto class_MD = py::class_<Matrix<double>, FMD>(m, "MatrixD", py::buffer_protocol())
       .def(py::init( [] (int n, int m) { return new Matrix<double>(n, m); }), py::arg("n"), py::arg("m"), "Makes matrix of dimension n x m")

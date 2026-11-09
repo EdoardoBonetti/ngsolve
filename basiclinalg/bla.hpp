@@ -29,5 +29,6 @@
 #include "simd_complex.hpp"
 
 #include "ng_lapack.hpp"
+#include "dense_linalg.hpp"
 
 #endif
