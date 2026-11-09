@@ -4,7 +4,7 @@ include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(ngbla ${NGS_LIB_TYPE}
         bandmatrix.cpp triangular.cpp calcinverse.cpp cholesky.cpp
         LUdecomposition.cpp householder.cpp svd.cpp
-        eigensystem.cpp LapackGEP.cpp
+        eigensystem.cpp LapackGEP.cpp dense_linalg.cpp
         python_bla.cpp ngblas.cpp ngblas32.cpp ngblasc.cpp timing_ngblas.cpp
         )
 
@@ -22,7 +22,7 @@ install( FILES
         bandmatrix.hpp cholesky.hpp matrix.hpp ng_lapack.hpp 
         vector.hpp bla.hpp expr.hpp symmetricmatrix.hpp clapack.h     
         tensor.hpp triangular.hpp householder.hpp eigensystem.hpp calcinverse.hpp
-        ngblas.hpp simd_complex.hpp complex_wrapper.hpp ectypes.hpp
+        ngblas.hpp simd_complex.hpp complex_wrapper.hpp ectypes.hpp dense_linalg.hpp
         DESTINATION ${NGSOLVE_INSTALL_DIR_INCLUDE}
         COMPONENT ngsolve_devel
        )
