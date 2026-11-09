@@ -1,7 +1,7 @@
 # Fork fixes (branch `fork-fixes-2026-10-11`)
 
-Fixes for problems found while running the numerical-relativity practice
-scripts on asc203 (2026-10-10/11). Each item has a regression test; all tests
+Fixes for problems found while running the research
+scripts on the Linux workstation (2026-10-10/11). Each item has a regression test; all tests
 fail (or crash) on the previous build and pass with this branch.
 
 ## 1. SIMD Evaluate for `specialcf.EdgeFaceTangentialVectors`
@@ -43,13 +43,13 @@ a temporary, so `inv * v` worked but `inv @ B` (which asks for the size) read a
 null pointer and segfaulted. The Python binding `BaseMatrix.Inverse` now has
 `py::keep_alive<0,1>`, so the inverse keeps its matrix alive. Test:
 `tests/pytest/test_inverse_temporary.py` (default inverse, pardiso, umfpack,
-sparsecholesky; the default on asc203 is MKL Pardiso).
+sparsecholesky; the default on the Linux workstation is MKL Pardiso).
 
 ## 4. netgen: OpenCascade < 7.8, submodule at 766b338e
 
 netgen commit `fbfaed1c` (branch `fork-fixes-2026-10-11` in the netgen
 submodule) adds `NgShapeMapHasher`. It aliases `TopTools_ShapeMapHasher` on
-OCC >= 7.8 and falls back to `HashCode`/`IsSame` on older versions (asc203 has OCC
+OCC >= 7.8 and falls back to `HashCode`/`IsSame` on older versions (the Linux workstation has OCC
 7.6.3). The submodule now points to the netgen branch head, which is
 766b338e (FieldLineCalc, needed for TendexLines) plus the commits of items 4
 and 5. Test: `tests/pytest/test_occ_shapehash.py` in netgen.
@@ -86,7 +86,7 @@ Interpolate on hexes and tets, orders 5, 6, 8).
 
 Built in `~/ngsuite/build-fixes`, installed to `~/ngsuite/install-fixes`, with
 `LAPACK_LIBRARIES` as in the production build (reference `liblapack.so` before
-MKL). On asc203, any MKL call from Python (the `| Lapack` products, Pardiso)
+MKL). On the Linux workstation, any MKL call from Python (the `| Lapack` products, Pardiso)
 aborts with `libmkl_avx2.so: undefined symbol mkl_sparse_optimize_bsr_trsm_i8`.
 This also happens in the production build, independent of these fixes. MKL is
 loaded with `RTLD_LOCAL`; preloading it works around this:

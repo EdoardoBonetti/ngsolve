@@ -35,7 +35,7 @@ Every result is a JSON in `results/` with wall time, peak memory, machine, threa
 | test_solvers | 3 of 6 fail | feature: GPLHR |
 | test_tendexlines | error | feature: TendexLines |
 | netgen test_split_alfeld | 1 of 3 fail | `ngmesh.SplitAlfeld()` puts the 3D vertex outside the tet (inverted elements, volume 2 on the unit cube) |
-| test_inverse_temporary | passes | the crash needs MKL Pardiso (asc203); not reproducible on the Mac |
+| test_inverse_temporary | passes | the crash needs MKL Pardiso (the Linux workstation); not reproducible on the Mac |
 
 ## Measured speed-ups (same machine, same options)
 
