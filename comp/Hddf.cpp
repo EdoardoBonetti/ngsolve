@@ -429,7 +429,7 @@ void HDivDivFacetHOElement<ET_TET> :: CalcShape(const IntegrationPoint &ip, Slic
         int enr = ip.FacetNr();
         auto vertices = GetVertexOrientedEdge(enr);
         
-        double lam[4] = {ip(0), ip(1), ip(3), 1-ip(0)-ip(1)-ip(2) };
+        double lam[4] = {ip(0), ip(1), ip(2), 1-ip(0)-ip(1)-ip(2) };
         ArrayMem<double, 50> values(order);
     
         int vs = vertices[0];
@@ -498,7 +498,7 @@ void HDivDivFacetHOElement<ET_TET> :: CalcShape(const IntegrationPoint &ip, Slic
         int enr = ip.FacetNr();
         auto vertices = GetVertexOrientedEdge(enr);
         
-        double lam[4] = {ip(0), ip(1), ip(3), 1-ip(0)-ip(1)-ip(2) };
+        double lam[4] = {ip(0), ip(1), ip(2), 1-ip(0)-ip(1)-ip(2) };
         ArrayMem<double, 50> values(order);
     
         int vs = vertices[0];
