@@ -75,3 +75,8 @@ Already upstream: OCC < 7.8 shape hasher, NG_TCL macros.
 - Master merges the facet rules of an element into one SIMD rule (11e5bb11c); the fork's SIMD
   `EdgeFaceTangentialVectors` now takes the edge per point: a4b5bfd04.
 - HDiv `RT` became per element type (`et_RT[]`); the fork's HDiv hoprolongation follows: b7308a62d.
+- Master caches the inverse duality matrix per vertex-order class (b97daf6ac) and picks the class from the mesh
+  vertex numbers, which `PeriodicFESpace::GetFE` then renumbers: `Set(cf, dual=True)` and `Interpolate` on
+  `Periodic(H1/HCurl/HDiv/HCurlCurl)` are wrong from order 3/2/2/1. Fix on branch `fix-periodic-dual-inverse`
+  (b878c4c28, on master), merged here; test `test_periodic.py::test_periodic_dual_set` (8 of 10 fail on master).
+  PR text: `pr-periodic-dual-inverse.md`. **This is a bug in current master.**
