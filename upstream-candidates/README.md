@@ -165,5 +165,27 @@ Already upstream: OCC < 7.8 shape hasher, NG_TCL macros.
   | Eigh 200 × 200 | 2.59 ms | 2.63 ms | lam to 3.6e-15 |
   | Solve 200 × 200 | 0.165 ms | 0.182 ms | x to 1.2e-14 |
 
+## Fixed on local branches (not merged into `ngsolve` yet)
+- **`HDivDivFacetSpace`: wrong barycentric coordinate in the tet edge shapes on BBND** (found 2026-11-09 by reading
+  the source, element catalogue). `comp/Hddf.cpp:432` (`HDivDivFacetHOElement<ET_TET>::CalcShape`, `VB == BBND`)
+  built the edge bubbles `λ_a λ_b P_i(λ_a − λ_b) t⊗t` from `lam[4] = {ip(0), ip(1), ip(3), 1-ip(0)-ip(1)-ip(2)}`.
+  `ip(3)` reads past the three coordinates of `IntegrationPoint::pi[3]` and returns the weight, so the three edge
+  shapes at vertex 2 were wrong. Same typo in the commented-out block of `CalcDivShape` (line 501), fixed too.
+  **This is a bug in current master** (6e701b568 has the same lines; `comp/Hddf.cpp` is identical in the fork, so the
+  commit cherry-picks cleanly). Fix: `ip(3)` → `ip(2)`, branch `fix-hddf-edge-ip` (c80d85a53, on `ngsolve`
+  1a293621e). Test `tests/pytest/test_hddf_edge_shapes.py`: on the reference tet (identity map) the BBND mass-matrix
+  diagonal of each edge shape must be `|e|^5/30` (i = 0) and `|e|^5/210` (i = 1), orders 1 and 2.
+  Before (dev build 6.2.2608-343, order 1): edges at vertex 2 give 0.0239 instead of 1/30 = 0.0333 and 0.1353 instead
+  of √2^5/30 = 0.1886; the other three edges are exact. 2 of 2 fail. After: 2 of 2 pass; full `tests/pytest`
+  (without `mpi_only`) 685 passed, 33 skipped (`update_20261109_hddf_dev_ngsolve_pytest.log`). Dev build only;
+  not in Netgen.app, not merged, not sent anywhere (rule above).
+
 ## Found, not fixed yet (local fix to do)
-(none)
+- **`HDivDivFacetSpace::GetDofNrs` in 3D does not match the element** (found 2026-11-09 while testing the fix above;
+  reproduced on one reference tet, order 1). `comp/Hddf.cpp:964`: (1) the face dofs are `dofs_per_face * f + i`
+  without `first_facet_dof`, so they overlap the edge dofs (one tet gives dnums
+  `[2,4,5,0,1,3, 9,10,11,6,7,8,3,4,5,0,1,2]`, ndof 18); (2) the list is edges then faces, while
+  `HDivDivFacetHOElement<ET_TET>` numbers face shapes first (`base = facenr*ndoftrig`) and edge shapes after
+  (`base = 4*TetNDofFace + enr*order`). Assembled BBND mass on that tet: the global diagonal at an edge dof differs
+  from the local edge-shape entry (e.g. 0.1886 vs 0.0333). Any assembled 3D problem with this space is affected.
+  The documented `bubble` flag is also never read. Status: not fixed, no branch yet.
