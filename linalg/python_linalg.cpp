@@ -895,7 +895,7 @@ void NGS_DLL_HEADER ExportNgla(py::module &m) {
            else
              return py::cast(x.T_Orthogonalize<Complex>(ipmat));
          }, py::arg("ipmat")=nullptr,
-         "Orthogonalize vectors by modified Gram-Schmidt, returns R-factor of QR decomposition (only ipmat version, for the moment)")
+         "Orthogonalize vectors (modified Gram-Schmidt with ipmat, block-recursive Gram-Schmidt without), returns the R-factor of the QR decomposition")
     .def("__mul__", [](shared_ptr<MultiVector> x, Vector<double> a) 
          { // cout << "in double __mul__" << endl;
            return DynamicVectorExpression(make_shared<MultiVecAxpyExpr<double>>(a, x)); })

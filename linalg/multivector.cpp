@@ -220,8 +220,11 @@ namespace ngla {
             auto mv1 = mv.Range(r1);
             auto mv2 = mv.Range(r2);
             Rfactor.Rows(r1).Cols(r1) = mv1->T_Orthogonalize<T>(ipmat);
-            Matrix<T> ip = Conj(InnerProduct<T> (*mv1, *mv2, true));
-            Rfactor.Rows(r2).Cols(r1) = ip;
+            // InnerProduct(mv1, mv2) is (size2 x size1); Add(mv1, c) and the R factor of V = Q R
+            // need the (size1 x size2) block c(i,j) = (q1_i, v2_j)
+            Matrix<T> ip21 = Conj(InnerProduct<T> (*mv1, *mv2, true));
+            Matrix<T> ip = Trans(ip21);
+            Rfactor.Rows(r1).Cols(r2) = ip;
             ip *= -1;
             mv2->Add (*mv1, ip);
             Rfactor.Rows(r2).Cols(r2) = mv2->T_Orthogonalize<T>(ipmat);
