@@ -1014,7 +1014,8 @@ namespace ngfem
         throw Exception("EdgeFaceTangentialVector only makes sense on edges");
     }
 
-    // same as the scalar version, all points of the rule lie on the same edge
+    // same as the scalar version; a (merged) rule may hold the points of several edges,
+    // the lanes of one SIMD point lie on the same edge
     virtual void Evaluate (const SIMD_BaseMappedIntegrationRule & bmir, BareSliceMatrix<SIMD<double>> values) const override
     {
       if (bmir.DimSpace() != D || bmir.DimElement() != D)
@@ -1023,14 +1024,19 @@ namespace ngfem
 
       auto & mir = static_cast<const SIMD_MappedIntegrationRule<D,D>&> (bmir);
       auto & ir = mir.IR();
-      if (ir[0].VB() != BBND)
-        throw Exception("EdgeFaceTangentialVector only makes sense on edges");
 
       Vec<3> tref, tref1, tref2;
-      RefVectors (mir.GetTransformation(), ir[0].FacetNr(), tref, tref1, tref2);
+      int edgenr = -1;
 
       for (size_t i = 0; i < mir.Size(); i++)
         {
+          if (ir[i].VB() != BBND)
+            throw Exception("EdgeFaceTangentialVector only makes sense on edges");
+          if (ir[i].FacetNr() != edgenr)
+            {
+              edgenr = ir[i].FacetNr();
+              RefVectors (mir.GetTransformation(), edgenr, tref, tref1, tref2);
+            }
           Mat<3,3,SIMD<double>> F = mir[i].GetJacobian();
           Vec<3,SIMD<double>> t, t1, t2;
           for (int j = 0; j < 3; j++)
