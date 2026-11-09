@@ -12,10 +12,88 @@
 #include "recursive_pol.hpp"
 #include "recursive_pol_trig.hpp"
 #include "hdivfe_utils.hpp"
+#include "dualinverse.hpp"
 
 
 namespace ngfem
 {
+
+  // interior dof counts, (p0,p1,p2) = order_inner; the facet fns and the div-free
+  // part are the same with/without RT, the div part maps onto L2(p-1), with RT onto L2(p)
+  namespace hdiv_ndof
+  {
+    inline int DimP2 (int q) { return q >= 0 ? (q+1)*(q+2)/2 : 0; }
+    inline int DimP3 (int q) { return q >= 0 ? (q+1)*(q+2)*(q+3)/6 : 0; }
+
+    template <typename TP>
+    inline int DivFree (ELEMENT_TYPE et, TP p)
+    {
+      switch (et)
+        {
+        case ET_TRIG: return p[0] > 1 ? p[0]*(p[0]-1)/2 : 0;
+        case ET_QUAD: return max(p[0],0) * max(p[1],0);
+        case ET_TET: return p[0] > 1 ? p[0]*(p[0]+1)*(p[0]-1)/3 + p[0]*(p[0]-1)/2 : 0;
+        case ET_PRISM:
+          if (p[0] < 1 || p[2] < 1) return 0;
+          return (p[0]-1)*p[0]/2*(p[2]+1) + (DimP2(p[0])-1)*p[2];
+        case ET_HEX:
+          return 2*p[0]*p[1]*p[2] + p[0]*p[1] + p[0]*p[2] + p[1]*p[2];
+        case ET_PYRAMID:
+          return p[0] >= 1 ? p[0]*p[0] + 2*( (p[0]-1)*p[0]*(p[0]+1)/3 + p[0] ) : 0;
+        default: return 0;
+        }
+    }
+
+    // = dim L2(q) - 1
+    template <typename TP>
+    inline int Div (ELEMENT_TYPE et, TP p, bool RT)
+    {
+      // q = order of the divergence space
+      auto q = [&](int i) { return max(int(p[i]) - (RT ? 0 : 1), 0); };
+      switch (et)
+        {
+        case ET_TRIG: return DimP2(q(0))-1;
+        case ET_QUAD: return q(0)*q(1) + q(0) + q(1);
+        case ET_TET: return DimP3(q(0))-1;
+        case ET_PRISM:
+          if (p[0] < 1 || p[2] < 1) return 0;
+          return DimP2(q(0))*(q(2)+1) - 1;
+        case ET_HEX:
+          return q(0)*q(1)*q(2) + q(0)*q(1) + q(0)*q(2) + q(1)*q(2) + q(0) + q(1) + q(2);
+        case ET_PYRAMID: return (q(0)+1)*(q(0)+2)*(2*q(0)+3)/6 - 1;
+        default: return 0;
+        }
+    }
+
+    template <typename TP>
+    inline int Inner (ELEMENT_TYPE et, TP p, bool RT, bool hodivfree)
+    {
+      return DivFree(et, p) + (hodivfree ? 0 : Div(et, p, RT));
+    }
+
+    // per element type flag, e.g. "hexRT"
+    inline string RTFlagName (ELEMENT_TYPE et)
+    {
+      string name = ElementTopology::GetElementName(et);
+      std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+      return name + "RT";
+    }
+
+    // RT per element type: "<et>RT" flag, else "RT" flag,
+    // else RT on tensor product elements (quad, prism, hex) only
+    inline void SetupRT (const Flags & flags, int order, bool * et_RT)
+    {
+      xbool rt = flags.GetDefineFlagX("RT");
+      for (auto et : { ET_SEGM, ET_TRIG, ET_QUAD, ET_TET, ET_PYRAMID, ET_PRISM, ET_HEX })
+        {
+          xbool etrt = flags.GetDefineFlagX(RTFlagName(et));
+          bool tensor = et == ET_QUAD || et == ET_PRISM || et == ET_HEX;
+          et_RT[et] = !etrt.IsMaybe() ? etrt.IsTrue()
+            : !rt.IsMaybe() ? rt.IsTrue() : tensor;
+          if (order == 0) et_RT[et] = true;
+        }
+    }
+  }
 
   template <int D>
   class HDivHighOrderNormalFiniteElement : public HDivNormalFiniteElement<D>
@@ -393,6 +471,7 @@ namespace ngfem
     bool ho_div_free;
     bool only_ho_div;
     bool RT = false;
+    std::atomic<double*> * dual_inverse = nullptr;
   public:
     using VertexOrientedFE<ET>::SetVertexNumbers;
     HDivHighOrderFE * SetVertexNumbers (FlatArray<int> vnums) override
@@ -455,9 +534,41 @@ namespace ngfem
                                   BareSliceVector<> nshape) const override;
 
     virtual void CalcDualShape (const BaseMappedIntegrationPoint & bmip, BareSliceMatrix<> shape) const override;
+    virtual void AddDualTrans (const SIMD_BaseMappedIntegrationRule & bmir, BareSliceMatrix<SIMD<double>> values,
+                               BareSliceVector<double> coefs) const override;
 
     virtual tuple<int,int,int,int> GetNDofVEFC () const override;
 
+    void SetDualInverse (std::atomic<double*> * slot) { dual_inverse = slot; }
+
+    using BASE::SolveDuality;
+    bool SolveDuality (SliceMatrix<> x, LocalHeap & lh) const override
+    {
+      if (!dual_inverse) return false;
+      FlatMatrix<> inv(ndof, ndof, GetDualInverse<ET,DIM> (*this, *dual_inverse, lh));
+      HeapReset hr(lh);
+      FlatMatrix<> tmp(x.Height(), x.Width(), lh);
+      tmp = x;
+      if (x.Width() == 1)  // gemv instead of n x 1 gemm
+        x.Col(0) = inv * tmp.Col(0);
+      else
+        x = inv * tmp;
+      return true;
+    }
+
+    bool SolveDualityTrans (SliceMatrix<> x, LocalHeap & lh) const override
+    {
+      if (!dual_inverse) return false;
+      FlatMatrix<> inv(ndof, ndof, GetDualInverse<ET,DIM> (*this, *dual_inverse, lh));
+      HeapReset hr(lh);
+      FlatMatrix<> tmp(x.Height(), x.Width(), lh);
+      tmp = x;
+      if (x.Width() == 1)
+        x.Col(0) = Trans(inv) * tmp.Col(0);
+      else
+        x = Trans(inv) * tmp;
+      return true;
+    }
   };
 
 }

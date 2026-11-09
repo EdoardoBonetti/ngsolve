@@ -60,6 +60,9 @@ namespace ngfem
     
     bool nodalp2 = false;
 
+    // lazily filled D^-1 for full-order elements, owned by the space
+    std::atomic<double*> * dual_inverse = nullptr;
+
   public:
     using VertexOrientedFE<ET>::SetVertexNumbers;
     H1HighOrderFE * SetVertexNumbers (FlatArray<int> vnums) override
@@ -143,7 +146,101 @@ namespace ngfem
     virtual bool DualityMassDiagonal () const override
     {
       return (ET == ET_SEGM) || (ET == ET_TRIG) || (ET == ET_QUAD)
-        || (ET == ET_HEX) || (ET == ET_TET) || (ET == ET_POINT);
+        || (ET == ET_HEX) || (ET == ET_TET) || (ET == ET_PYRAMID) || (ET == ET_PRISM) || (ET == ET_POINT);
+    }
+
+    void SetDualInverse (std::atomic<double*> * slot) { dual_inverse = slot; }
+
+    using BASE::SolveDuality;
+    bool SolveDuality (SliceMatrix<> x, LocalHeap & lh) const override
+    {
+      if (!dual_inverse)
+        return BASE::SolveDuality (x, lh);
+
+      // D^-1 is block lower triangular in V,E,F,C order, with diagonal diagonal blocks
+      FlatMatrix<> inv(ndof, ndof, GetDualInverse(lh));
+      auto [nv, ne, nf, nc] = GetNDofVEFC();
+      int st[] = { 0, nv, nv+ne, nv+ne+nf, int(ndof) };
+      if (x.Width() == 1)  // gemv instead of n x 1 gemm
+        {
+          auto xv = x.Col(0);
+          for (int b = 3; b >= 0; b--)
+            {
+              int first = st[b], last = st[b+1];
+              for (int i = first; i < last; i++)
+                xv(i) *= inv(i,i);
+              if (first > 0 && last > first)
+                xv.Range(first, last) += inv.Rows(first, last).Cols(0, first) * xv.Range(0, first);
+            }
+          return true;
+        }
+
+      for (int b = 3; b >= 0; b--)
+        {
+          int first = st[b], last = st[b+1];
+          for (int i = first; i < last; i++)
+            x.Row(i) *= inv(i,i);
+          if (first > 0 && last > first)
+            x.Rows(first, last) += inv.Rows(first, last).Cols(0, first) * x.Rows(0, first);
+        }
+      return true;
+    }
+
+    bool SolveDualityTrans (SliceMatrix<> x, LocalHeap & lh) const override
+    {
+      if (!dual_inverse) return false;
+      FlatMatrix<> inv(ndof, ndof, GetDualInverse(lh));
+      auto [nv, ne, nf, nc] = GetNDofVEFC();
+      int st[] = { 0, nv, nv+ne, nv+ne+nf, int(ndof) };
+      if (x.Width() == 1)
+        {
+          auto xv = x.Col(0);
+          for (int b = 0; b < 4; b++)
+            {
+              int first = st[b], last = st[b+1];
+              for (int i = first; i < last; i++)
+                xv(i) *= inv(i,i);
+              if (last < ndof && last > first)
+                xv.Range(first, last) += Trans(inv.Rows(last, ndof).Cols(first, last)) * xv.Range(last, ndof);
+            }
+          return true;
+        }
+
+      for (int b = 0; b < 4; b++)
+        {
+          int first = st[b], last = st[b+1];
+          for (int i = first; i < last; i++)
+            x.Row(i) *= inv(i,i);
+          if (last < ndof && last > first)
+            x.Rows(first, last) += Trans(inv.Rows(last, ndof).Cols(first, last)) * x.Rows(last, ndof);
+        }
+      return true;
+    }
+
+  private:
+    double * GetDualInverse (LocalHeap & lh) const
+    {
+      double * pinv = dual_inverse->load (std::memory_order_acquire);
+      if (!pinv)
+        {
+          // columns of D^-1 from the matrix-free solve
+          pinv = new double[ndof*ndof];
+          FlatMatrix<> inv(ndof, ndof, pinv);
+          Vector<> ej(ndof);
+          for (int j = 0; j < ndof; j++)
+            {
+              HeapReset hr(lh);
+              ej = 0.0; ej(j) = 1.0;
+              this->SolveDuality1 (ej, inv.Col(j), lh);
+            }
+          double * expected = nullptr;
+          if (!dual_inverse->compare_exchange_strong (expected, pinv, std::memory_order_acq_rel))
+            {
+              delete [] pinv;
+              pinv = expected;
+            }
+        }
+      return pinv;
     }
   };
 

@@ -83,10 +83,13 @@ namespace ngfem
 
     virtual void Interpolate (const ElementTransformation & trafo, 
                               const class CoefficientFunction & func, SliceMatrix<> coefs,
-                              LocalHeap & lh) const;
+                              LocalHeap & lh, int bonus_intorder = 0) const;
       
-    virtual bool SolveDuality (SliceVector<> rhs, SliceVector<> u, LocalHeap & lh) const { return false; }
-    virtual bool SolveDuality (SliceVector<Complex> rhs, SliceVector<Complex> u, LocalHeap & lh) const { return false; }
+    // x = D^-1 x columnwise; returns false and leaves x untouched if not available
+    // (vectors: x.AsColMatrix(), complex: x.AsRealMatrix(), D is real)
+    virtual bool SolveDuality (SliceMatrix<> x, LocalHeap & lh) const { return false; }
+    // x = D^-T x
+    virtual bool SolveDualityTrans (SliceMatrix<> x, LocalHeap & lh) const { return false; }
     
     virtual list<tuple<string,double>> Timing () const { return list<tuple<string,double>>(); }
   };
@@ -140,7 +143,7 @@ namespace ngfem
 
     virtual void Interpolate (const ElementTransformation & trafo,
                               const class CoefficientFunction & func, SliceMatrix<> coefs,
-                              LocalHeap & lh) const override;
+                              LocalHeap & lh, int bonus_intorder = 0) const override;
 
     virtual void Print (ostream & ost) const override;
   };
@@ -180,11 +183,11 @@ namespace ngfem
 
     virtual void Interpolate (const ElementTransformation & trafo,
                               const class CoefficientFunction & func, SliceMatrix<> coefs,
-                              LocalHeap & lh) const override;
+                              LocalHeap & lh, int bonus_intorder = 0) const override;
   };
 
   // a pair of 2 elements
-  class MixedFiniteElement : public FiniteElement
+  class MixedFiniteElement final : public FiniteElement
   {
     const FiniteElement & fe_trial;
     const FiniteElement & fe_test;
@@ -198,6 +201,13 @@ namespace ngfem
     virtual ELEMENT_TYPE ElementType() const { return fe_trial.ElementType(); }    
     virtual bool ComplexShapes() const { return fe_trial.ComplexShapes() && fe_test.ComplexShapes(); }
   };
+
+  // cheap test, valid since MixedFiniteElement is final
+  inline const MixedFiniteElement * AsMixedFE (const FiniteElement & fel)
+  {
+    return typeid(fel) == typeid(const MixedFiniteElement&)
+      ? static_cast<const MixedFiniteElement*> (&fel) : nullptr;
+  }
 
 
   class NGS_DLL_HEADER SymMatrixFiniteElement : public FiniteElement
@@ -226,7 +236,7 @@ namespace ngfem
 
     virtual void Interpolate (const ElementTransformation & trafo, 
                               const class CoefficientFunction & func, SliceMatrix<> coefs,
-                              LocalHeap & lh) const override; 
+                              LocalHeap & lh, int bonus_intorder = 0) const override; 
   };
 
 
@@ -255,7 +265,7 @@ namespace ngfem
 
     virtual void Interpolate (const ElementTransformation & trafo, 
                               const class CoefficientFunction & func, SliceMatrix<> coefs,
-                              LocalHeap & lh) const override; 
+                              LocalHeap & lh, int bonus_intorder = 0) const override; 
   };
 
 

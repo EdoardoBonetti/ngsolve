@@ -600,6 +600,12 @@ namespace ngbla
         return DoubleSliceMatrix<T> (h, w, w*Dist(), Dist(), Data());
     }
 
+    // as n x 1 matrix
+    INLINE auto AsColMatrix () const
+    {
+      return MatrixView<T,RowMajor,size_t,size_t,size_t> (Size(), 1, Dist(), Data());
+    }
+
     class Iterator
     {
       VectorView vec;
@@ -663,7 +669,7 @@ namespace ngbla
       FlatVector<T>::operator= (v2);
     }
 
-    Vector (Vector && v2)
+    Vector (Vector && v2) noexcept
       : FlatVector<T> (v2.Size(), v2.Data())
     {
       v2.layout = { nullptr, 0 };
@@ -737,7 +743,7 @@ namespace ngbla
       return *this;
     }
 
-    Vector & operator= (Vector && v2)
+    Vector & operator= (Vector && v2) noexcept
     {
       // this->size = v2.size;
       // Swap (this->data, v2.data);
@@ -944,17 +950,14 @@ namespace ngbla
     
     Vec (const Vec &) = default;
     auto & HTData() { return data; }
-    const auto & HTData() const { return data; }                                        
+    constexpr const auto & HTData() const { return data; }                                        
     template <typename T2>
     Vec (const Vec<S,T2> & v2) : data(v2.HTData()) { ; }
 
     
     /// initialize with values
-    INLINE Vec (const TELEM & scal)
-    {
-      for (size_t i = 0; i < S; i++)
-	data[i] = scal;
-    }
+    INLINE constexpr Vec (const TELEM & scal)
+      : data(scal) { }
 
     /// initialize with expression
     template<typename TB>
@@ -1001,7 +1004,7 @@ namespace ngbla
     // template <class... T2,
     // enable_if_t<S==1+sizeof...(T2),bool> = true>
     template <class... T2> requires(S==1+sizeof...(T2))
-    Vec(const TELEM &v, T2... rest)
+    constexpr Vec(const TELEM &v, T2... rest)
       : data(v, rest...) { }
     /*
     {
@@ -1119,9 +1122,9 @@ namespace ngbla
   {
   public:
     static constexpr bool IsLinear() { return true; }     
-    INLINE Vec () { }
-    INLINE Vec (const Vec &d) { }
-    INLINE Vec (T d) { }
+    INLINE constexpr Vec () { }
+    INLINE constexpr Vec (const Vec &d) { }
+    INLINE constexpr Vec (T d) { }
     template<typename TB>
     INLINE Vec (const Expr<TB> & v) {;}
     INLINE auto View() const { return Vec(*this); }

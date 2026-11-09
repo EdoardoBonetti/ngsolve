@@ -642,13 +642,41 @@ namespace ngfem
   void HCurlFiniteElement<D> ::
   Interpolate (const ElementTransformation & trafo,
                const CoefficientFunction & func, SliceMatrix<> coefs,
-               LocalHeap & lh) const
+               LocalHeap & lh, int bonus_intorder) const
   {
     HeapReset hr(lh);
     size_t nd = GetNDof();
     int dimspace = trafo.SpaceDim();
     if (coefs.Width() != 1)
       throw Exception("HCurlFE::Interpolate: only scalar-valued spaces");
+
+    auto [nv,ne,nf,nc] = GetNDofVEFC();
+    int nvefc[] = { nv, ne, nf, nc };
+
+    // moments only, if the element has a stored D^-1
+    try
+      {
+        FlatVector<> rhs(nd, lh);
+        rhs = 0.0;
+        // edges, faces, cell in one rule: the mapping computes measures per facet,
+        // the duals take facet type and measure from the mapped points
+        int mask = 0;
+        for (int k = 1; k <= D; k++)
+          if (nvefc[k]) mask |= 1 << k;
+        auto & rule = GetInterpolationRule (ElementType(), 2*Order()+bonus_intorder, mask, lh);
+        auto & mir = trafo(rule, lh);
+        FlatMatrix<SIMD<double>> fvals(dimspace, mir.Size(), lh);
+        func.Evaluate (mir, fvals);
+        for (size_t j : Range(mir))
+          fvals.Col(j) *= mir[j].GetWeight();
+        AddDualTrans (mir, fvals, rhs);
+        if (SolveDuality (rhs.AsColMatrix(), lh))
+          {
+            coefs.Col(0) = rhs;
+            return;
+          }
+      }
+    catch (const ExceptionNOSIMD &) { ; }
 
     FlatMatrix<> mat(nd, nd, lh);
     FlatVector<> rhs(nd, lh);
@@ -663,12 +691,13 @@ namespace ngfem
     size_t nedge = 0;
     for (int el_vb = D-1; el_vb >= 0; el_vb--)
       {
+        if (!nvefc[D-el_vb]) continue;
         bool isedge = el_vb == D-1;
         Facet2ElementTrafo f2el (ElementType(), VorB(el_vb));
         for (int locfnr : Range(f2el.GetNFacets()))
           {
             HeapReset hr(lh);
-            SIMD_IntegrationRule irfacet(f2el.FacetType(locfnr), 2*Order());
+            SIMD_IntegrationRule irfacet(f2el.FacetType(locfnr), 2*Order()+bonus_intorder);
             auto & irvol = f2el(locfnr, irfacet, lh);
             auto & mir = trafo(irvol, lh);
             size_t np = mir.Size();

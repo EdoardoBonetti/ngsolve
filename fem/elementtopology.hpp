@@ -11,6 +11,7 @@
 
 #include <ngstd.hpp>
 #include <bla.hpp>
+#include <bit>
 
 namespace ngfem
 {
@@ -92,10 +93,10 @@ namespace ngfem
   typedef double POINT3D[3];  
 
   /// initial point, end point
-  typedef int EDGE[2];      
+  typedef IVec<2,int> EDGE;      
 
   /// points, last one is -1 for trig
-  typedef int FACE[4];      
+  typedef IVec<4,int> FACE;      
 
   /// normal vector
   typedef double NORMAL[3];
@@ -198,6 +199,9 @@ namespace ngfem
     /// returns name of element type
     static const char * GetElementName (ELEMENT_TYPE et);
     const char * GetElementName () { return GetElementName(myet); }
+
+    // out of line, keeps the inline table lookups small
+    [[noreturn]] static void ThrowIllegalElementType (const char * func, ELEMENT_TYPE et);
 
     /// returns space dimension of element type
     static INLINE int GetSpaceDim (ELEMENT_TYPE et)
@@ -314,15 +318,15 @@ namespace ngfem
     /// returns number of nodes of type nt
     static int GetNNodes (ELEMENT_TYPE et, NODE_TYPE nt)
     {
-      static const int nn_point[] = { 1, 0, 0, 0 };
-      static const int nn_segm[] = { 2, 1, 0, 0 };
-      static const int nn_trig[] = { 3, 3, 1, 0 };
-      static const int nn_quad[] = { 4, 4, 1, 0 };
-      static const int nn_tet[] = { 4, 6, 4, 1 };
-      static const int nn_pyramid[] = { 5, 8, 5, 1 };
-      static const int nn_prism[] = { 6, 9, 5, 1 };
-      static const int nn_hexamid[] = { 7, 11, 6, 1 };
-      static const int nn_hex[] = { 8, 12, 6, 1 };
+      static constexpr int nn_point[] = { 1, 0, 0, 0 };
+      static constexpr int nn_segm[] = { 2, 1, 0, 0 };
+      static constexpr int nn_trig[] = { 3, 3, 1, 0 };
+      static constexpr int nn_quad[] = { 4, 4, 1, 0 };
+      static constexpr int nn_tet[] = { 4, 6, 4, 1 };
+      static constexpr int nn_pyramid[] = { 5, 8, 5, 1 };
+      static constexpr int nn_prism[] = { 6, 9, 5, 1 };
+      static constexpr int nn_hexamid[] = { 7, 11, 6, 1 };
+      static constexpr int nn_hex[] = { 8, 12, 6, 1 };
       switch (et)
 	{
 	case ET_POINT: return nn_point[nt];
@@ -384,190 +388,66 @@ namespace ngfem
     }
 
     /// returns vertex coordinates (as 3D points)
-    static  const POINT3D * GetVertices (ELEMENT_TYPE et);
+    static const POINT3D * GetVertices (ELEMENT_TYPE et)
+    {
+      static constexpr double point_points[][3] =
+        { { 0, 0, 0 } };
+
+      static constexpr double segm_points [][3] =
+        { { 1 },
+          { 0 } };
+
+      static constexpr double trig_points [][3] =
+        { { 1, 0 },
+          { 0, 1 },
+          { 0, 0 } };
+
+      static constexpr double quad_points [][3] =
+        { { 0, 0 },
+          { 1, 0 },
+          { 1, 1 },
+          { 0, 1 } };
+
+      switch (et)
+        {
+        case ET_POINT: return point_points;
+        case ET_SEGM: return segm_points;
+        case ET_TRIG: return trig_points;
+        case ET_QUAD: return quad_points;
+        case ET_TET: case ET_PYRAMID: case ET_PRISM: case ET_HEXAMID: case ET_HEX:
+          static_assert (sizeof(Vec<3>) == sizeof(POINT3D));
+          return reinterpret_cast<const POINT3D*> (GetVertices<3>(et).Data());
+        default:
+          ThrowIllegalElementType ("GetVertices", et);
+        }
+    }
+
+    /// returns vertex coordinates as Vec<D>, D = Dim(et)
+    template <int D>
+    static FlatVector<Vec<D>> GetVertices (ELEMENT_TYPE et);
+
     INLINE const POINT3D * GetVertices () const
     { return GetVertices(myet); }
 
     /// returns edges of elements. zero-based pairs of integers
-    // static const EDGE * GetEdges (ELEMENT_TYPE et)
-    static FlatArray<const EDGE> GetEdges (ELEMENT_TYPE et)
-    {
-      static const int segm_edges[1][2] =
-	{ { 0, 1 }};
-    
-
-      static const int trig_edges[3][2] =
-	{ { 2, 0 },
-	  { 1, 2 },
-	  { 0, 1 }};
-
-      static const int quad_edges[4][2] =
-	{ { 0, 1 },
-	  { 2, 3 },
-	  { 3, 0 },
-	  { 1, 2 }};
-    
-      static const int tet_edges[6][2] =
-	{ { 3, 0 },
-	  { 3, 1 },
-	  { 3, 2 }, 
-	  { 0, 1 }, 
-	  { 0, 2 },
-	  { 1, 2 }};
-    
-      static const int prism_edges[9][2] =
-	{ { 2, 0 },
-	  { 0, 1 },
-	  { 2, 1 },
-	  { 5, 3 },
-	  { 3, 4 },
-	  { 5, 4 },
-	  { 2, 5 },
-	  { 0, 3 },
-	  { 1, 4 }};
-
-      static const int pyramid_edges[8][2] =
-	{ { 0, 1 },
-	  { 1, 2 },
-	  { 0, 3 },
-	  { 3, 2 },
-	  { 0, 4 },
-	  { 1, 4 },
-	  { 2, 4 },
-	  { 3, 4 }};
-
-      static const int hexamid_edges[11][2] =
-        {
-          { 0, 1 },
-          { 2, 3 },
-          { 3, 0 },
-          { 1, 2 },
-          { 4, 5 },
-          { 6, 4 },
-          { 5, 6 },
-          { 0, 4 },
-          { 1, 5 },
-          { 2, 6 },
-          { 3, 6 },
-        };
-
-      
-      static const int hex_edges[12][2] =
-	{
-	  { 0, 1 },
-	  { 2, 3 },
-	  { 3, 0 },
-	  { 1, 2 },
-	  { 4, 5 },
-	  { 6, 7 },
-	  { 7, 4 },
-	  { 5, 6 },
-	  { 0, 4 },
-	  { 1, 5 },
-	  { 2, 6 },
-	  { 3, 7 },
-	};
-    
-      switch (et)
-	{
-        case ET_POINT: return { 0, nullptr };
-	case ET_SEGM: return { 1, segm_edges };
-	case ET_TRIG: return { 3, trig_edges };
-	case ET_QUAD: return { 4, quad_edges };
-	case ET_TET:  return { 6, tet_edges };
-	case ET_PYRAMID: return { 8, pyramid_edges };
-	case ET_PRISM: return { 9, prism_edges };
-	case ET_HEXAMID: return { 11, hexamid_edges };
-	case ET_HEX: return { 12, hex_edges };
-	default:
-	  break;
-	}
-      cerr << "Ng_GetEdges, illegal element type " << et << endl;
-      return { 0, nullptr };  
-    }
+    static FlatArray<const EDGE> GetEdges (ELEMENT_TYPE et);
 
     /// returns faces of elements. zero-based array of 4 integers, last one is -1 for triangles
-    static FlatArray<const FACE> GetFaces (ELEMENT_TYPE et)
-    {
-      static int tet_faces[4][4] =
-	{ { 3, 1, 2, -1 },
-	  { 3, 2, 0, -1 },
-	  { 3, 0, 1, -1 },
-	  { 0, 2, 1, -1 } }; // all faces point into interior!
-  
-      static int prism_faces[5][4] =
-	{
-	  { 0, 2, 1, -1 },
-	  { 3, 4, 5, -1 },
-	  { 2, 0, 3, 5 },
-	  { 0, 1, 4, 3 },
-	  { 1, 2, 5, 4 } 
-	};
-
-      static int pyramid_faces[5][4] =
-	{
-	  { 0, 1, 4, -1 },
-	  { 1, 2, 4, -1 },
-	  { 2, 3, 4, -1 },
-	  { 3, 0, 4, -1 },
-	  { 0, 1, 2, 3 } // points into interior!
-	};
-  
-      static int hexamid_faces[6][4] =
-	{
-          { 0, 3, 2, 1 },
-          { 4, 5, 6, -1},
-          { 0, 1, 5, 4 },
-          { 1, 2, 6, 5 },
-          { 2, 3, 6, -1},
-          { 3, 0, 4, 6 }
-	};
-    
-      static int hex_faces[6][4] =
-	{
-	  { 0, 3, 2, 1 },
-	  { 4, 5, 6, 7 },
-	  { 0, 1, 5, 4 },
-	  { 1, 2, 6, 5 },
-	  { 2, 3, 7, 6 },
-	  { 3, 0, 4, 7 }
-	};
-      static int trig_faces[1][4] = 
-	{
-	  { 0, 1, 2, -1 },
-	};
-      
-      static int quad_faces[1][4] = 
-	{
-	  { 0, 1, 2, 3 },
-	};
-    
-      switch (et)
-	{
-	case ET_TET: return { 4, tet_faces };
-	case ET_PRISM: return { 5, prism_faces };
-	case ET_PYRAMID: return { 5, pyramid_faces };
-	case ET_HEXAMID: return { 6, hexamid_faces };
-	case ET_HEX: return { 6, hex_faces }; 
-
-	case ET_TRIG: return { 1, trig_faces };
-	case ET_QUAD: return { 1, quad_faces };
-        
-	case ET_SEGM: return { 0, nullptr };
-        case ET_POINT: return { 0, nullptr };  
-	default:
-	  break;
-	}
-    
-      cerr << "Ng_GetFaces, illegal element type " << et << endl;
-      return { 0, nullptr };
-    }
+    static FlatArray<const FACE> GetFaces (ELEMENT_TYPE et);
 
     /// return normals on facets (old style)
     static NORMAL * GetNormals(ELEMENT_TYPE et);
 
+    // length of normal:
+    //  in 2d:  length of edge (sum of intweights = 1)
+    //  in 3d:  area of parallelogramm (sum of intweights = 1(quad), 1/2 trig)
+    // this is property is preserved by piola transformation: n = det(F) * F^(-T) n_ref
     template <int D>
     static FlatVector<Vec<D> > GetNormals(ELEMENT_TYPE et);
+
+    /// Cof(J) * reference normal of facet facetnr, not normalized
+    template <int D, typename T>
+    static Vec<D,T> GetPhysicalNormal (ELEMENT_TYPE et, int facetnr, const Mat<D,D,T> & J);
 
   
     /// returns number of edge from vertex v1 to vertex v2
@@ -656,13 +536,13 @@ namespace ngfem
       {
       case ET_TRIG: 
 	{
-	  static const int nodebase[] = { 0, 3, 6 };
+	  static constexpr int nodebase[] = { 0, 3, 6 };
 	  return nodebase[node.GetType()] + node.GetNr();
 	}
 
       case ET_TET: 
 	{
-	  static const int nodebase[] = { 0, 4, 10, 14 };
+	  static constexpr int nodebase[] = { 0, 4, 10, 14 };
 	  return nodebase[node.GetType()] + node.GetNr();
 	}
       default:
@@ -677,14 +557,14 @@ namespace ngfem
       {
       case ET_TRIG: 
 	{
-	  static const int nodetypes[] = { 0, 0, 0, 1, 1, 1, 2 };
-	  static const int nodenrs[]   = { 0, 1, 2, 0, 1, 2, 0 };
+	  static constexpr int nodetypes[] = { 0, 0, 0, 1, 1, 1, 2 };
+	  static constexpr int nodenrs[]   = { 0, 1, 2, 0, 1, 2, 0 };
 	  return NodeId (NODE_TYPE(nodetypes[nodeid]), nodenrs[nodeid]);
 	}
       case ET_TET: 
 	{
-	  static const int nodetypes[] = { 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3 };
-	  static const int nodenrs[]   = { 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 0 };
+	  static constexpr int nodetypes[] = { 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3 };
+	  static constexpr int nodenrs[]   = { 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 0 };
 	  return NodeId (NODE_TYPE(nodetypes[nodeid]), nodenrs[nodeid]);
 	}
 
@@ -812,6 +692,11 @@ namespace ngfem
     static constexpr int N_CELL = 0;
     static constexpr int N_FACET = 0;
 
+    static constexpr std::array<Vec<DIM>,N_VERTEX> vertices = { { Vec<0>() } };
+    static constexpr std::array<EDGE,N_EDGE> edges = { };
+    static constexpr std::array<FACE,N_FACE> faces = { };
+    static constexpr std::array<Vec<DIM>,N_FACET> normals = { };
+
     static constexpr ELEMENT_TYPE ElementType() { return ET_POINT; }
     constexpr operator ELEMENT_TYPE() const { return ET_POINT; }
     
@@ -827,7 +712,7 @@ namespace ngfem
     static INLINE IVec<2> GetEdge (int /* i */);
     /*
     {
-      static const int edges[][2] = 
+      static constexpr int edges[][2] = 
 	{ { 0, 1 } };
       return IVec<2> (edges[0][0], edges[0][1]);
     }
@@ -887,6 +772,11 @@ namespace ngfem
     static constexpr int N_FACE = 0;
     static constexpr int N_CELL = 0;
     static constexpr int N_FACET = 2;
+
+    static constexpr std::array<Vec<DIM>,N_VERTEX> vertices = { { { 1 }, { 0 } } };
+    static constexpr std::array<EDGE,N_EDGE> edges = { { { 0, 1 } } };
+    static constexpr std::array<FACE,N_FACE> faces = { };
+    static constexpr std::array<Vec<DIM>,N_FACET> normals = { { { 1 }, { -1 } } };
     
     static constexpr ELEMENT_TYPE ElementType() { return ET_SEGM; }
     constexpr operator ELEMENT_TYPE() const { return ET_SEGM; }
@@ -899,11 +789,7 @@ namespace ngfem
     static INLINE ELEMENT_TYPE FaceType(int i) { return ET_TRIG; }
 
     static INLINE IVec<2> GetEdge (int /* i */)
-    {
-      const int edges[][2] = 
-	{ { 0, 1 } };
-      return IVec<2> (edges[0][0], edges[0][1]);
-    }
+    { return edges[0]; }
 
     template <typename TVN>
     static inline IVec<2> GetEdgeSort (int i, const TVN & vnums)
@@ -950,6 +836,20 @@ namespace ngfem
     static constexpr int N_FACE = 1;
     static constexpr int N_CELL = 0;
     static constexpr int N_FACET = 3;
+
+    static constexpr std::array<Vec<DIM>,N_VERTEX> vertices =
+      { { { 1, 0 },
+          { 0, 1 },
+          { 0, 0 } } };
+    static constexpr std::array<EDGE,N_EDGE> edges =
+      { { { 2, 0 },
+          { 1, 2 },
+          { 0, 1 } } };
+    static constexpr std::array<FACE,N_FACE> faces = { { { 0, 1, 2, -1 } } };
+    static constexpr std::array<Vec<DIM>,N_FACET> normals =
+      { { { 0, -1 },
+          { -1, 0 },
+          { 1, 1 } } };
     
     static constexpr ELEMENT_TYPE ElementType() { return ET_TRIG; }
     constexpr operator ELEMENT_TYPE() const { return ET_TRIG; }
@@ -965,17 +865,9 @@ namespace ngfem
     { lam[0] = x[0]; lam[1] = x[1], lam[2] = 1-x[0]-x[1]; }
 
     
-    // static constexpr IVec<2> edges[3] = { { 2, 0 }, { 1, 2 }, { 0, 1 } };
-    static constexpr array<IVec<2>,3> edges = { IVec<2>{ 2, 0 }, IVec<2>{ 1, 2 }, IVec<2>{ 0, 1 } };
     
     static constexpr IVec<2> GetEdge (int i)
-    {
-      constexpr IVec<2> edges[] =
-        { { 2, 0 },
-	  { 1, 2 },
-	  { 0, 1 } };
-      return edges[i];
-    }
+    { return edges[i]; }
 
     template <typename TVN>
     static inline IVec<2> GetEdgeSort (int i, const TVN & vnums)
@@ -987,10 +879,7 @@ namespace ngfem
 
 
     static INLINE IVec<4> GetFace (int /* i */ )
-    {
-      static const int face[] = { 0, 1, 2, -1 };
-      return IVec<4> (face[0], face[1], face[2], -1);
-    }
+    { return faces[0]; }
 
     template <typename TVN>
     static inline IVec<4> GetFaceSort (int /*  i */ , const TVN & vnums)
@@ -1047,6 +936,23 @@ namespace ngfem
     static constexpr int N_CELL = 0;
     static constexpr int N_FACET = 4;
 
+    static constexpr std::array<Vec<DIM>,N_VERTEX> vertices =
+      { { { 0, 0 },
+          { 1, 0 },
+          { 1, 1 },
+          { 0, 1 } } };
+    static constexpr std::array<EDGE,N_EDGE> edges =
+      { { { 0, 1 },
+          { 2, 3 },
+          { 3, 0 },
+          { 1, 2 } } };
+    static constexpr std::array<FACE,N_FACE> faces = { { { 0, 1, 2, 3 } } };
+    static constexpr std::array<Vec<DIM>,N_FACET> normals =
+      { { { 0, -1 },
+          { 0, 1 },
+          { -1, 0 },
+          { 1, 0 } } };
+
     static constexpr ELEMENT_TYPE ElementType() { return ET_QUAD; }
     constexpr operator ELEMENT_TYPE() const { return ET_QUAD; }
     
@@ -1061,14 +967,7 @@ namespace ngfem
 
 
     static INLINE IVec<2> GetEdge (int i)
-    {
-      static const int edges[][2] = 
-	{ { 0, 1 },
-	  { 2, 3 },
-	  { 3, 0 },
-	  { 1, 2 }};
-      return IVec<2> (edges[i][0], edges[i][1]);
-    }
+    { return edges[i]; }
 
     template <typename TVN>
     static inline IVec<2> GetEdgeSort (int i, const TVN & vnums)
@@ -1083,7 +982,7 @@ namespace ngfem
     static INLINE Tx XiEdge (int i, Tx hx[], const TVN & vnums)
     {
       IVec<2> e = GetEdgeSort (i, vnums);
-      static const int vi[4][2] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
+      static constexpr int vi[4][2] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
       Tx xi(0.0);
       for (int j = 0; j < 2; j++)
         {
@@ -1108,12 +1007,7 @@ namespace ngfem
  
 
     static INLINE IVec<4> GetFace (int /* i */ )
-    {
-      static const int face[] = 
-        { 0, 1, 2, 3 };
-
-      return IVec<4> (face[0], face[1], face[2], face[3]);
-    }
+    { return faces[0]; }
 
     template <typename TVN>
     static inline IVec<4> GetFaceSort (int /*  i */ , const TVN & vnums)
@@ -1142,7 +1036,7 @@ namespace ngfem
     static INLINE Vec<2,Tx> XiFace (int /* i */, Tx hx[], const TVN & vnums)
     {
       IVec<4> f = GetFaceSort (0, vnums); 
-      static const int vi[4][2] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
+      static constexpr int vi[4][2] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
       Tx xi(0), eta(0);
       for (int j = 0; j < 2; j++)
         {
@@ -1193,6 +1087,29 @@ namespace ngfem
     static constexpr int N_CELL = 1;
     static constexpr int N_FACET = 4;
 
+    static constexpr std::array<Vec<DIM>,N_VERTEX> vertices =
+      { { { 1, 0, 0 },
+          { 0, 1, 0 },
+          { 0, 0, 1 },
+          { 0, 0, 0 } } };
+    static constexpr std::array<EDGE,N_EDGE> edges =
+      { { { 3, 0 },
+          { 3, 1 },
+          { 3, 2 },
+          { 0, 1 },
+          { 0, 2 },
+          { 1, 2 } } };
+    static constexpr std::array<FACE,N_FACE> faces =
+      { { { 3, 1, 2, -1 },
+          { 3, 2, 0, -1 },
+          { 3, 0, 1, -1 },
+          { 0, 2, 1, -1 } } };
+    static constexpr std::array<Vec<DIM>,N_FACET> normals =
+      { { { -1, 0, 0 },
+          { 0, -1, 0 },
+          { 0, 0, -1 },
+          { 1, 1, 1 } } };
+
     static constexpr ELEMENT_TYPE ElementType() { return ET_TET; }
     constexpr operator ELEMENT_TYPE() const { return ET_TET; }
     
@@ -1204,16 +1121,7 @@ namespace ngfem
     static INLINE ELEMENT_TYPE FaceType(int i) { return ET_TRIG; }
 
     static INLINE IVec<2> GetEdge (int i)
-    {
-      static const int edges[6][2] = 
-	{ { 3, 0 },
-	  { 3, 1 },
-	  { 3, 2 }, 
-	  { 0, 1 }, 
-	  { 0, 2 },
-	  { 1, 2 }};
-      return IVec<2> (edges[i][0], edges[i][1]);
-    }
+    { return edges[i]; }
 
     template <typename TVN>
     static inline IVec<2> GetEdgeSort (int i, const TVN & vnums)
@@ -1225,15 +1133,7 @@ namespace ngfem
 
 
     static INLINE IVec<4> GetFace (int i )
-    {
-      static const int faces[][4]  =
-	{ { 3, 1, 2, -1 },
-	  { 3, 2, 0, -1 },
-	  { 3, 0, 1, -1 },
-	  { 0, 2, 1, -1 } }; 
-
-      return IVec<4> (faces[i][0], faces[i][1], faces[i][2], -1);
-    }
+    { return faces[i]; }
 
     template <typename TVN>
     static inline IVec<4> GetFaceSort (int i, const TVN & vnums)
@@ -1293,6 +1193,36 @@ namespace ngfem
     static constexpr int N_CELL = 1;
     static constexpr int N_FACET = 5;
 
+    static constexpr std::array<Vec<DIM>,N_VERTEX> vertices =
+      { { { 1, 0, 0 },
+          { 0, 1, 0 },
+          { 0, 0, 0 },
+          { 1, 0, 1 },
+          { 0, 1, 1 },
+          { 0, 0, 1 } } };
+    static constexpr std::array<EDGE,N_EDGE> edges =
+      { { { 2, 0 },
+          { 0, 1 },
+          { 2, 1 },
+          { 5, 3 },
+          { 3, 4 },
+          { 5, 4 },
+          { 2, 5 },
+          { 0, 3 },
+          { 1, 4 } } };
+    static constexpr std::array<FACE,N_FACE> faces =
+      { { { 0, 2, 1, -1 },
+          { 3, 4, 5, -1 },
+          { 2, 0, 3, 5 },
+          { 0, 1, 4, 3 },
+          { 1, 2, 5, 4 } } };
+    static constexpr std::array<Vec<DIM>,N_FACET> normals =
+      { { { 0, 0, -1 },
+          { 0, 0, 1 },
+          { 0, -1, 0 },
+          { 1, 1, 0 },
+          { -1, 0, 0 } } };
+
     static constexpr ELEMENT_TYPE ElementType() { return ET_PRISM; }
     constexpr operator ELEMENT_TYPE() const { return ET_PRISM; }
     
@@ -1305,22 +1235,7 @@ namespace ngfem
 
 
     static INLINE IVec<2> GetEdge (int i)
-    {
-#ifndef __CUDA_ARCH__
-      static 
-#endif
-	const int edges[][2] = 
-	{ { 2, 0 },
-	  { 0, 1 },
-	  { 2, 1 },
-	  { 5, 3 },
-	  { 3, 4 },
-	  { 5, 4 },
-	  { 2, 5 },
-	  { 0, 3 },
-	  { 1, 4 }};
-      return IVec<2> (edges[i][0], edges[i][1]);
-    }
+    { return edges[i]; }
 
     template <typename TVN>
     static inline IVec<2> GetEdgeSort (int i, const TVN & vnums)
@@ -1332,21 +1247,7 @@ namespace ngfem
 
 
     static INLINE IVec<4> GetFace (int i )
-    {
-#ifndef __CUDA_ARCH__
-      static 
-#endif
-	const int faces[][4]  =
-	{
-	  { 0, 2, 1, -1 },
-	  { 3, 4, 5, -1 },
-	  { 2, 0, 3, 5 },
-	  { 0, 1, 4, 3 },
-	  { 1, 2, 5, 4 } 
-	};
-
-      return IVec<4> (faces[i][0], faces[i][1], faces[i][2], faces[i][3]);
-    }
+    { return faces[i]; }
 
     template <typename TVN>
     static inline IVec<4> GetFaceSort (int i, const TVN & vnums)
@@ -1404,6 +1305,34 @@ namespace ngfem
     static constexpr int N_CELL = 1;
     static constexpr int N_FACET = 5;
 
+    static constexpr std::array<Vec<DIM>,N_VERTEX> vertices =
+      { { { 0, 0, 0 },
+          { 1, 0, 0 },
+          { 1, 1, 0 },
+          { 0, 1, 0 },
+          { 0, 0, 1-1e-12 } } };
+    static constexpr std::array<EDGE,N_EDGE> edges =
+      { { { 0, 1 },
+          { 1, 2 },
+          { 0, 3 },
+          { 3, 2 },
+          { 0, 4 },
+          { 1, 4 },
+          { 2, 4 },
+          { 3, 4 } } };
+    static constexpr std::array<FACE,N_FACE> faces =
+      { { { 0, 1, 4, -1 },
+          { 1, 2, 4, -1 },
+          { 2, 3, 4, -1 },
+          { 3, 0, 4, -1 },
+          { 0, 1, 2, 3 } } };
+    static constexpr std::array<Vec<DIM>,N_FACET> normals =
+      { { { 0, -1, 0 },
+          { 1, 0, 1 },
+          { 0, 1, 1 },
+          { -1, 0, 0 },
+          { 0, 0, -1 } } };
+
     static constexpr ELEMENT_TYPE ElementType() { return ET_PYRAMID; }
     constexpr operator ELEMENT_TYPE() const { return ET_PYRAMID; }
     
@@ -1415,22 +1344,7 @@ namespace ngfem
     static INLINE int PolBubbleDimension (IVec<3> p) { return (p[0] <= 2) ? 0 :  (p[0]-1)*(p[0]-2)*(2*p[0]-3)/6; }
 
     static INLINE IVec<2> GetEdge (int i)
-    {
-#ifndef __CUDA_ARCH__
-      static 
-#endif
-	const int edges[][2] = 
-	{ { 0, 1 },
-	  { 1, 2 },
-	  { 0, 3 },
-	  { 3, 2 },
-	  { 0, 4 },
-	  { 1, 4 },
-	  { 2, 4 },
-	  { 3, 4 }};
-
-      return IVec<2> (edges[i][0], edges[i][1]);
-    }
+    { return edges[i]; }
 
     template <typename TVN>
     static inline IVec<2> GetEdgeSort (int i, const TVN & vnums)
@@ -1443,21 +1357,7 @@ namespace ngfem
 
 
     static INLINE IVec<4> GetFace (int i )
-    {
-#ifndef __CUDA_ARCH__
-      static 
-#endif
-	const int faces[][4]  =
-	{
-	  { 0, 1, 4, -1 },
-	  { 1, 2, 4, -1 },
-	  { 2, 3, 4, -1 },
-	  { 3, 0, 4, -1 },
-	  { 0, 3, 2, 1 } 
-	};
-
-      return IVec<4> (faces[i][0], faces[i][1], faces[i][2], faces[i][3]);
-    }
+    { return faces[i]; }
 
     template <typename TVN>
     static inline IVec<4> GetFaceSort (int i, const TVN & vnums)
@@ -1512,6 +1412,34 @@ namespace ngfem
     static constexpr int N_CELL = 1;
     static constexpr int N_FACET = 6;
 
+    static constexpr std::array<Vec<DIM>,N_VERTEX> vertices =
+      { { { 0, 0, 0 },
+          { 1, 0, 0 },
+          { 1, 1, 0 },
+          { 0, 1, 0 },
+          { 0, 0, 1 },
+          { 1, 0, 1 },
+          { 0, 1, 1 } } };
+    static constexpr std::array<EDGE,N_EDGE> edges =
+      { { { 0, 1 },
+          { 2, 3 },
+          { 3, 0 },
+          { 1, 2 },
+          { 4, 5 },
+          { 6, 4 },
+          { 5, 6 },
+          { 0, 4 },
+          { 1, 5 },
+          { 2, 6 },
+          { 3, 6 } } };
+    static constexpr std::array<FACE,N_FACE> faces =
+      { { { 0, 3, 2, 1 },
+          { 4, 5, 6, -1 },
+          { 0, 1, 5, 4 },
+          { 1, 2, 6, 5 },
+          { 2, 3, 6, -1 },
+          { 3, 0, 4, 6 } } };
+
     static constexpr ELEMENT_TYPE ElementType() { return ET_HEXAMID; }
     constexpr operator ELEMENT_TYPE() const { return ET_HEXAMID; }
     
@@ -1528,26 +1456,7 @@ namespace ngfem
     static INLINE int PolBubbleDimension (IVec<3> p) { return (p[0] < 2) ? 0 :  (p[0]-1)*(p[0]-1)*(p[0]-1); }
 
     static INLINE IVec<2> GetEdge (int i)
-    {
-#ifndef __CUDA_ARCH__
-      static 
-#endif
-	const int edges[][2] = 
-	{
-          { 0, 1 },
-          { 2, 3 },
-          { 3, 0 },
-          { 1, 2 },
-          { 4, 5 },
-          { 6, 4 },
-          { 5, 6 },
-          { 0, 4 },
-          { 1, 5 },
-          { 2, 6 },
-          { 3, 6 },
-        };
-      return IVec<2> (edges[i][0], edges[i][1]);
-    }
+    { return edges[i]; }
 
     template <typename TVN>
     static inline IVec<2> GetEdgeSort (int i, const TVN & vnums)
@@ -1560,22 +1469,7 @@ namespace ngfem
 
 
     static INLINE IVec<4> GetFace (int i )
-    {
-#ifndef __CUDA_ARCH__
-      static 
-#endif
-	const int faces[][4]  =
-	{
-          { 0, 3, 2, 1 },
-          { 4, 5, 6, -1},
-          { 0, 1, 5, 4 },
-          { 1, 2, 6, 5 },
-          { 2, 3, 6, -1},
-          { 3, 0, 4, 6 }
-	};
-
-      return IVec<4> (faces[i][0], faces[i][1], faces[i][2], faces[i][3]);
-    }
+    { return faces[i]; }
 
     // TODO
     template <typename TVN>
@@ -1633,6 +1527,43 @@ namespace ngfem
     static constexpr int N_CELL = 1;
     static constexpr int N_FACET = 6;
 
+    static constexpr std::array<Vec<DIM>,N_VERTEX> vertices =
+      { { { 0, 0, 0 },
+          { 1, 0, 0 },
+          { 1, 1, 0 },
+          { 0, 1, 0 },
+          { 0, 0, 1 },
+          { 1, 0, 1 },
+          { 1, 1, 1 },
+          { 0, 1, 1 } } };
+    static constexpr std::array<EDGE,N_EDGE> edges =
+      { { { 0, 1 },
+          { 2, 3 },
+          { 3, 0 },
+          { 1, 2 },
+          { 4, 5 },
+          { 6, 7 },
+          { 7, 4 },
+          { 5, 6 },
+          { 0, 4 },
+          { 1, 5 },
+          { 2, 6 },
+          { 3, 7 } } };
+    static constexpr std::array<FACE,N_FACE> faces =
+      { { { 0, 3, 2, 1 },
+          { 4, 5, 6, 7 },
+          { 0, 1, 5, 4 },
+          { 1, 2, 6, 5 },
+          { 2, 3, 7, 6 },
+          { 3, 0, 4, 7 } } };
+    static constexpr std::array<Vec<DIM>,N_FACET> normals =
+      { { { 0, 0, -1 },
+          { 0, 0, 1 },
+          { 0, -1, 0 },
+          { 1, 0, 0 },
+          { 0, 1, 0 },
+          { -1, 0, 0 } } };
+
     static constexpr ELEMENT_TYPE ElementType() { return ET_HEX; }
     constexpr operator ELEMENT_TYPE() const { return ET_HEX; }
     
@@ -1644,24 +1575,7 @@ namespace ngfem
     static inline int PolBubbleDimension (IVec<3> p) { return (p[0] <= 1) ? 0 : (p[0]-1)*(p[1]-1)*(p[2]-1); }
 
     static IVec<2> GetEdge (int i)
-    {
-      static const int edges[][2] = 
-	{
-	  { 0, 1 },
-	  { 2, 3 },
-	  { 3, 0 },
-	  { 1, 2 },
-	  { 4, 5 },
-	  { 6, 7 },
-	  { 7, 4 },
-	  { 5, 6 },
-	  { 0, 4 },
-	  { 1, 5 },
-	  { 2, 6 },
-	  { 3, 7 },
-	};
-      return IVec<2> (edges[i][0], edges[i][1]);
-    }
+    { return edges[i]; }
 
     template <typename TVN>
     static IVec<2> GetEdgeSort (int i, const TVN & vnums)
@@ -1673,19 +1587,7 @@ namespace ngfem
 
 
     static IVec<4> GetFace (int i )
-    {
-      static const int faces[][4]  =
-	{
-	  { 0, 3, 2, 1 },
-	  { 4, 5, 6, 7 },
-	  { 0, 1, 5, 4 },
-	  { 1, 2, 6, 5 },
-	  { 2, 3, 7, 6 },
-	  { 3, 0, 4, 7 }
-	};
-
-      return IVec<4> (faces[i][0], faces[i][1], faces[i][2], faces[i][3]);
-    }
+    { return faces[i]; }
 
 
     template <typename TVN>
@@ -1735,6 +1637,7 @@ namespace ngfem
     }
 
   };
+
 
   
   template <typename T>
@@ -1806,6 +1709,209 @@ namespace ngfem
     else
       return SwitchET<ET2,ET_REST...>(et,f);
   }
+
+  // ElementTopology tables are views of the ET_trait tables
+  // calls f(ET_trait<et>()), returns false for an illegal et
+  template <typename FUNC>
+  INLINE bool ETTableSwitch (ELEMENT_TYPE et, FUNC f)
+  {
+    switch (et)
+      {
+      case ET_POINT:   f(ET_trait<ET_POINT>()); return true;
+      case ET_SEGM:    f(ET_trait<ET_SEGM>()); return true;
+      case ET_TRIG:    f(ET_trait<ET_TRIG>()); return true;
+      case ET_QUAD:    f(ET_trait<ET_QUAD>()); return true;
+      case ET_TET:     f(ET_trait<ET_TET>()); return true;
+      case ET_PRISM:   f(ET_trait<ET_PRISM>()); return true;
+      case ET_PYRAMID: f(ET_trait<ET_PYRAMID>()); return true;
+      case ET_HEXAMID: f(ET_trait<ET_HEXAMID>()); return true;
+      case ET_HEX:     f(ET_trait<ET_HEX>()); return true;
+      default: return false;
+      }
+  }
+
+  template <int D>
+  inline FlatVector<Vec<D>> ElementTopology :: GetVertices (ELEMENT_TYPE et)
+  {
+    const Vec<D> * p = nullptr;
+    size_t n = 0;
+    ETTableSwitch (et, [&] (auto trait)
+      {
+        using T = decltype(trait);
+        if constexpr (T::DIM == D)
+          { p = T::vertices.data(); n = T::vertices.size(); }
+      });
+    if (!p) ThrowIllegalElementType ("GetVertices", et);
+    return FlatVector<Vec<D>> (n, const_cast<Vec<D>*>(p));
+  }
+
+  inline FlatArray<const EDGE> ElementTopology :: GetEdges (ELEMENT_TYPE et)
+  {
+    const EDGE * p = nullptr;
+    size_t n = 0;
+    if (!ETTableSwitch (et, [&] (auto trait)
+      {
+        using T = decltype(trait);
+        p = T::edges.data(); n = T::edges.size();
+      }))
+      ThrowIllegalElementType ("GetEdges", et);
+    return FlatArray<const EDGE> (n, p);
+  }
+
+  inline FlatArray<const FACE> ElementTopology :: GetFaces (ELEMENT_TYPE et)
+  {
+    const FACE * p = nullptr;
+    size_t n = 0;
+    if (!ETTableSwitch (et, [&] (auto trait)
+      {
+        using T = decltype(trait);
+        p = T::faces.data(); n = T::faces.size();
+      }))
+      ThrowIllegalElementType ("GetFaces", et);
+    return FlatArray<const FACE> (n, p);
+  }
+
+  template <int D>
+  inline FlatVector<Vec<D>> ElementTopology :: GetNormals (ELEMENT_TYPE et)
+  {
+    const Vec<D> * p = nullptr;
+    size_t n = 0;
+    bool found = false;
+    ETTableSwitch (et, [&] (auto trait)
+      {
+        using T = decltype(trait);
+        if constexpr (T::DIM == D && requires { T::normals; })
+          { p = T::normals.data(); n = T::normals.size(); found = true; }
+      });
+    if (!found) ThrowIllegalElementType ("GetNormals", et);
+    return FlatVector<Vec<D>> (n, const_cast<Vec<D>*>(p));
+  }
+
+
+  // compile-time vertex coordinates of the reference element
+  template <ELEMENT_TYPE ET, int V>
+  constexpr auto RefVertexCoords ()
+  {
+    constexpr int D = ET_trait<ET>::DIM;
+    return std::bit_cast<std::array<double,D>> (ET_trait<ET>::vertices[V].HTData());
+  }
+
+  // J * (p_V1 - p_V0), as combination of columns of J
+  template <ELEMENT_TYPE ET, int V0, int V1, int D, typename T>
+  INLINE Vec<D,T> MapRefTangent (const Mat<D,D,T> & J)
+  {
+    constexpr auto p0 = RefVertexCoords<ET,V0>();
+    constexpr auto p1 = RefVertexCoords<ET,V1>();
+    Vec<D,T> res;
+    bool first = true;
+    Iterate<D> ([&] (auto j)
+      {
+        constexpr int jj = decltype(j)::value;
+        constexpr double t = p1[jj]-p0[jj];
+        if constexpr (t != 0)
+          {
+            Vec<D,T> col = J.Col(jj);
+            Vec<D,T> term;
+            if constexpr (t == 1) term = col;
+            else if constexpr (t == -1) term = -col;
+            else term = t * col;
+            if (first) res = term; else res += term;
+            first = false;
+          }
+      });
+    return res;
+  }
+
+  // sigma with tangents = sigma * n_ref, exactly; 0 if not exact
+  // 3D: (p1-p0) x (p2-p0) of face F,  2D: rotated tangent (t1,-t0) of edge F
+  template <ELEMENT_TYPE ET, int F>
+  constexpr int RefFacetSign ()
+  {
+    constexpr int D = ET_trait<ET>::DIM;
+    if constexpr (D == 3)
+      {
+        constexpr auto f = ET_trait<ET>::faces[F];
+        constexpr auto p0 = RefVertexCoords<ET,f[0]>(), p1 = RefVertexCoords<ET,f[1]>(), p2 = RefVertexCoords<ET,f[2]>();
+        constexpr auto n = std::bit_cast<std::array<double,3>> (ET_trait<ET>::normals[F].HTData());
+        double a[3] = { p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2] };
+        double b[3] = { p2[0]-p0[0], p2[1]-p0[1], p2[2]-p0[2] };
+        double c[3] = { a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0] };
+        if (c[0] == n[0] && c[1] == n[1] && c[2] == n[2]) return 1;
+        if (c[0] == -n[0] && c[1] == -n[1] && c[2] == -n[2]) return -1;
+      }
+    if constexpr (D == 2)
+      {
+        constexpr auto e = ET_trait<ET>::edges[F];
+        constexpr auto p0 = RefVertexCoords<ET,e[0]>(), p1 = RefVertexCoords<ET,e[1]>();
+        constexpr auto n = std::bit_cast<std::array<double,2>> (ET_trait<ET>::normals[F].HTData());
+        double c[2] = { p1[1]-p0[1], -(p1[0]-p0[0]) };
+        if (c[0] == n[0] && c[1] == n[1]) return 1;
+        if (c[0] == -n[0] && c[1] == -n[1]) return -1;
+      }
+    return 0;
+  }
+
+  /// J * reference tangent of edge edgenr
+  template <ELEMENT_TYPE ET, int D, typename T>
+  INLINE Vec<D,T> MappedEdgeTangent (int edgenr, const Mat<D,D,T> & J)
+  {
+    Vec<D,T> tau;
+    Iterate<ET_trait<ET>::N_EDGE> ([&] (auto e)
+      {
+        constexpr int E = decltype(e)::value;
+        constexpr auto edge = ET_trait<ET>::edges[E];
+        if (edgenr == E)
+          tau = MapRefTangent<ET,edge[0],edge[1]> (J);
+      });
+    return tau;
+  }
+
+  /// Cof(J) * reference normal of facet facetnr, not normalized
+  template <ELEMENT_TYPE ET, int D, typename T>
+  INLINE Vec<D,T> MappedFacetNormal (int facetnr, const Mat<D,D,T> & J)
+  {
+    Vec<D,T> n;
+    Iterate<ET_trait<ET>::N_FACET> ([&] (auto f)
+      {
+        constexpr int F = decltype(f)::value;
+        constexpr int sigma = RefFacetSign<ET,F>();
+        if (facetnr == F)
+          {
+            if constexpr (sigma == 0)
+              n = Cof(J) * ET_trait<ET>::normals[F];
+            else if constexpr (D == 3)
+              {
+                constexpr auto face = ET_trait<ET>::faces[F];
+                n = Cross (MapRefTangent<ET,face[0],face[1]> (J),
+                           MapRefTangent<ET,face[0],face[2]> (J));
+              }
+            else
+              {
+                constexpr auto edge = ET_trait<ET>::edges[F];
+                Vec<2,T> t = MapRefTangent<ET,edge[0],edge[1]> (J);
+                n = Vec<2,T> (t(1), -t(0));
+              }
+            if constexpr (sigma < 0) n = -n;
+          }
+      });
+    return n;
+  }
+
+  template <int D, typename T>
+  inline Vec<D,T> ElementTopology :: GetPhysicalNormal (ELEMENT_TYPE et, int facetnr, const Mat<D,D,T> & J)
+  {
+    Vec<D,T> n;
+    bool found = false;
+    ETTableSwitch (et, [&] (auto trait)
+      {
+        using TR = decltype(trait);
+        if constexpr (TR::DIM == D && D >= 2 && requires { TR::normals; })
+          { n = MappedFacetNormal<TR::ElementType()> (facetnr, J); found = true; }
+      });
+    if (!found) ThrowIllegalElementType ("GetPhysicalNormal", et);
+    return n;
+  }
+
 }
 
 #endif

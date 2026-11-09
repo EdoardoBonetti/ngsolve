@@ -15,6 +15,7 @@
 #include "recursive_pol.hpp"
 #include "recursive_pol_trig.hpp"
 #include "recursive_pol_tet.hpp"
+#include "dualinverse.hpp"
 
 namespace ngfem
 {
@@ -637,11 +638,44 @@ namespace ngfem
     IVec<DIM-1> order_facet[ET_trait<ET>::N_FACET];
     IVec<DIM> order_inner;
 
-    
+    // lazily filled D^-1 for full-order elements, owned by the space
+    std::atomic<double*> * dual_inverse = nullptr;
+
   public:
     using VertexOrientedFE<ET>::SetVertexNumbers;
     T_HCurlCurlFE * SetVertexNumbers (FlatArray<int> vnums) override
     { VertexOrientedFE<ELEMENT_TYPE(ET)>::SetVertexNumbers(vnums); return this; }
+
+    void SetDualInverse (std::atomic<double*> * slot) { dual_inverse = slot; }
+
+    using HCurlCurlFiniteElement<DIM>::SolveDuality;
+    bool SolveDuality (SliceMatrix<> x, LocalHeap & lh) const override
+    {
+      if (!dual_inverse) return false;
+      FlatMatrix<> inv(ndof, ndof, GetDualInverse<ET,DIM*DIM> (*this, *dual_inverse, lh));
+      HeapReset hr(lh);
+      FlatMatrix<> tmp(x.Height(), x.Width(), lh);
+      tmp = x;
+      if (x.Width() == 1)  // gemv instead of n x 1 gemm
+        x.Col(0) = inv * tmp.Col(0);
+      else
+        x = inv * tmp;
+      return true;
+    }
+
+    bool SolveDualityTrans (SliceMatrix<> x, LocalHeap & lh) const override
+    {
+      if (!dual_inverse) return false;
+      FlatMatrix<> inv(ndof, ndof, GetDualInverse<ET,DIM*DIM> (*this, *dual_inverse, lh));
+      HeapReset hr(lh);
+      FlatMatrix<> tmp(x.Height(), x.Width(), lh);
+      tmp = x;
+      if (x.Width() == 1)
+        x.Col(0) = Trans(inv) * tmp.Col(0);
+      else
+        x = Trans(inv) * tmp;
+      return true;
+    }
     
     T_HCurlCurlFE (int aorder)
     {
@@ -1949,16 +1983,14 @@ namespace ngfem
                   T xi = lam[fav[0]];
                   T eta = lam[fav[1]];
                   
-                  Matrix<T> Fface(3,2);
-                  Fface.Col(0) = adxi;
-                  Fface.Col(1) = adeta;
-		 
-                  Matrix<T> Ftmp(2,2);
-                  Ftmp = Trans(Fface)*Fface;
+                  Mat<3,2,T> Fface;
+                  for (int k = 0; k < 3; k++)
+                    { Fface(k,0) = adxi(k); Fface(k,1) = adeta(k); }
+                  Mat<2,2,T> Ftmp = Trans(Fface)*Fface;
                   auto det = sqrt(Ftmp(0,0)*Ftmp(1,1)-Ftmp(1,0)*Ftmp(0,1));
                   auto invDetJ = invJ/det;
-                  auto Fface_mapped = F*Fface;
-                  auto Fface_mapped_T = Trans(Fface_mapped);
+                  Mat<3,2,T> Fface_mapped = F*Fface;
+                  Mat<2,3,T> Fface_mapped_T = Trans(Fface_mapped);
                   Mat<3,3,T> A11 = Fface_mapped*E11_2*Fface_mapped_T;
                   Mat<3,3,T> A22 = Fface_mapped*E22_2*Fface_mapped_T;
                   Mat<3,3,T> A12 = Fface_mapped*E12_2*Fface_mapped_T;

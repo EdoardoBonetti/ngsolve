@@ -264,7 +264,7 @@ namespace ngcomp
     {
       HeapReset hr(lh);
       const HDivDivFiniteElement<D> & fel =
-        dynamic_cast<const HDivDivFiniteElement<D>&> (bfel);
+        static_cast<const HDivDivFiniteElement<D>&> (bfel);
       int nd = fel.GetNDof();
       FlatMatrix<> shape(nd,D*D,lh);
       Vec<D> n = sip.GetNV();
@@ -300,8 +300,50 @@ namespace ngcomp
                                 BareSliceMatrix<SIMD<double>> y, BareSliceVector<double> x)
     {
       dynamic_cast<const HDivDivFiniteElement<D>&> (bfel).AddTrans_Matrix (mir, y, x);
-    }    
+    }
     */
+  };
+
+
+  // scalar n^T sigma n
+  template<int D>
+  class DiffOpNNComponentHDivDiv: public DiffOp<DiffOpNNComponentHDivDiv<D> >
+  {
+  public:
+    static constexpr int DIM = 1;
+    static constexpr int DIM_SPACE = D;
+    static constexpr int DIM_ELEMENT = D;
+    static constexpr int DIM_DMAT = 1;
+    static constexpr int DIFFORDER = 0;
+    using FiniteElementType = HDivDivFiniteElement<D>;
+
+    static Array<int> GetDimensions() { return Array<int> (); }
+
+    template <typename FEL,typename SIP,typename MAT>
+    static void GenerateMatrix(const FEL & bfel,const SIP & sip,
+                               MAT && mat,LocalHeap & lh)
+    {
+      HeapReset hr(lh);
+      auto & fel = static_cast<const HDivDivFiniteElement<D>&> (bfel);
+      int nd = fel.GetNDof();
+      FlatMatrix<> shape(nd,D*D,lh);
+      Vec<D> n = sip.GetNV();
+      Mat<D,D> mati;
+      fel.CalcMappedShape_Matrix(sip,shape);
+      for (int i = 0; i < nd; i++)
+        {
+          for (int j = 0; j < D*D; j++)
+            mati(j) = shape(i,j);
+          mat(0,i) = InnerProduct (n, mati * n);
+        }
+    }
+
+    static void GenerateMatrixSIMDIR (const FiniteElement & bfel,
+                                      const SIMD_BaseMappedIntegrationRule & mir,
+                                      BareSliceMatrix<SIMD<double>> mat)
+    {
+      static_cast<const HDivDivFiniteElement<D>&> (bfel).CalcShape_NNComponent (mir, mat);
+    }
   };
 
 
@@ -440,7 +482,7 @@ namespace ngcomp
                                MAT && mat, LocalHeap & lh)
     {
       const HDivDivFiniteElement<D> & fel =
-        dynamic_cast<const HDivDivFiniteElement<D>&> (bfel);
+        static_cast<const HDivDivFiniteElement<D>&> (bfel);
       
       int nd = fel.GetNDof();
       
@@ -501,7 +543,7 @@ namespace ngcomp
                                MAT && mat, LocalHeap & lh)
     {
       const HDivDivFiniteElement<D> & fel =
-        dynamic_cast<const HDivDivFiniteElement<D>&> (bfel);
+        static_cast<const HDivDivFiniteElement<D>&> (bfel);
       
       int nd = fel.GetNDof();
       
@@ -582,7 +624,7 @@ namespace ngcomp
       RegionTimer reg (timer);
 
       const HDivDivFiniteElement<D> & fel = 
-        dynamic_cast<const HDivDivFiniteElement<D>&> (bfel);
+        static_cast<const HDivDivFiniteElement<D>&> (bfel);
       
       int nd = fel.GetNDof();
       
@@ -724,6 +766,7 @@ namespace ngcomp
         additional_evaluators.Set ("vec_old",make_shared<T_DifferentialOperator<DiffOpVecIdHDivDiv_old<2>>> ());
         additional_evaluators.Set ("div_old",make_shared<T_DifferentialOperator<DiffOpDivHDivDiv_old<2>>> ());
         additional_evaluators.Set ("dual", make_shared<T_DifferentialOperator<DiffOpHDivDivDual<2>>> ());
+        additional_evaluators.Set ("nncomponent",make_shared<T_DifferentialOperator<DiffOpNNComponentHDivDiv<2>>> ());
         break;
       case 3:
         additional_evaluators.Set ("vec",make_shared<T_DifferentialOperator<DiffOpVecIdHDivDiv<3>>> ());
@@ -731,6 +774,7 @@ namespace ngcomp
         additional_evaluators.Set ("vec_old",make_shared<T_DifferentialOperator<DiffOpVecIdHDivDiv_old<3>>> ());
         additional_evaluators.Set ("div_old",make_shared<T_DifferentialOperator<DiffOpDivHDivDiv_old<3>>> ());
         additional_evaluators.Set ("normalcomponent",make_shared<T_DifferentialOperator<DiffOpNormalComponentHDivDiv<3>>> ());
+        additional_evaluators.Set ("nncomponent",make_shared<T_DifferentialOperator<DiffOpNNComponentHDivDiv<3>>> ());
         additional_evaluators.Set ("dual", make_shared<T_DifferentialOperator<DiffOpHDivDivDual<3>>> ());
         break;
       default:
@@ -748,6 +792,11 @@ namespace ngcomp
       "  Add additional internal element bubble";
     docu.Arg("orderinner") = "int = order\n"
       "  Modify order of internal basis functions";
+    docu.Arg("orderfacet") = "int = order\n"
+      "  Modify order of facet basis functions (normal-normal trace)";
+    docu.Arg("algebraicmapping") = "bool = True\n"
+      "  Map shapes by the double Piola transform (nn-continuous).\n"
+      "  False: evaluate with physical second derivatives of the mapping (2D volume only, not nn-continuous on non-affine elements)";
     return docu;
   }
 
@@ -1157,6 +1206,13 @@ namespace ngcomp
 
   }  
 
+
+  shared_ptr<FESpace> HDivDivFESpace :: CreateMultiplierSpace (Flags flags) const
+  {
+    if (!flags.NumFlagDefined("order"))
+      flags.SetFlag("order", uniform_order_facet);
+    return CreateCompanionSpace(*this, "normalfacet", flags);
+  }
 
   static RegisterFESpace<HDivDivFESpace> init ("hdivdiv");
 }

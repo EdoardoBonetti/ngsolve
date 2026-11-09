@@ -35,7 +35,7 @@ namespace ngcomp
     bool ho_div_free;       
     bool highest_order_dc;
 
-    bool RT = false; 
+    bool et_RT[30] = { false };   // RT per element type, see hdiv_ndof::SetupRT
 
     Array<IVec<2>> dc_pairs;
     
@@ -80,6 +80,12 @@ namespace ngcomp
     }
     
     void Average (BaseVector & vec) const;
+
+    // FacetSurface for u.nu on surface edges
+    shared_ptr<FESpace> CreateMultiplierSpace (Flags flags = Flags()) const override;
+
+    // SurfaceL2 space of matching order, containing div of this space
+    shared_ptr<FESpace> CreateDivergenceSpace () const;
     
     void Update() override;
 

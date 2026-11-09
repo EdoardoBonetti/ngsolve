@@ -87,6 +87,8 @@ namespace ngfem
     int DiffOrder() const { return difforder; } 
 
     virtual IntRange UsedDofs(const FiniteElement & fel) const { return IntRange(0, fel.GetNDof()); }
+    // dofs used on facet facetnr of the element
+    virtual IntRange UsedDofs(const FiniteElement & fel, int facetnr) const { return UsedDofs(fel); }
 
     virtual bool operator== (const DifferentialOperator & diffop2) const { return false; }
 
@@ -270,6 +272,15 @@ namespace ngfem
     {
       ApplyTrans (fel, mir, flux, x, lh);
     }
+
+    // simd version, x += B'(elveclin)^T flux; default via CalcLinearizedMatrix for nonlinear diffops
+    NGS_DLL_HEADER virtual void
+    AddLinearizedTrans (const FiniteElement & fel,
+                          const SIMD_BaseMappedIntegrationRule & mir,
+                          BareSliceVector<double> elveclin,
+                          BareSliceMatrix<SIMD<double>> flux,
+                          BareSliceVector<double> x,
+                          LocalHeap & lh) const;
 
 
     /// calculates matrix on reference element

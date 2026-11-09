@@ -525,6 +525,8 @@ public:
     shared_ptr<BilinearFormIntegrator> linearization;
     Array<shared_ptr<CoefficientFunction>> dcf_dtest;  // derivatives by test-functions
     Matrix<shared_ptr<CoefficientFunction>> ddcf_dtest_dtrial;  // derivatives by test- and trial-functions
+    void LinearizedProxyValues (int l1, int k1, const SIMD_BaseMappedIntegrationRule & mir, ProxyUserData & ud,
+                                FlatMatrix<SIMD<double>> proxyvalues, LocalHeap & lh) const;
   public:
     NGS_DLL_HEADER SymbolicBilinearFormIntegrator (shared_ptr<CoefficientFunction> acf, VorB avb,
                                                    VorB aelement_boundary);
@@ -857,7 +859,11 @@ public:
     Matrix<bool> nonzeros;    // do components interact ? 
     Matrix<bool> nonzeros_proxies; // do proxies interact ?
     Array<shared_ptr<CoefficientFunction>> dcf, ddcf;
-    bool has_nonlinear_proxy = false;  // simd apply assumes linear diffops
+
+    void EnergyGradient (int i, const SIMD_BaseMappedIntegrationRule & mir, ProxyUserData & ud,
+                         FlatMatrix<SIMD<double>> grad, LocalHeap & lh) const;
+    void EnergyGradient (int i, const BaseMappedIntegrationRule & mir, ProxyUserData & ud,
+                         FlatMatrix<double> grad, LocalHeap & lh) const;
     
   public:
     SymbolicEnergy (shared_ptr<CoefficientFunction> acf, VorB avb, VorB aelement_vb);

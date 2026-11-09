@@ -67,7 +67,7 @@ namespace ngfem
     
     virtual void Interpolate (const ElementTransformation & trafo, 
                               const class CoefficientFunction & func, SliceMatrix<> coefs,
-                              LocalHeap & lh) const override
+                              LocalHeap & lh, int bonus_intorder = 0) const override
     {
       if (auto ipts = GetNodalPoints(); ipts.Size())
         {
@@ -77,7 +77,7 @@ namespace ngfem
           func.Evaluate (mir, coefs);
         }
       else
-        BASE::Interpolate (trafo, func, coefs, lh);
+        BASE::Interpolate (trafo, func, coefs, lh, bonus_intorder);
     }
 
     
@@ -965,9 +965,7 @@ namespace ngfem
     Tx x = ip.x;
     Tx y = ip.y;
     Tx z = ip.z;
-    
-    // if (z == 1) z -= 1e-10;
-    z -= Tx(1e-10);
+    z = ClampPyramidApex (z);   // keeps 1-z > 0 at the apex, exact elsewhere
     
     shape[0] = (1-z-x)*(1-z-y) / (1-z);
     shape[1] = x*(1-z-y) / (1-z);

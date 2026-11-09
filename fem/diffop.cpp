@@ -118,7 +118,7 @@ namespace ngfem
         return;
       }
     size_t nd = fel.GetNDof(), np = mir.Size();
-    Matrix<SIMD<double>> full(nd*Dim(), np);
+    MatrixMem<512, SIMD<double>> full(nd*Dim(), np);
     CalcMatrix (fel, mir, full);
     for (size_t i = 0; i < nd; i++)
       for (int v = 0; v < vsdim; v++)
@@ -152,6 +152,35 @@ namespace ngfem
     if (IsNonlinear())
       throw ExceptionNOSIMD(string("CalcLinearizedMatrix(SIMD) not overloaded, type = ") + typeid(*this).name());
     CalcMatrix (fel, mir, mat);
+  }
+
+  void DifferentialOperator ::
+  AddLinearizedTrans (const FiniteElement & fel,
+                      const SIMD_BaseMappedIntegrationRule & mir,
+                      BareSliceVector<double> elveclin,
+                      BareSliceMatrix<SIMD<double>> flux,
+                      BareSliceVector<double> x,
+                      LocalHeap & lh) const
+  {
+    if (!IsNonlinear())
+      {
+        AddTrans (fel, mir, flux, x);
+        return;
+      }
+
+    HeapReset hr(lh);
+    size_t ndof = fel.GetNDof();
+    int dim = Dim();
+    FlatMatrix<SIMD<double>> bmat(ndof*dim, mir.Size(), lh);
+    CalcLinearizedMatrix (fel, mir, elveclin, bmat);
+    for (size_t i = 0; i < ndof; i++)
+      {
+        SIMD<double> sum = 0.0;
+        for (int k = 0; k < dim; k++)
+          for (size_t j = 0; j < mir.Size(); j++)
+            sum += bmat(i*dim+k, j) * flux(k, j);
+        x(i) += HSum(sum);
+      }
   }
 
   void DifferentialOperator ::

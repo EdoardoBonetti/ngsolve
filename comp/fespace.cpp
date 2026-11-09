@@ -381,6 +381,11 @@ lot of new non-zero entries in the matrix!\n" << endl;
       "  FESpace is only defined on specific Region, created with mesh.Materials('regexpr')\n"
       "  or mesh.Boundaries('regexpr'). If given a regexpr, the region is assumed to be\n"
       "  mesh.Materials('regexpr').";
+    docu.Arg("definedonbound") = "list of int or list of str\n"
+      "  Additional boundaries the FESpace is defined on, besides the boundaries\n"
+      "  adjacent to the definedon domains. Given as 1-based boundary numbers or\n"
+      "  wildcard patterns ('*', '?') of boundary names. Region is not supported,\n"
+      "  use definedon = {VOL: mats, BND: bnds} instead.";
     docu.Arg("dim") = "int = 1\n"
       "  Create multi dimensional FESpace (i.e. [H1]^3)";
     docu.Arg("dgjumps") = "bool = False\n"
@@ -2348,7 +2353,7 @@ lot of new non-zero entries in the matrix!\n" << endl;
 
 
   void FESpace :: Interpolate (const CoefficientFunction & cf, BaseVector & vec1,
-                               const Region * reg, LocalHeap & clh)
+                               const Region * reg, LocalHeap & clh, int bonus_intorder)
   {
     static Timer t("FESpace::Interpolate"); RegionTimer r(t);
 
@@ -2381,6 +2386,10 @@ lot of new non-zero entries in the matrix!\n" << endl;
       }
 
     auto vb = reg ? reg->VB() : VOL;
+    if (auto eval = GetEvaluator(vb))
+      if (cf.Dimension() != eval->Dim())
+        throw Exception ("Interpolate: coefficient function has dimension "+ToString(cf.Dimension())
+                         +", the space "+GetClassName()+" expects "+ToString(eval->Dim()));
     auto iterate = [&] (auto tscal)
     {
       using SCAL = decltype(tscal);
@@ -2401,14 +2410,14 @@ lot of new non-zero entries in the matrix!\n" << endl;
            FlatVector<SCAL> elvec(ndof*fesdim, lh), elvec1(ndof*fesdim, lh);
 
            if constexpr (is_same_v<SCAL,double>)
-             fel.Interpolate (eltrans, cf, elvec.AsMatrix(ndof, fesdim), lh);
+             fel.Interpolate (eltrans, cf, elvec.AsMatrix(ndof, fesdim), lh, bonus_intorder);
            else
              {
                FlatVector<> re(ndof*fesdim, lh), im(ndof*fesdim, lh);
-               fel.Interpolate (eltrans, cfre ? *cfre : cf, re.AsMatrix(ndof, fesdim), lh);
+               fel.Interpolate (eltrans, cfre ? *cfre : cf, re.AsMatrix(ndof, fesdim), lh, bonus_intorder);
                im = 0.0;
                if (cfim)
-                 fel.Interpolate (eltrans, *cfim, im.AsMatrix(ndof, fesdim), lh);
+                 fel.Interpolate (eltrans, *cfim, im.AsMatrix(ndof, fesdim), lh, bonus_intorder);
                elvec = re + Complex(0,1) * im;
              }
 
@@ -2498,6 +2507,11 @@ lot of new non-zero entries in the matrix!\n" << endl;
     cout << "ApplyM is only available for L2-space, not for " << typeid(*this).name() << endl;
   }
 
+
+  shared_ptr<FESpace> FESpace :: CreateMultiplierSpace (Flags flags) const
+  {
+    throw Exception("CreateMultiplierSpace not available for "+GetClassName());
+  }
 
   shared_ptr<BaseMatrix> FESpace :: GetTraceOperator (shared_ptr<FESpace> tracespace, bool avg) const
   {
@@ -4539,6 +4553,26 @@ lot of new non-zero entries in the matrix!\n" << endl;
     if (!space)
       throw Exception (string ("undefined fespace '") + type + '\'');
     return space;
+  }
+
+  shared_ptr<FESpace> CreateCompanionSpace (const FESpace & base, const string & type, Flags flags)
+  {
+    if (base.IsComplex()) flags.SetFlag("complex");
+    if (base.DoesAutoUpdate()) flags.SetFlag("autoupdate");
+    auto fes = CreateFESpace (type, base.GetMeshAccess(), flags);
+    if (!flags.AnyFlagDefined("definedon"))
+      for (VorB vb : { VOL, BND })
+        if (auto & bdef = base.DefinedOn(vb); bdef.Size())
+          {
+            BitArray defon(bdef.Size());
+            defon.Clear();
+            for (auto i : Range(bdef))
+              if (bdef[i]) defon.SetBit(i);
+            fes->SetDefinedOn(vb, defon);
+          }
+    fes->Update();
+    fes->FinalizeUpdate();
+    return fes;
   }
 
 

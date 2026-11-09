@@ -25,6 +25,7 @@
 #include <prolongation.hpp> 
 #include <fesconvert.hpp>
 #include "l2hofespace.hpp"
+#include <set>
 
 namespace ngcomp
 {
@@ -61,7 +62,7 @@ namespace ngcomp
       MAT && mat,LocalHeap & lh)
     {
       HeapReset hr(lh);
-      auto & fel = dynamic_cast<const HDivFiniteElement<D>&> (bfel);
+      auto & fel = static_cast<const HDivFiniteElement<D>&> (bfel);
 
       int nd = fel.GetNDof();
       FlatMatrix<> shape(nd,D,lh);
@@ -168,6 +169,8 @@ namespace ngcomp
     DefineDefineFlag("hodivfree"); 
 
     DefineDefineFlag("RT");
+    for (auto et : { ET_TRIG, ET_QUAD, ET_TET, ET_PRISM, ET_PYRAMID, ET_HEX })
+      DefineDefineFlag(hdiv_ndof::RTFlagName(et).c_str());
     
     if(parseflags) CheckFlags(flags);
 
@@ -241,8 +244,7 @@ namespace ngcomp
 
     ho_div_free = flags.GetDefineFlag("hodivfree"); 
     fixed_order = flags.GetDefineFlag ("fixedorder");
-    RT = flags.GetDefineFlag ("RT");
-    if (order==0) RT = true;
+    hdiv_ndof::SetupRT (flags, order, et_RT);
     
     uniform_order_inner = int (flags.GetNumFlag ("orderinner", -1));
     
@@ -307,16 +309,25 @@ namespace ngcomp
      prol = CreateVectorL2EmbeddedProlongation (this, "piola2", RT ? order+1 : order);
   }
   
-  HDivHighOrderFESpace:: ~HDivHighOrderFESpace () 
+  HDivHighOrderFESpace:: ~HDivHighOrderFESpace () { ClearDualInverse(); }
+
+  void HDivHighOrderFESpace :: ClearDualInverse ()
   {
-    ;
+    for (auto & row : dual_inverse)
+      for (auto & slot : row)
+        delete [] slot.exchange(nullptr);
   }
 
   DocInfo HDivHighOrderFESpace :: GetDocu ()
   {
     auto docu = FESpace::GetDocu();
-    docu.Arg("RT") = "bool = False\n"
-      "  RT elements for simplicial elements: P^k subset RT_k subset P^{k+1}";
+    docu.Arg("RT") = "bool = unset\n"
+      "  Raviart-Thomas type: div maps onto L2(order) instead of L2(order-1).\n"
+      "  order = degree of the normal trace. Unset: RT on quads, prisms and hexes,\n"
+      "  BDM type on trigs, tets and pyramids. True/False: on all element types";
+    for (auto et : { ET_TRIG, ET_QUAD, ET_TET, ET_PRISM, ET_PYRAMID, ET_HEX })
+      docu.Arg(hdiv_ndof::RTFlagName(et)) = "bool = unset\n"
+        "  RT for this element type, overrides 'RT'";
     docu.Arg("discontinuous") = "bool = False\n"
       "  Create discontinuous HDiv space";
     docu.Arg("hodivfree") = "bool = False\n"
@@ -330,6 +341,97 @@ namespace ngcomp
     return docu;
   }
   
+
+  shared_ptr<FESpace> HDivHighOrderFESpace :: CreateDivergenceSpace() const
+  {
+    auto divorder = [&](ElementId ei)
+    {
+      if (ho_div_free) return 0;
+      int p = order_inner[ei.Nr()][0];
+      return et_RT[ma->GetElType(ei)] ? p : max(p-1, 0);
+    };
+
+    Flags l2flags;
+    if (iscomplex) l2flags.SetFlag("complex");
+    int minorder = std::numeric_limits<int>::max(), maxorder = 0;
+    for (auto ei : ma->Elements(VOL))
+      if (DefinedOn(ei))
+        {
+          minorder = min(minorder, divorder(ei));
+          maxorder = max(maxorder, divorder(ei));
+        }
+    l2flags.SetFlag("order", maxorder);
+    auto l2 = make_shared<L2HighOrderFESpace>(ma, l2flags);
+
+    if (definedon[VOL].Size())
+      {
+        BitArray defon(ma->GetNDomains());
+        defon.Clear();
+        for (auto i : Range(definedon[VOL]))
+          if (definedon[VOL][i]) defon.SetBit(i);
+        l2->SetDefinedOn(VOL, defon);
+      }
+
+    l2->Update();
+    if (minorder < maxorder)
+      {
+        for (auto ei : ma->Elements(VOL))
+          if (DefinedOn(ei))
+            l2->SetOrder(NodeId(NT_ELEMENT, ei.Nr()), divorder(ei));
+        l2->UpdateDofTables();
+        l2->UpdateCouplingDofArray();
+      }
+    l2->FinalizeUpdate();
+    return l2;
+  }
+
+  shared_ptr<FESpace> HDivHighOrderFESpace :: CreateMultiplierSpace(Flags flags) const
+  {
+    if (!flags.NumFlagDefined("order"))
+      flags.SetFlag("order", uniform_order_facet > -1 ? uniform_order_facet : order);
+    return CreateCompanionSpace(*this, "facet", flags);
+  }
+
+  shared_ptr<FESpace> HDivHighOrderFESpace :: CreateStressSpace (Flags flags, bool weaksym) const
+  {
+    // MCS stress space HCurlDiv(orderfacet k-1, orderinner k) for HDiv(k), BDM or RT;
+    // RT1 on trigs needs orderinner 2; weaksym adds GG bubbles on simplices
+    // (trig RT2 locks without)
+    if (var_order)
+      throw Exception("HDiv::CreateStressSpace: only uniform order is supported");
+    if (ma->GetDimension() != 2 && ma->GetDimension() != 3)
+      throw Exception("HDiv::CreateStressSpace: only 2D and 3D meshes are supported");
+
+    std::set<ELEMENT_TYPE> types;
+    for (auto el : ma->Elements(VOL))
+      if (DefinedOn(el)) types.insert(el.GetType());
+    if (types.empty())
+      throw Exception("HDiv::CreateStressSpace: no elements");
+    for (auto et : types)
+      if (et != ET_TRIG && et != ET_QUAD && et != ET_TET && et != ET_HEX)
+        throw Exception(string("HDiv::CreateStressSpace: element type ")+ToString(et)+" is not supported");
+
+    bool simplices = types.count(ET_TRIG) || types.count(ET_TET);
+    if (weaksym && simplices && !flags.GetDefineFlagX("GGbubbles").IsFalse())
+      {
+        if (types.count(ET_HEX))
+          throw Exception("HDiv::CreateStressSpace: weaksym needs GGbubbles on tets, not available on hexes");
+        flags.SetFlag("GGbubbles");
+      }
+    if (flags.NumFlagDefined("order"))
+      return CreateCompanionSpace(*this, "hcurldiv", flags);
+
+    int k = order;
+    if (k < 1)
+      throw Exception("HDiv::CreateStressSpace: needs order >= 1");
+    int inner = k;
+    if (k == 1 && types.count(ET_TRIG) && et_RT[ET_TRIG] && !flags.GetDefineFlag("GGbubbles"))
+      inner = 2;
+    flags.SetFlag("order", k-1);
+    if (!flags.NumFlagDefined("orderinner"))
+      flags.SetFlag("orderinner", inner);
+    return CreateCompanionSpace(*this, "hcurldiv", flags);
+  }
 
   void HDivHighOrderFESpace :: Average (BaseVector & vec) const
   {
@@ -352,6 +454,7 @@ namespace ngcomp
   void HDivHighOrderFESpace :: Update()
   {
     FESpace::Update();
+    ClearDualInverse();
     // In discontinuous spaces the order on edges and faces  
     // are also set to the maximal order of adjacent elements  
     // and not to the element order (Motivation: Equilibrated_EE) 
@@ -579,28 +682,7 @@ namespace ngcomp
         for (size_t i = 0; i < nel; i++)
           {
             ElementId ei(VOL, i);
-            IVec<3> pc = order_inner_curl[i];
-            IVec<3> p = order_inner[i];
-            int inci = 0;
-            switch(ma->GetElType(ei))
-              {
-              case ET_TRIG:
-                if (!ho_div_free)
-                  inci = pc[0]*(pc[0]-1)/2 + p[0]*(p[0]-1)/2 + p[0]-1;
-                else
-                  inci = pc[0]*(pc[0]-1)/2;
-                if (RT)
-                  inci += pc[0] + 1;
-                break;
-              case ET_QUAD:
-                if (!ho_div_free)
-                  inci = pc[0]*pc[1] + p[0]*p[1]+p[0]+p[1];
-                else
-                  inci = pc[0]*pc[1];
-                break;
-              default: // for the compiler
-                break;  
-              }
+            int inci = hdiv_ndof::Inner (ma->GetElType(ei), order_inner[i], et_RT[ma->GetElType(ei)], ho_div_free);
 
 	    if (highest_order_dc)
 	      {
@@ -680,69 +762,22 @@ namespace ngcomp
         for (size_t i = 0; i < nel; i++)
           {
             IVec<3> p = order_inner[i];
-            IVec<3> pc = order_inner_curl[i];
-            int inci = 0;
-	     
-            switch(ma->GetElType(ElementId(VOL,i)))
-              {
-              case ET_TET:
-                if(p[0]>1 && !ho_div_free)
-                  inci = p[0]*(p[0]+1)*(p[0]-1)/6 + p[0]*(p[0]-1)/2 + p[0]-1;
-                if(pc[0]>1)
-                  inci += pc[0]*(pc[0]+1)*(pc[0]-1)/3 + pc[0]*(pc[0]-1)/2; ;
-                if (highest_order_dc) 
-		  {
-		    // ma->GetElFacets (i, fnums);
-                    /*
-                    auto fnums = ma->GetElFacets(i);
-		    for (int j = 0; j < fnums.Size(); j++)
-                      {
-                        IVec<2> pf = order_facet[fnums[j]]; 
-                        if (!boundary_facet[fnums[j]]) inci += pf[0]+1;
-                      }
-                    */
-                    for (auto f : ma->GetElFacets(i))
-                      if (!boundary_facet[f]) inci += order_facet[f][0]+1;
-		  }
-		if (RT)
-                  {
-                    if (p[0] > 0)
-                      inci += (p[0]+1) * (p[0]+2)/2;
-                  }
-		// inci += 4*(p[0]+1);
-                break;
-              case ET_PRISM:
-                // inci = (p[0]+1)*(3*(p[0]-1)+(p[0]-1)*(p[0]-2))+ (p[0]-1)*(p[0]+1)*(p[0]+2)/2;
-		inci = (p[0]+2)*p[0]*(p[2]+1) + (p[0]+1)*(p[0]+2)*p[2]/2;
-		if (ho_div_free)
-		  inci -= (p[0]+1)*(p[0]+2)*(p[2]+1)/2 - 1;
-
-                if (highest_order_dc) inci += 2*(p[0]+1)+3*(p[0]+p[2]+1);
-                break;
-              case ET_HEX:
-                inci =  2*pc[0]*pc[1]*pc[2] + pc[0]*pc[1] + pc[1]*pc[2] + pc[0]* pc[2]
-                        + p[0]*(p[1]*p[2] + p[1] + p[2] + 1)  + p[1]*p[2] + p[1] + p[2]; 
-                if (ho_div_free)
-                  inci -= p[0]*(p[1]*p[2] + p[1] + p[2] + 1)  + p[1]*p[2] + p[1] + p[2]; 
-                break; 
-              case ET_PYRAMID: 
+            auto et = ma->GetElType(ElementId(VOL,i));
+            int inci = hdiv_ndof::Inner (et, p, et_RT[et], ho_div_free);
+            if (highest_order_dc)
+              switch (et)
                 {
-                  int pp = p[0];
-                  if (pp >= 1)
-                    inci = pp*pp + 2*( (pp-1)*pp*(pp+1)/3 + pp );
-                  int pd = RT ? pp : pp-1;
-                  if (pd >= 1 && !ho_div_free)
-                    inci += (pd+1)*(pd+2)*(2*pd+3)/6 - 1;
-                  if (highest_order_dc)
-                    for (auto f : ma->GetElFacets(i))
-                      if (!boundary_facet[f])
-                        inci += (ma->GetFacePNums(f).Size()==3) ? order_facet[f][0]+1 : order_facet[f][0]+order_facet[f][1]+1;
-                  break; 
+                case ET_TET: case ET_PYRAMID:
+                  for (auto f : ma->GetElFacets(i))
+                    if (!boundary_facet[f])
+                      inci += (ma->GetFacePNums(f).Size()==3) ? order_facet[f][0]+1 : order_facet[f][0]+order_facet[f][1]+1;
+                  break;
+                case ET_PRISM:
+                  inci += 2*(p[0]+1)+3*(p[0]+p[2]+1);
+                  break;
+                default:
+                  break;
                 }
-              default:
-                inci = 0;
-                break;
-              }
             if (inci < 0) inci = 0;
             first_inner_dof[i] = ndof;
             ndof+= inci;
@@ -937,7 +972,7 @@ namespace ngcomp
     hofe -> SetVertexNumbers (ngel.Vertices());
     hofe -> SetHODivFree (ho_div_free);
     hofe -> SetOnlyHODiv (onlyhdiv);
-    hofe -> SetRT(RT);
+    hofe -> SetRT(et_RT[ET]);
     hofe -> SetOrderInner (order_inner[elnr]);
         
     switch (int(ET_trait<ET>::DIM))
@@ -950,6 +985,24 @@ namespace ngcomp
         break;
       }
     hofe -> ComputeNDof();
+
+    if constexpr (ET == ET_TRIG || ET == ET_TET)
+      if (!ho_div_free && !onlyhdiv)
+        {
+          bool same = order_inner[elnr][0] == order;
+          if constexpr (ET == ET_TET)
+            for (auto f : ngel.Faces()) same &= order_facet[f][0] == order;
+          else
+            for (auto e : ngel.Edges()) same &= order_facet[e][0] == order;
+          if (same)
+            {
+              int cls = 0, bit = 0;
+              for (int i = 0; i < ngel.vertices.Size(); i++)
+                for (int j = i+1; j < ngel.vertices.Size(); j++, bit++)
+                  if (ngel.vertices[i] > ngel.vertices[j]) cls |= 1 << bit;
+              hofe -> SetDualInverse (&dual_inverse[ET == ET_TET][cls]);
+            }
+        }
     return *hofe;
   }
 

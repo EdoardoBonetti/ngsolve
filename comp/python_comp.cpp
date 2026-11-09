@@ -166,6 +166,28 @@ public:
 static GlobalDummyVariables globvar;
 
 
+// create a companion space, kwargs are checked against the class of the created space
+template <typename F>
+static shared_ptr<FESpace> CreateWithClassFlags (py::object fes_class, shared_ptr<MeshAccess> ma,
+                                                 py::kwargs kwargs, F create)
+{
+  auto keys = [kwargs] () { py::dict d; for (auto item : kwargs) d[item.first] = py::none(); return d; };
+  auto proxy = py::module::import("types").attr("SimpleNamespace")
+    (py::arg("__flags_doc__") = py::cpp_function(keys),
+     py::arg("__special_treated_flags__") = fes_class.attr("__special_treated_flags__"));
+  py::list info;
+  info.append(ma);
+  shared_ptr<FESpace> fes = create(CreateFlagsFromKwArgs(kwargs, proxy, info));
+  connect_auto_update(fes.get());
+  auto pyfes = py::cast(fes);
+  auto doc = py::type::of(pyfes).attr("__flags_doc__")();
+  for (auto item : kwargs)
+    if (!doc.contains(item.first))
+      GetLogger("Flags")->warn("WARNING: kwarg '{}' is an undocumented flags option for class {}, maybe there is a typo?",
+                               item.first.cast<string>(), string(py::str(py::type::of(pyfes))));
+  return fes;
+}
+
 void ExportNgcompMesh (py::module &m);
 void ExportReadAnsys (py::module &m);
 
@@ -572,6 +594,19 @@ when building the system matrices.
 
   py::class_<DirichletBoundary> (m, "DirichletBoundary")
     .def("__eq__", [](DirichletBoundary dir, shared_ptr<CoefficientFunction> cf) {
+      // a scalar value (e.g. u[BND("left")] == 0) applies to all components
+      int pdim = dir.proxy->Dimension();
+      if (cf->Dimension() == 1 && pdim > 1)
+        {
+          Array<shared_ptr<CoefficientFunction>> comps(pdim);
+          comps = cf;
+          cf = MakeVectorialCoefficientFunction (std::move(comps));
+          if (dir.proxy->Dimensions().Size() > 1)
+            cf = cf->Reshape (dir.proxy->Dimensions());
+        }
+      else if (cf->Dimension() != pdim)
+        throw Exception ("Dirichlet value has dimension "+ToString(cf->Dimension())
+                         +", but the trial function has dimension "+ToString(pdim));
       return DirichletBC { DirichletBoundary { dir.proxy, dir.vbn }, cf };
     })
     ;
@@ -1628,11 +1663,45 @@ component : int
         shared_ptr<BaseMatrix> grad = self->CreateGradient(*fesh1);
         return py::make_tuple(grad, shared_ptr<FESpace>(fesh1));
       })
+    .def("CreateStressSpace", [fes_class] (shared_ptr<HCurlHighOrderFESpace> self, py::kwargs kwargs)
+         {
+           return CreateWithClassFlags(fes_class, self->GetMeshAccess(), kwargs,
+                                       [&] (Flags flags) { return self->CreateStressSpace(flags); });
+         },
+         "HDivDiv stress space for TDNNS elasticity with this space as displacement\n"
+         "(trigs, quads, tets, prisms, hexes, also mixed; pyramids raise an exception):\n"
+         "type1=True: HDivDiv(order-1), plus=True on trigs;\n"
+         "type1=False: trigs/prisms HDivDiv(order), quads HDivDiv(order-1, quadfullpol=True),\n"
+         "tets HDivDiv(order-1, plus=True), hexes HDivDiv(order, orderfacet=order-1);\n"
+         "mixed meshes use the common facet order order-1 with these interior orders.\n"
+         "Orders are at least 1, except type1=True, order=1 on meshes without simplices.\n"
+         "kwargs (dirichlet for the nn-essential boundary, discontinuous, ...) are passed to HDivDiv,\n"
+         "an explicit order disables the automatic choice.\n"
+         "definedon=mesh.Boundaries(...) (or HCurl living on a surface mesh) creates an\n"
+         "HDivDivSurface with the trig/quad rules, nn-essential boundary via dirichlet_bbnd;\n"
+         "use Discontinuous(..., BND=True) for the hybrid version.")
     ;
   
   ExportFESpace<HDivHighOrderFESpace> (m, "HDiv")
     .def("Average", &HDivHighOrderFESpace::Average,
          py::arg("vector"))
+    .def("CreateDivergenceSpace", [](shared_ptr<HDivHighOrderFESpace> self)
+         { return self->CreateDivergenceSpace(); },
+         "L2 space of matching order, containing div of this space.\n"
+         "B = BilinearForm(div(u)*q*dx) on (HDiv, L2) is geometry-independent.")
+    .def("CreateStressSpace", [fes_class] (shared_ptr<HDivHighOrderFESpace> self, bool weaksym, py::kwargs kwargs)
+         {
+           return CreateWithClassFlags(fes_class, self->GetMeshAccess(), kwargs,
+                                       [&] (Flags flags) { return self->CreateStressSpace(flags, weaksym); });
+         }, py::arg("weaksym")=false,
+         "HCurlDiv stress space for MCS (mass conserving mixed stress) with this space as velocity\n"
+         "(trigs, quads, tets, hexes): HCurlDiv(order-1, orderinner=order), for BDM and RT;\n"
+         "RT order 1 on trigs uses orderinner=2.\n"
+         "weaksym=True: for the weakly symmetric version with HCurlDiv.CreateSymmetryMultiplierSpace(),\n"
+         "adds GGbubbles on trigs and tets (not available on hexes).\n"
+         "Discontinuous(S).CreateMultiplierSpace() gives the tangential velocity uhat.\n"
+         "The pressure space is CreateDivergenceSpace() of this space (L2(order-1), RT: L2(order)).\n"
+         "kwargs (discontinuous, ...) are passed to HCurlDiv, an explicit order disables the automatic choice.")
     ;
   
   ExportFESpace<H1HighOrderFESpace> (m, "H1");
@@ -1670,7 +1739,16 @@ component : int
 
   ExportFESpace<HDivDivFESpace> (m, "HDivDiv");
   
-  ExportFESpace<HCurlDivFESpace> (m, "HCurlDiv");
+  ExportFESpace<HCurlDivFESpace> (m, "HCurlDiv")
+    .def("CreateSymmetryMultiplierSpace", [fes_class] (shared_ptr<HCurlDivFESpace> self, py::kwargs kwargs)
+         {
+           return CreateWithClassFlags(fes_class, self->GetMeshAccess(), kwargs,
+                                       [&] (Flags flags) { return self->CreateSymmetryMultiplierSpace(flags); });
+         },
+         "Lagrange multiplier for weak stress symmetry, int sigma : eta:\n"
+         "MatrixValued(L2, skewsymmetric=True) of the facet order.\n"
+         "kwargs are passed to the new space.")
+    ;
 
   ExportFESpace<HCurlCurlFESpace> (m, "HCurlCurl");
   
@@ -1692,6 +1770,9 @@ component : int
   ExportFESpace<HDivHighOrderSurfaceFESpace> (m, "HDivSurface")
     .def("Average", &HDivHighOrderSurfaceFESpace::Average,
          py::arg("vector"))
+    .def("CreateDivergenceSpace", [](shared_ptr<HDivHighOrderSurfaceFESpace> self)
+         { return self->CreateDivergenceSpace(); },
+         "SurfaceL2 space of matching order, containing the surface div of this space.")
     ;
 
   ExportFESpace<VectorFESpace<L2SurfaceHighOrderFESpace>> (m, "VectorSurfaceL2");
@@ -1822,6 +1903,14 @@ BND : boolean or None
     separate across surface elements instead of volume elements (for surface FESpaces)
 )delimiter"), py::dynamic_attr());
   disc_class
+    .def_static("__flags_doc__", [] ()
+         {
+           py::dict flags_doc;
+           for (auto & flagdoc : FESpace::GetDocu().arguments)
+             flags_doc[get<0> (flagdoc).c_str()] = get<1> (flagdoc);
+           flags_doc["BND"] = "bool = False\n  separate across surface elements instead of volume elements";
+           return flags_doc;
+         })
     .def(py::init([disc_class] (shared_ptr<FESpace> & fes, py::kwargs kwargs)
                   {
                     auto flags = CreateFlagsFromKwArgs(kwargs, disc_class);
@@ -1833,6 +1922,18 @@ BND : boolean or None
                     connect_auto_update(dcfes.get());
                     return dcfes;
                   }), py::arg("fespace"))
+    .def_property_readonly("base_space", [](DiscontinuousFESpace & self) { return self.GetBaseSpace(); },
+                           "the wrapped (conforming) space")
+    .def ("CreateMultiplierSpace", [fes_class] (shared_ptr<DiscontinuousFESpace> self, py::kwargs kwargs)
+          {
+            return CreateWithClassFlags(fes_class, self->GetMeshAccess(), kwargs,
+                                        [&] (Flags flags) { return self->CreateMultiplierSpace(flags); });
+          },
+          "Lagrange multiplier space re-enforcing the continuity broken by Discontinuous:\n"
+          "FacetFESpace for HDiv (u.n), NormalFacetFESpace for HDivDiv (sigma_nn),\n"
+          "TangentialFacetFESpace for HCurlDiv (sigma_nt), FacetSurface for HDivSurface\n"
+          "(u.nu on surface edges, use Discontinuous(..., BND=True)). It matches these traces exactly.\n"
+          "kwargs (dirichlet, ...) are passed to the new space.")
     .def(py::pickle([](const DiscontinuousFESpace* disc_fes)
                     {
                       return py::make_tuple(disc_fes->GetBaseSpace(),disc_fes->GetFlags());
@@ -2359,7 +2460,7 @@ bonus_intorder : int
 
     .def("Interpolate", 
          [](shared_ptr<GF> self, spCF cf,
-            py::object definedon, int mdcomp)
+            py::object definedon, int mdcomp, int bonus_intorder)
          {
            Region * reg = nullptr;
            if (py::extract<Region&> (definedon).check())
@@ -2367,11 +2468,12 @@ bonus_intorder : int
            
            py::gil_scoped_release release;
            // self->Interpolate (*cf, reg, mdcomp, lhp.GetLH());
-           self->GetFESpace()->Interpolate(*cf, self->GetVector(mdcomp), reg, lhp.GetLH());
+           self->GetFESpace()->Interpolate(*cf, self->GetVector(mdcomp), reg, lhp.GetLH(), bonus_intorder);
          },
          py::arg("coefficient"),
          py::arg("definedon")=DummyArgument(),
-         py::arg("mdcomp")=0)
+         py::arg("mdcomp")=0,
+         py::arg("bonus_intorder")=0)
 
     
     .def("__setitem__", [](shared_ptr<GF> self, RegionDescriptor namevb, spCF cf) {

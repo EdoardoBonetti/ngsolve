@@ -176,21 +176,21 @@ namespace ngcomp
                                       const SIMD_BaseMappedIntegrationRule & mir,
                                       BareSliceMatrix<SIMD<double>> mat)
     {
-      dynamic_cast<const HCurlCurlFiniteElement<D>&> (bfel).CalcMappedShape (mir, mat);
+      static_cast<const HCurlCurlFiniteElement<D>&> (bfel).CalcMappedShape (mir, mat);
     }
 
     using DiffOp<DiffOpIdHCurlCurl<D> >::ApplySIMDIR;    
     static void ApplySIMDIR (const FiniteElement & bfel, const SIMD_BaseMappedIntegrationRule & mir,
                              BareSliceVector<double> x, BareSliceMatrix<SIMD<double>> y)
     {
-      dynamic_cast<const HCurlCurlFiniteElement<D>&> (bfel).Evaluate (mir, x, y);
+      static_cast<const HCurlCurlFiniteElement<D>&> (bfel).Evaluate (mir, x, y);
     }
 
     using DiffOp<DiffOpIdHCurlCurl<D> >::AddTransSIMDIR;        
     static void AddTransSIMDIR (const FiniteElement & bfel, const SIMD_BaseMappedIntegrationRule & mir,
                                 BareSliceMatrix<SIMD<double>> y, BareSliceVector<double> x)
     {
-      dynamic_cast<const HCurlCurlFiniteElement<D>&> (bfel).AddTrans (mir, y, x);
+      static_cast<const HCurlCurlFiniteElement<D>&> (bfel).AddTrans (mir, y, x);
     }
   };
 
@@ -217,7 +217,7 @@ namespace ngcomp
                                BareSliceMatrix<double,ColMajor> mat,LocalHeap & lh)
     {
       const HCurlCurlFiniteElement<2> & fel =
-        dynamic_cast<const HCurlCurlFiniteElement<2>&> (bfel);
+        static_cast<const HCurlCurlFiniteElement<2>&> (bfel);
 
       fel.CalcMappedCurlShape (sip, Trans(mat));
     }
@@ -228,7 +228,7 @@ namespace ngcomp
     {
       HeapReset hr(lh);
       const HCurlCurlFiniteElement<2> & fel =
-        dynamic_cast<const HCurlCurlFiniteElement<2>&> (bfel);
+        static_cast<const HCurlCurlFiniteElement<2>&> (bfel);
 
       int nd = fel.GetNDof();
       FlatMatrix<> curlshape(nd, 2, lh);
@@ -258,7 +258,7 @@ namespace ngcomp
                                BareSliceMatrix<double,ColMajor> mat,LocalHeap & lh)
     {
       const HCurlCurlFiniteElement<3> & fel =
-        dynamic_cast<const HCurlCurlFiniteElement<3>&> (bfel);
+        static_cast<const HCurlCurlFiniteElement<3>&> (bfel);
 
       fel.CalcMappedCurlShape (sip, Trans(mat));
     }
@@ -269,7 +269,7 @@ namespace ngcomp
     {
       HeapReset hr(lh);
       const HCurlCurlFiniteElement<3> & fel =
-        dynamic_cast<const HCurlCurlFiniteElement<3>&> (bfel);
+        static_cast<const HCurlCurlFiniteElement<3>&> (bfel);
 
       int nd = fel.GetNDof();
       FlatMatrix<> curlshape(nd, 9, lh);
@@ -338,14 +338,14 @@ namespace ngcomp
     static void ApplySIMDIR (const FiniteElement & bfel, const SIMD_BaseMappedIntegrationRule & mir,
                              BareSliceVector<double> x, BareSliceMatrix<SIMD<double>> y)
     {
-      dynamic_cast<const HCurlCurlFiniteElement<2>&> (bfel).EvaluateIncShape (mir, x, y);
+      static_cast<const HCurlCurlFiniteElement<2>&> (bfel).EvaluateIncShape (mir, x, y);
     }
 
     using DiffOp<DiffOpIncHCurlCurl<2> >::AddTransSIMDIR;        
     static void AddTransSIMDIR (const FiniteElement & bfel, const SIMD_BaseMappedIntegrationRule & mir,
                                 BareSliceMatrix<SIMD<double>> y, BareSliceVector<double> x)
     {
-      dynamic_cast<const HCurlCurlFiniteElement<2>&> (bfel).AddTransIncShape (mir, y, x);
+      static_cast<const HCurlCurlFiniteElement<2>&> (bfel).AddTransIncShape (mir, y, x);
     }
   };
 
@@ -398,14 +398,14 @@ namespace ngcomp
     static void ApplySIMDIR (const FiniteElement & bfel, const SIMD_BaseMappedIntegrationRule & mir,
                              BareSliceVector<double> x, BareSliceMatrix<SIMD<double>> y)
     {
-      dynamic_cast<const HCurlCurlFiniteElement<3>&> (bfel).EvaluateIncShape (mir, x, y);
+      static_cast<const HCurlCurlFiniteElement<3>&> (bfel).EvaluateIncShape (mir, x, y);
     }
 
     using DiffOp<DiffOpIncHCurlCurl<3> >::AddTransSIMDIR;        
     static void AddTransSIMDIR (const FiniteElement & bfel, const SIMD_BaseMappedIntegrationRule & mir,
                                 BareSliceMatrix<SIMD<double>> y, BareSliceVector<double> x)
     {
-      dynamic_cast<const HCurlCurlFiniteElement<3>&> (bfel).AddTransIncShape (mir, y, x);
+      static_cast<const HCurlCurlFiniteElement<3>&> (bfel).AddTransIncShape (mir, y, x);
     }
 
   };
@@ -913,7 +913,7 @@ namespace ngcomp
                              BareSliceVector<double> x, BareSliceMatrix<SIMD<double>> y)
     {
       
-      const HCurlCurlFiniteElement<D> & bfel = dynamic_cast<const HCurlCurlFiniteElement<D>&> (fel);
+      const HCurlCurlFiniteElement<D> & bfel = static_cast<const HCurlCurlFiniteElement<D>&> (fel);
        
       size_t size = bmir.Size()*D*D*D;
       STACK_ARRAY(SIMD<double>, mem, size);
@@ -1245,7 +1245,7 @@ namespace ngcomp
     static void ApplySIMDIR (const FiniteElement & fel, const SIMD_BaseMappedIntegrationRule & bmir,
                              BareSliceVector<double> x, BareSliceMatrix<SIMD<double>> y)
     {
-      const HCurlCurlFiniteElement<D> & bfel = dynamic_cast<const HCurlCurlFiniteElement<D>&> (fel);
+      const HCurlCurlFiniteElement<D> & bfel = static_cast<const HCurlCurlFiniteElement<D>&> (fel);
 
 
       size_t size = bmir.Size()*D*(D-1)/2*D*(D-1)/2;
@@ -1355,7 +1355,7 @@ namespace ngcomp
     static void ApplySIMDIR (const FiniteElement & fel, const SIMD_BaseMappedIntegrationRule & bmir,
                              BareSliceVector<double> x, BareSliceMatrix<SIMD<double>> y)
     {
-      const HCurlCurlFiniteElement<D> & bfel = dynamic_cast<const HCurlCurlFiniteElement<D>&> (fel);
+      const HCurlCurlFiniteElement<D> & bfel = static_cast<const HCurlCurlFiniteElement<D>&> (fel);
 
       size_t size = bmir.Size()*D*(D-1)/2*D*(D-1)/2;
       STACK_ARRAY(SIMD<double>, mem, size);
@@ -1468,7 +1468,7 @@ namespace ngcomp
     static void ApplySIMDIR (const FiniteElement & fel, const SIMD_BaseMappedIntegrationRule & bmir,
                              BareSliceVector<double> x, BareSliceMatrix<SIMD<double>> y)
     {
-      const HCurlCurlFiniteElement<D> & bfel = dynamic_cast<const HCurlCurlFiniteElement<D>&> (fel);
+      const HCurlCurlFiniteElement<D> & bfel = static_cast<const HCurlCurlFiniteElement<D>&> (fel);
 
       if constexpr (D==2)
       {
@@ -2132,9 +2132,17 @@ Einstein: Einstein tensor Ein_ij(g) = Ric_ij(g)-0.5*S(g) g_ij
     return docu;
   }
 
+  void HCurlCurlFESpace :: ClearDualInverse ()
+  {
+    for (auto & row : dual_inverse)
+      for (auto & slot : row)
+        delete [] slot.exchange(nullptr);
+  }
+
   void HCurlCurlFESpace :: Update()
   {
     int dim = ma->GetDimension();
+    ClearDualInverse();
 
     bool first_update = GetTimeStamp() < ma->GetTimeStamp();
     if (first_update) timestamp = NGS_Object::GetNextTimeStamp();
@@ -2412,6 +2420,41 @@ Einstein: Einstein tensor Ein_ij(g) = Ric_ij(g)-0.5*S(g) g_ij
   }
 
 
+  // full-order element (VOL, or BND of a surface space): share D^-1 per vertex-order class
+  template <ELEMENT_TYPE ET>
+  void HCurlCurlFESpace :: SetDualInverse (HCurlCurlFE<ET> * fe, ElementId ei) const
+  {
+    Ngs_Element ngel = ma->GetElement(ei);
+    if (ei.VB() == BND)
+      {
+        if (order_facet[ei.Nr()][0] != order || order_facet[ei.Nr()][1] != order) return;
+        for (auto e : ngel.Edges())
+          if (order_edge[e][0] != order) return;
+      }
+    else
+      {
+        if (order_inner[ei.Nr()][0] != order || order_inner[ei.Nr()][1] != order) return;
+        for (auto f : ngel.Facets())
+          if (order_facet[f][0] != order) return;
+      }
+    if constexpr (ET_trait<ET>::DIM == 3)
+      {
+        if (order_inner[ei.Nr()][2] != order) return;
+        for (auto f : ngel.Facets())
+          if (order_facet[f][1] != order) return;
+        for (auto e : ngel.Edges())
+          if (order_edge[e][0] != order) return;
+      }
+
+    auto vnums = ngel.Vertices();
+    int cls = 0, bit = 0;
+    for (int i = 0; i < vnums.Size(); i++)
+      for (int j = i+1; j < vnums.Size(); j++, bit++)
+        if (vnums[i] > vnums[j]) cls |= 1 << bit;
+    int row = (ET == ET_TRIG) ? 0 : (ET == ET_QUAD) ? 1 : 2;
+    fe->SetDualInverse (&dual_inverse[row][cls]);
+  }
+
   FiniteElement & HCurlCurlFESpace :: GetFE (ElementId ei,Allocator & alloc) const
   {
     Ngs_Element ngel = ma->GetElement(ei);
@@ -2439,6 +2482,7 @@ Einstein: Einstein tensor Ein_ij(g) = Ric_ij(g)-0.5*S(g) g_ij
                 fetr->SetOrderEdge(ii++,order_edge[e][0]);
               fetr->SetOrderInner(order_facet[ei.Nr()]);
               fetr->ComputeNDof();
+              SetDualInverse (fetr, ei);
               return *fetr;
             }
             
@@ -2451,6 +2495,7 @@ Einstein: Einstein tensor Ein_ij(g) = Ric_ij(g)-0.5*S(g) g_ij
                 fequ->SetOrderEdge(ii++,order_edge[e][0]);
               fequ->SetOrderInner(order_facet[ei.Nr()]);
               fequ->ComputeNDof();
+              SetDualInverse (fequ, ei);
               return *fequ;
               }
             
@@ -2506,9 +2551,10 @@ Einstein: Einstein tensor Ein_ij(g) = Ric_ij(g)-0.5*S(g) g_ij
           ii = 0;
           for(auto f : ngel.Facets())
             fe->SetOrderFacet(ii++,order_facet[f]);
-          
+
           fe->SetOrderInner(order_inner[ei.Nr()]);
           fe->ComputeNDof();
+          SetDualInverse (fe, ei);
           return *fe;
         }
       case ET_QUAD:
@@ -2523,6 +2569,7 @@ Einstein: Einstein tensor Ein_ij(g) = Ric_ij(g)-0.5*S(g) g_ij
             fe->SetOrderFacet(ii++,order_facet[f]);
           fe->SetOrderInner(order_inner[ei.Nr()]);
           fe->ComputeNDof();
+          SetDualInverse (fe, ei);
           return *fe;
         }
       case ET_PRISM:
@@ -2565,6 +2612,7 @@ Einstein: Einstein tensor Ein_ij(g) = Ric_ij(g)-0.5*S(g) g_ij
             fe->SetOrderFacet(ii++,order_facet[f]);
           fe->SetOrderInner(order_inner[ei.Nr()]);
           fe->ComputeNDof();
+          SetDualInverse (fe, ei);
           return *fe;
         }
       default:

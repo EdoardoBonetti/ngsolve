@@ -2,6 +2,7 @@
    High Order Finite Element Space for H(Curl) 
 */
 #include "hcurlhofespace.hpp"
+#include <set>
 #include "hcurlfes.hpp"
 #include <../fem/hcurlhofe.hpp> 
 #include <../fem/hcurllofe.hpp>
@@ -45,10 +46,12 @@ namespace ngcomp
     DefineDefineFlag ("discontinuous");
     DefineDefineFlag ("type1");
     DefineDefineFlag ("hoprolongation");
-    
+    DefineDefineFlag ("biorth");
+
     if(parseflags) CheckFlags(flags);
 
     type1 = flags.GetDefineFlag("type1");
+    biorth = flags.GetDefineFlag("biorth");
     // Variable order space: 
     //      in case of (var_order && order) or (relorder) 
     var_order = flags.GetDefineFlag("variableorder");  
@@ -202,7 +205,15 @@ namespace ngcomp
 
   }
   
-  HCurlHighOrderFESpace :: ~HCurlHighOrderFESpace () { ; }
+  HCurlHighOrderFESpace :: ~HCurlHighOrderFESpace () { ClearDualInverse(); }
+
+  void HCurlHighOrderFESpace :: ClearDualInverse ()
+  {
+    for (auto & mode : dual_inverse)
+      for (auto & row : mode)
+        for (auto & slot : row)
+          delete [] slot.exchange(nullptr);
+  }
   
   DocInfo HCurlHighOrderFESpace :: GetDocu ()
   {
@@ -210,7 +221,11 @@ namespace ngcomp
     docu.Arg ("nograds") = "bool = False\n"
       "  Remove higher order gradients of H1 basis functions from HCurl FESpace";
     docu.Arg("type1") = "bool = False\n"
-      "  Use type 1 Nedelec elements";
+      "  Use type 1 Nedelec elements: gradients from H1(order) instead of H1(order+1).\n"
+      "  The non-gradient part is the same, its curl lies in HDiv(order-1)";
+    docu.Arg("biorth") = "bool = False\n"
+      "  Triangles: interior basis and dual shapes biorthogonal\n"
+      "  (Haubold, Beuchler, Schoeberl, SINUM 2024)";
     docu.Arg("discontinuous") = "bool = False\n"
       "  Create discontinuous HCurl space";
     docu.Arg("gradientdomains") = "List[int] = None\n"
@@ -230,6 +245,7 @@ namespace ngcomp
   void HCurlHighOrderFESpace :: Update()
   {
     FESpace::Update();
+    ClearDualInverse();
 
     int dim = ma->GetDimension(); 
 
@@ -375,7 +391,6 @@ namespace ngcomp
             auto et = ma->GetElType(ei);
             if (!DefinedOn (VOL, index)) continue;
             auto pi = p + et_bonus_order[et];
-            if (type1 && et==ET_QUAD && pi >= 1) pi--;
             order_inner[i] = IVec<3> (pi,pi,pi);
             IVec<3,TORDER> el_orders = ma->GetElOrders(i);
             
@@ -660,30 +675,9 @@ namespace ngcomp
     for (int i = 0; i < nfa; i++) 
       { 
 	first_face_dof[i] = ndof; 
-	auto pnums = ma->GetFacePNums (i);  
-	IVec<2> p = order_face[i]; 
-	switch(pnums.Size())
-	  {
-	  case 3: //Triangle   
-	    if (p[0]>1)
-	      {
-                /*
-		ndof += ((usegrad_face[i]+1)*p[0] + 2)*(p[0]-1)/2;
-		face_ngrad[i] = usegrad_face[i]*p[0]*(p[0]-1)/2;
-                */
-                int pg = p[0] - (type1 ? 1 : 0);
-		face_ngrad[i] = usegrad_face[i]*pg*(pg-1)/2;
-                ndof += face_ngrad[i] + (p[0] + 2)*(p[0]-1)/2;
-	      }
-	    break; 
-	  case 4: //Quad 
-	    //if(p[0]>0 && p[1]>0)
-	    {
-	      ndof += (usegrad_face[i]+1)*p[0]*p[1] + p[0] + p[1]; 
-	      face_ngrad[i] = usegrad_face[i]*p[0]*p[1];; 
-	      break; 
-	    }
-	  }
+        auto ft = ma->GetFaceType (i);
+	face_ngrad[i] = hcurl_ndof::FaceGrad (ft, order_face[i], usegrad_face[i], type1);
+	ndof += hcurl_ndof::Face (ft, order_face[i], usegrad_face[i], type1);
       } 
     first_face_dof[nfa] = ndof;   
     
@@ -694,68 +688,10 @@ namespace ngcomp
       {
         ElementId ei(VOL, i);
 	first_inner_dof[i] = ndof;
-	IVec<3> p = order_inner[i];
-	switch(ma->GetElType(ei)) 
-	  {
-	  case ET_TRIG:
-	    if(p[0]>1)
-	      {
-                int pg = p[0] - (type1 ? 1 : 0);
-		cell_ngrad[i] = usegrad_cell[i]*pg*(pg-1)/2;
-                ndof += cell_ngrad[i] + (p[0] + 2)*(p[0]-1)/2;
-                /*
-		ndof += ((usegrad_cell[i]+1)*p[0] + 2) * (p[0]-1) /2;
-		cell_ngrad[i] = ((usegrad_cell[i])*p[0]) * (p[0]-1) /2;
-                */
-	      }
-	    break; 
-	  case ET_QUAD: 
-	    if(p[0]>=0 && p[1]>=0) 
-	      {
-		ndof += (usegrad_cell[i]+1) * p[0] * p[1] + p[0] + p[1]; 
-		cell_ngrad[i] = (usegrad_cell[i]) * p[0] * p[1];
-	      }
-	    break; 
-	  case ET_TET: 
-	    if(p[0]>2)
-	      {
-		if (type1) {
-		  cell_ngrad[i] = usegrad_cell[i] * (p[0]-3)*(p[0]-2)*(p[0]-1)/6;
-		  ndof += (p[0]-2)*(p[0]-1)*(2*p[0]+3)/6 + cell_ngrad[i];
-				  
-		}
-		else {
-		  ndof += ((usegrad_cell[i] + 2) *  p[0] + 3) * (p[0]-2) * (p[0]-1) / 6; 
-		  cell_ngrad[i] = ((usegrad_cell[i] ) *  p[0]) * (p[0]-2) * (p[0]-1) / 6;
-		}
-	      }
-	    break; 
-	  case ET_PRISM:
-	    if(p[0]>1 && p[2]>=0) 
-	      {
-		ndof += (usegrad_cell[i]+2)*p[2] * p[0]*(p[0]-1)/2
-		  + (p[0]-1)*p[2] + p[0]*(p[0]-1)/2; 
-		cell_ngrad[i] = (usegrad_cell[i])*p[2] * p[0]*(p[0]-1)/2;
-	      } 
-	    break; 
-	  case ET_HEX:
-	    if(p[0]>=0 && p[1]>=0 && p[2] >=0)
-	      {
-		ndof += (usegrad_cell[i] + 2)* p[0]*p[1]*p[2] +  p[0]*p[1] 
-		  + p[0]*p[2] + p[1]*p[2];
-		cell_ngrad[i] = (usegrad_cell[i])* p[0]*p[1]*p[2]; 
-	      }
-	    break;  
-	  case ET_PYRAMID:
-	    if (p[0] > 1)
-	      {
-		ndof += usegrad_cell[i]*(p[0]-1)*p[0]*(2*p[0]-1)/6 + p[0]*(2*p[0]*p[0]+3*p[0]-2)/3; 
-		cell_ngrad[i] = usegrad_cell[i]*(p[0]-1)*p[0]*(2*p[0]-1)/6; 
-	      }
-	    break; 
-          default:  // for the compiler
-            break; 
-	  }
+        auto et = ma->GetElType(ei);
+        IVec<3> p = order_inner[i];
+        cell_ngrad[i] = hcurl_ndof::CellGrad (et, p, usegrad_cell[i], type1);
+        ndof += hcurl_ndof::Cell (et, p, usegrad_cell[i], type1);
         if (highest_order_dc)
           ndof += ElementTopology::GetNEdges(ma->GetElType(ei));
       }
@@ -847,7 +783,9 @@ namespace ngcomp
 	  ctofdof[range.First()] = WIREBASKET_DOF;
       }
 
-    if (order_policy == VARIABLE_ORDER && ma->GetDimension() == 2)
+    // variable order tables disabled, see UpdateDofTables
+    // if (order_policy == VARIABLE_ORDER && ma->GetDimension() == 2)
+    if (false)
       { 
         for (auto face : Range(ma->GetNFaces()))
           ctofdof.Range(GetFaceDofs(face)) = LOCAL_DOF;
@@ -1135,10 +1073,49 @@ namespace ngcomp
                 break;
               }
             }
-          hofe -> SetType1 (type1);          
+          hofe -> SetType1 (type1);
+          if constexpr (ET == ET_TRIG)
+            {
+              if (biorth && order_inner[ei.Nr()][0] >= 64)
+                throw Exception ("HCurl biorth: order must be < 64");
+              hofe -> SetBiorth (biorth);
+            }
           hofe -> ComputeNDof();
           // hofe -> SetDiscontinuous(discontinuous);
-          
+
+          // full order, and gradients on all or on no nodes of the element
+          if constexpr (ET == ET_TRIG || ET == ET_QUAD || ET == ET_TET)
+            {
+              bool grad = usegrad_cell[ei.Nr()];
+              bool same = true;
+              for (auto e : ngel.Edges()) same &= usegrad_edge[e] == grad;
+              if constexpr (ET_trait<ET>::DIM == 3)
+                for (auto f : ngel.Faces()) same &= usegrad_face[f] == grad;
+              HCurlHighOrderFE<ET> full(order);
+              if (type1)
+                {
+                  full.SetType1 (true);
+                  for (int i = 0; i < ET_trait<ET>::N_EDGE; i++)
+                    full.SetOrderEdge (i, max(0, order-1));
+                }
+              if (!grad)
+                {
+                  bool nog[12] = { };
+                  full.SetUseGradEdge (nog);
+                  full.SetUseGradFace (nog);
+                  full.SetUseGradCell (false);
+                }
+              full.ComputeNDof();
+              if (same && hofe->GetNDof() == full.GetNDof() && hofe->Order() == full.Order())
+                {
+                  int cls = 0, bit = 0;
+                  for (int i = 0; i < ngel.vertices.Size(); i++)
+                    for (int j = i+1; j < ngel.vertices.Size(); j++, bit++)
+                      if (ngel.vertices[i] > ngel.vertices[j]) cls |= 1 << bit;
+                  int row = (ET == ET_TRIG) ? 0 : (ET == ET_QUAD) ? 1 : 2;
+                  hofe -> SetDualInverse (&dual_inverse[grad][row][cls]);
+                }
+            }
           return *hofe;
         }
       case BND:
@@ -1584,7 +1561,8 @@ namespace ngcomp
 
   void HCurlHighOrderFESpace :: GetFaceDofNrs (int fanr, Array<int> & dnums) const
   {
-    if (order_policy == VARIABLE_ORDER)
+    // if (order_policy == VARIABLE_ORDER)
+    if (false)
       {
         dnums = GetFaceDofs(fanr);
         return;
@@ -1601,7 +1579,8 @@ namespace ngcomp
 
   void HCurlHighOrderFESpace :: GetInnerDofNrs (int elnr, Array<int> & dnums) const
   {
-    if (order_policy == VARIABLE_ORDER && ma->GetDimension() == 2)
+    // if (order_policy == VARIABLE_ORDER && ma->GetDimension() == 2)
+    if (false)
       {
         dnums.SetSize0();
         return;
@@ -3573,6 +3552,109 @@ namespace ngcomp
       }
       return &ba;
       }*/
+
+  shared_ptr<FESpace> HCurlHighOrderFESpace::CreateStressSpace (Flags flags) const
+  {
+    // TDNNS stress space (HDivDiv) for HCurl(m), as (facet order, interior order):
+    //   single element type:
+    //     type1:   all types (m-1, m-1), plus on trigs
+    //     default: trig (m, m), quad (m-1, m-1) quadfullpol, tet (m-1, m-1) plus,
+    //              prism (m, m), hex (m-1, m)
+    //   mixed meshes: common facet order m-1, interior orders as above
+    //     (default: trig, prism, hex m; quad, tet m-1)
+    // orders are at least 1 (sigma_nn in P0 cannot fix rigid modes), except for type1 m=1
+    // on meshes without simplices: there HCurl(1,type1) is not piecewise rigid and order 0 converges
+    if (var_order)
+      throw Exception("HCurl::CreateStressSpace: only uniform order is supported");
+    if (ma->GetDimension() != 2 && ma->GetDimension() != 3)
+      throw Exception("HCurl::CreateStressSpace: only 2D and 3D meshes are supported");
+
+    // definedon = boundary region (or HCurl on a surface mesh): HDivDivSurface on the surface
+    optional<Region> reg;
+    if (flags.AnyFlagDefined("definedon"))
+      if (auto * r = std::any_cast<Region>(&flags.GetAnyFlag("definedon")))
+        reg = *r;
+    VorB vb = reg ? reg->VB() : VOL;
+    if (!reg && ma->GetDimension() == 3)
+      {
+        bool hasvol = false;
+        for (auto el : ma->Elements(VOL))
+          if (DefinedOn(el)) { hasvol = true; break; }
+        if (!hasvol) vb = BND;
+      }
+    if (vb != VOL && vb != BND)
+      throw Exception("HCurl::CreateStressSpace: definedon must be a volume or boundary region");
+    if (vb == BND && ma->GetDimension() != 3)
+      throw Exception("HCurl::CreateStressSpace: surface stress spaces need a 3D mesh");
+    auto inside = [&] (Ngs_Element el)
+    { return DefinedOn(ElementId(vb, el.Nr())) && (!reg || reg->Mask()[el.GetIndex()]); };
+
+    std::set<ELEMENT_TYPE> types;
+    for (auto el : ma->Elements(vb))
+      if (inside(el)) types.insert(el.GetType());
+    if (types.empty())
+      throw Exception("HCurl::CreateStressSpace: no elements");
+    string stype = vb == BND ? "hdivdivsurf" : "hdivdiv";
+    for (auto et : types)
+      if (et != ET_TRIG && et != ET_QUAD && et != ET_TET && et != ET_PRISM && et != ET_HEX)
+        throw Exception(string("HCurl::CreateStressSpace: element type ")+ToString(et)+" is not supported");
+    if (flags.NumFlagDefined("order"))
+      return CreateCompanionSpace(*this, stype, flags);
+
+    int m = order;
+    bool simplices = types.count(ET_TRIG) || types.count(ET_TET);
+    int lo = (type1 && !simplices) ? 0 : 1;
+    auto clamp = [lo] (int o) { return max(o, lo); };
+    bool mixed = types.size() > 1;
+
+    // interior order per element type, and facet order
+    auto inner = [&] (ELEMENT_TYPE et)
+    {
+      if (type1) return clamp(m-1);
+      switch (et)
+        {
+        case ET_TRIG: case ET_PRISM: case ET_HEX: return clamp(m);
+        default: return clamp(m-1);
+        }
+    };
+    int facet;
+    if (type1 || mixed)
+      facet = clamp(m-1);
+    else
+      {
+        ELEMENT_TYPE et = *types.begin();
+        facet = (et == ET_TRIG || et == ET_PRISM) ? clamp(m) : clamp(m-1);
+      }
+
+    int maxinner = facet;
+    for (auto et : types) maxinner = max(maxinner, inner(et));
+    flags.SetFlag("order", maxinner);
+    if (facet != maxinner)
+      flags.SetFlag("orderfacet", facet);
+    if (!flags.GetDefineFlagX("plus").IsFalse() &&
+        ((type1 && types.count(ET_TRIG)) || (!type1 && types.count(ET_TET))))
+      flags.SetFlag("plus");
+    if (!type1 && types.count(ET_QUAD) && !flags.GetDefineFlagX("quadfullpol").IsFalse())
+      flags.SetFlag("quadfullpol");
+
+    auto fes = CreateCompanionSpace(*this, stype, flags);
+    bool modified = false;
+    for (auto el : ma->Elements(vb))
+      if (inside(el) && inner(el.GetType()) != maxinner)
+        {
+          if (vb == BND)
+            fes->SetOrder(NodeId(NT_FACE, el.Faces()[0]), inner(el.GetType()));
+          else
+            fes->SetOrder(NodeId(NT_ELEMENT, el.Nr()), inner(el.GetType()));
+          modified = true;
+        }
+    if (modified)
+      {
+        fes->Update();
+        fes->FinalizeUpdate();
+      }
+    return fes;
+  }
 
   shared_ptr<H1HighOrderFESpace> HCurlHighOrderFESpace::CreateGradientSpace() const
   {

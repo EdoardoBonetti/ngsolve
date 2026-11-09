@@ -275,6 +275,13 @@ namespace ngfem
     // returns Jacobi-matrix (possible as higher order tensor)
     virtual shared_ptr<CoefficientFunction>
       DiffJacobi (const CoefficientFunction * var, T_DJC & cache) const;
+    // vector-Jacobian product w^T d this / d var (reverse mode), result has dims of var
+    virtual shared_ptr<CoefficientFunction>
+      VJP (const CoefficientFunction * var, shared_ptr<CoefficientFunction> w, T_DJC & cache) const;
+    // local reverse-mode rule: w^T d this / d input_i for every input, empty if not provided
+    virtual Array<shared_ptr<CoefficientFunction>>
+      InputVJP (shared_ptr<CoefficientFunction> w) const
+      { return Array<shared_ptr<CoefficientFunction>>(); }
 
 
     // returns primary operator
@@ -1125,6 +1132,7 @@ namespace ngfem
 
 
   // *************************** CoefficientFunction Algebra ********************************
+  struct GenericIdentity;
   template <typename OP>
   class cl_UnaryOpCF : public T_CoefficientFunction<cl_UnaryOpCF<OP>>
 {
@@ -1170,6 +1178,15 @@ public:
   
   virtual void GenerateCode(Code &code, FlatArray<int> inputs, int index) const override
   {
+    if constexpr (std::is_same_v<OP, GenericIdentity>)
+      if (!code_uses_tensors)
+        {
+          // alias, no copy
+          for (int i = 0; i < this->Dimension(); i++)
+            code.body += "auto &" + Var(index, i, this->Dimensions()).S()
+              + " = " + Var(inputs[0], i, c1->Dimensions()).S() + ";\n";
+          return;
+        }
     //code.Declare (code.res_type, index, this->Dimensions());
     code.Declare (index, this->Dimensions(), this->IsComplex());
     if (code_uses_tensors)
@@ -1296,6 +1313,12 @@ public:
     return CWMult (lam.Diff(c1), c1->Diff(var, dir));
     
     // throw Exception ("unarycf "+name+" does not provide a derivative");
+  }
+
+  Array<shared_ptr<CoefficientFunction>> InputVJP (shared_ptr<CoefficientFunction> w) const override
+  {
+    // componentwise: diagonal Jacobian, so VJP = directional derivative
+    return { this->Diff(c1.get(), w) };
   }
 
   virtual shared_ptr<CoefficientFunction>
@@ -1647,6 +1670,9 @@ public:
   virtual shared_ptr<CoefficientFunction>
   DiffJacobi (const CoefficientFunction * var, T_DJC & cache) const override
   { return BASE::DiffJacobi(var, cache); }
+
+  Array<shared_ptr<CoefficientFunction>> InputVJP (shared_ptr<CoefficientFunction> w) const override
+  { return Array<shared_ptr<CoefficientFunction>>(); }
 
   /*
   virtual void NonZeroPattern (const class ProxyUserData & ud,

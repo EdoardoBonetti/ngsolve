@@ -76,6 +76,11 @@ namespace ngcomp
     bool discontinuous;
     bool highest_order_dc;
     bool type1;        // first family
+    bool biorth;       // trig cells: biorthogonal basis (Haubold-Beuchler-Schoeberl 2024)
+
+    // D^-1 of full-order trigs, quads, tets, per [nograd/grad][type][vertex-order class]
+    mutable std::atomic<double*> dual_inverse[2][3][64] {};
+    void ClearDualInverse ();
     bool wb_loedge;    // keep linear on edge as wb-dof
     bool ctupgrade = true;  // set WIREBASKET_DOF on badly shaped elements
     
@@ -131,6 +136,8 @@ namespace ngcomp
     virtual shared_ptr<Array<int>> CreateDirectSolverClusters (const Flags & precflags) const override;
     ///
     shared_ptr<H1HighOrderFESpace> CreateGradientSpace() const;
+    // TDNNS stress space (HDivDiv) paired with this displacement space, 2D only
+    shared_ptr<FESpace> CreateStressSpace (Flags flags = Flags()) const;
     shared_ptr<SparseMatrix<double>> CreateGradient() const {
       return CreateGradient(*CreateGradientSpace()); }
     shared_ptr<SparseMatrix<double>> CreateGradient(const H1HighOrderFESpace & fesh1) const;

@@ -17,6 +17,83 @@
 namespace ngcomp
 {
 
+  // inverse of the assembled duality matrix
+  static void CalcDualMassInverse (const FiniteElement & fel, const ElementTransformation & trafo,
+                                   const Array<shared_ptr<BilinearFormIntegrator>> & bli,
+                                   FlatMatrix<> elmat, LocalHeap & lh)
+  {
+    bool symmetric_so_far = false;
+    auto & nonconst_trafo = const_cast<ElementTransformation&>(trafo);
+    auto saveud = nonconst_trafo.userdata;
+    try
+      {
+        elmat = 0.0;
+        for (auto & bfi : bli)
+          bfi->CalcElementMatrixAdd (fel, trafo, elmat, symmetric_so_far, lh);
+      }
+    catch (const ExceptionNOSIMD & e)
+      {
+        cout << IM(6) << e.What() << endl
+             << "switching to scalar evaluation" << endl;
+        elmat = 0.0;
+        for (auto & bfi : bli)
+          {
+            bfi->SetSimdEvaluate(false);
+            bfi->CalcElementMatrixAdd (fel, trafo, elmat, symmetric_so_far, lh);
+          }
+      }
+    nonconst_trafo.userdata = saveud;
+    CalcInverse(elmat); // Not Symmetric !
+  }
+
+  // x = D^-1 x: by the element's SolveDuality, else by the inverted duality matrix
+  template <typename T>
+  static void SolveDualMass (const FiniteElement & fel, const ElementTransformation & trafo,
+                             const Array<shared_ptr<BilinearFormIntegrator>> & bli,
+                             SliceMatrix<T> x, LocalHeap & lh)
+  {
+    if (x.Width() == 0) return;
+    bool done;
+    if constexpr (is_same_v<T,Complex>)
+      done = fel.SolveDuality (x.AsRealMatrix(), lh);
+    else
+      done = fel.SolveDuality (x, lh);
+    if (done) return;
+
+    HeapReset hr(lh);
+    size_t n = fel.GetNDof();
+    FlatMatrix<> elmat(n, n, lh);
+    CalcDualMassInverse (fel, trafo, bli, elmat, lh);
+    FlatMatrix<T> xc(n, x.Width(), lh);
+    xc = x;
+    x = elmat * xc;
+  }
+
+  template <typename T>
+  static void SolveDualMass (const FiniteElement & fel, const ElementTransformation & trafo,
+                             const Array<shared_ptr<BilinearFormIntegrator>> & bli,
+                             FlatVector<T> x, LocalHeap & lh)
+  {
+    SolveDualMass (fel, trafo, bli, SliceMatrix<T>(x.AsMatrix(x.Size(), 1)), lh);
+  }
+
+  // x = D^-T x
+  static void SolveDualMassTrans (const FiniteElement & fel, const ElementTransformation & trafo,
+                                  const Array<shared_ptr<BilinearFormIntegrator>> & bli,
+                                  FlatVector<> x, LocalHeap & lh)
+  {
+    if (fel.SolveDualityTrans (x.AsColMatrix(), lh))
+      return;
+
+    HeapReset hr(lh);
+    size_t n = fel.GetNDof();
+    FlatMatrix<> elmat(n, n, lh);
+    CalcDualMassInverse (fel, trafo, bli, elmat, lh);
+    FlatVector<> tmp(n, lh);
+    tmp = x;
+    x = Trans(elmat) * tmp;
+  }
+
   class FECoefficientFunction : public T_CoefficientFunction<FECoefficientFunction>
   {
     shared_ptr<DifferentialOperator> diffop;
@@ -250,26 +327,10 @@ namespace ngcomp
             }
         }
       
-      /** Calc Element Matrix - shape * dual_shape **/
-      FlatMatrix<double> elmat(fel.GetNDof(), lh);
-      elmat = 0.0;
-      bool symmetric_so_far = false;
-
-      auto & nonconst_trafo = const_cast<ElementTransformation&>(trafo);
-      auto saveud = nonconst_trafo.userdata;
-      for (auto sbfi : single_bli)
-        sbfi->CalcElementMatrixAdd (fel, trafo, elmat, symmetric_so_far, lh);
-      nonconst_trafo.userdata = saveud;
-
-      /** Invert Element Matrix and Solve for RHS **/
-      CalcInverse(elmat); // Not Symmetric !
-      
-
-      // cout << "interpolation elmat = " << endl << elmat << endl;
-      
       /** Calc coefficients of Interpolation **/
       FlatVector<double> coeffs(fel.GetNDof(), lh);
-      coeffs = elmat * elflux;
+      coeffs = elflux;
+      SolveDualMass (fel, trafo, single_bli, coeffs, lh);
 
       // cout << " coeffs: " << endl << coeffs << endl;
 
@@ -484,21 +545,15 @@ namespace ngcomp
       // int dim = func->Dimension();
 
       /** Calc Element Matrix - shape * dual_shape **/
-      FlatMatrix<double> elmat(interpol_fel.GetNDof(), lh);
-      elmat = 0.0;
       bool symmetric_so_far = false;
 
       size_t nshape = inner_fel.GetNDof();
-      FlatMatrix<> m2m3 (elmat.Height(), nshape, lh);
+      FlatMatrix<> m2m3 (interpol_fel.GetNDof(), nshape, lh);
 
       // auto saveud = nonconst_trafo.userdata;
       try
         {
           RegionTracer reg(TaskManager::GetThreadId(), tm2);          
-          for (auto & sbfi : single_bli)
-            sbfi->CalcElementMatrixAdd (interpol_fel, trafo, elmat, symmetric_so_far, lh);
-
-          CalcInverse(elmat);
           
           MixedFiniteElement mfe = (testfunction)
             ? MixedFiniteElement (interpol_fel, inner_fel) 
@@ -511,7 +566,7 @@ namespace ngcomp
               for (auto & sbfi : m3_bli)
                 sbfi->CalcElementMatrixAdd (mfe, trafo, m3T, symmetric_so_far, lh);
               RegionTracer reg(TaskManager::GetThreadId(), t23t);              
-              m2m3 = elmat * Trans(m3T);
+              m2m3 = Trans(m3T);
             }
           else
             {
@@ -520,8 +575,9 @@ namespace ngcomp
               for (auto & sbfi : m3_bli)
                 sbfi->CalcElementMatrixAdd (mfe, trafo, m3, symmetric_so_far, lh);
               RegionTracer reg(TaskManager::GetThreadId(), t23);                        
-              m2m3 = elmat * m3;
+              m2m3 = m3;
             }
+          SolveDualMass<double> (interpol_fel, trafo, single_bli, m2m3, lh);
         }
       catch (const ExceptionNOSIMD& e)
         {
@@ -560,20 +616,14 @@ namespace ngcomp
       ElementId ei = trafo.GetElementId();
       auto & interpol_fel = fes->GetFE(ei, lh);
 
-      FlatMatrix<double> elmat(interpol_fel.GetNDof(), lh);
-      elmat = 0.0;
       bool symmetric_so_far = false;
 
       size_t nshape = inner_fel.GetNDof();
-      FlatMatrix<> m2m3(elmat.Height(), nshape, lh);
+      FlatMatrix<> m2m3(interpol_fel.GetNDof(), nshape, lh);
 
       try
         {
           RegionTracer reg(TaskManager::GetThreadId(), tm2);
-          for (auto & sbfi : single_bli)
-            sbfi->CalcElementMatrixAdd (interpol_fel, trafo, elmat, symmetric_so_far, lh);
-
-          CalcInverse(elmat);
 
           MixedFiniteElement mfe = (testfunction)
             ? MixedFiniteElement (interpol_fel, inner_fel)
@@ -586,7 +636,7 @@ namespace ngcomp
               for (auto & sbfi : m3_bli)
                 sbfi->CalcElementMatrixAdd (mfe, trafo, m3T, symmetric_so_far, lh);
               RegionTracer reg(TaskManager::GetThreadId(), t23t);
-              m2m3 = elmat * Trans(m3T);
+              m2m3 = Trans(m3T);
             }
           else
             {
@@ -595,8 +645,9 @@ namespace ngcomp
               for (auto & sbfi : m3_bli)
                 sbfi->CalcElementMatrixAdd (mfe, trafo, m3, symmetric_so_far, lh);
               RegionTracer reg(TaskManager::GetThreadId(), t23);
-              m2m3 = elmat * m3;
+              m2m3 = m3;
             }
+          SolveDualMass<double> (interpol_fel, trafo, single_bli, m2m3, lh);
         }
       catch (const ExceptionNOSIMD& e)
         {
@@ -640,28 +691,6 @@ namespace ngcomp
       ElementId ei = trafo.GetElementId();
       auto & interpol_fel = fes->GetFE(ei, lh);
 
-      FlatMatrix<double> elmat(interpol_fel.GetNDof(), lh);
-      elmat = 0.0;
-      bool symmetric_so_far = false;
-
-      try
-        {
-          for (auto & sbfi : single_bli)
-            sbfi->CalcElementMatrixAdd (interpol_fel, trafo, elmat, symmetric_so_far, lh);
-        }
-      catch (const ExceptionNOSIMD& e)
-        {
-          cout << IM(6) << e.What() << endl
-               << "switching to scalar evaluation" << endl;
-          for (auto & sbfi : single_bli)
-            sbfi->SetSimdEvaluate(false);
-          for (auto & sbfi : m3_bli)
-            sbfi->SetSimdEvaluate(false);
-          CalcLinearizedMatrix (inner_fel, mir, x, mat, lh);
-          return;
-        }
-
-      CalcInverse(elmat); 
       size_t nshape = inner_fel.GetNDof();
       
       auto save_ud = trafo.PushUserData();
@@ -672,7 +701,7 @@ namespace ngcomp
         ? MixedFiniteElement (interpol_fel, func_fel) 
         : MixedFiniteElement (func_fel, interpol_fel); 
 
-      FlatMatrix<> m2m3 (elmat.Height(), nshape, lh);
+      FlatMatrix<> m2m3 (interpol_fel.GetNDof(), nshape, lh);
 
       if (testfunction)
         {
@@ -686,7 +715,7 @@ namespace ngcomp
               sbfi->CalcLinearizedElementMatrix (mfe, trafo, elvec, m3Ti, lh);
               m3T += m3Ti;
             }
-          m2m3 = elmat * Trans(m3T);
+          m2m3 = Trans(m3T);
         }
       else
         {
@@ -700,8 +729,9 @@ namespace ngcomp
               sbfi->CalcLinearizedElementMatrix (mfe, trafo, elvec, m3i, lh);
               m3 += m3i;
             }
-          m2m3 = elmat * m3;
+          m2m3 = m3;
         }
+      SolveDualMass<double> (interpol_fel, trafo, single_bli, m2m3, lh);
 
       FlatMatrix<double, ColMajor> m1(Dim()*mir.Size(), interpol_fel.GetNDof(), lh);
       diffop->CalcMatrix(interpol_fel, mir, m1, lh);
@@ -721,28 +751,6 @@ namespace ngcomp
       ElementId ei = trafo.GetElementId();
       auto & interpol_fel = fes->GetFE(ei, lh);
 
-      FlatMatrix<double> elmat(interpol_fel.GetNDof(), lh);
-      elmat = 0.0;
-      bool symmetric_so_far = false;
-
-      try
-        {
-          for (auto & sbfi : single_bli)
-            sbfi->CalcElementMatrixAdd (interpol_fel, trafo, elmat, symmetric_so_far, lh);
-        }
-      catch (const ExceptionNOSIMD& e)
-        {
-          cout << IM(6) << e.What() << endl
-               << "switching to scalar evaluation" << endl;
-          for (auto & sbfi : single_bli)
-            sbfi->SetSimdEvaluate(false);
-          for (auto & sbfi : m3_bli)
-            sbfi->SetSimdEvaluate(false);
-          Apply (inner_fel, mir, x, flux, lh);
-          return;          
-        }
-      
-      CalcInverse(elmat);
       
       auto save_ud = trafo.PushUserData();
 
@@ -764,8 +772,8 @@ namespace ngcomp
           rhs += rhsi;
         }
 
-      rhsi = elmat * rhs;
-      diffop->Apply(interpol_fel, mir, rhsi, flux, lh);
+      SolveDualMass (interpol_fel, trafo, single_bli, rhs, lh);
+      diffop->Apply(interpol_fel, mir, rhs, flux, lh);
     }
 
 
@@ -781,28 +789,6 @@ namespace ngcomp
       ElementId ei = trafo.GetElementId();
       auto & interpol_fel = fes->GetFE(ei, lh);
 
-      FlatMatrix<double> elmat(interpol_fel.GetNDof(), lh);
-      elmat = 0.0;
-      bool symmetric_so_far = false;
-
-      try
-        {
-          for (auto & sbfi : single_bli)
-            sbfi->CalcElementMatrixAdd (interpol_fel, trafo, elmat, symmetric_so_far, lh);
-        }
-      catch (const ExceptionNOSIMD& e)
-        {
-          cout << IM(6) << e.What() << endl
-               << "switching to scalar evaluation" << endl;
-          for (auto & sbfi : single_bli)
-            sbfi->SetSimdEvaluate(false);
-          for (auto & sbfi : m3_bli)
-            sbfi->SetSimdEvaluate(false);
-          Apply (inner_fel, mir, x, flux, lh);
-          return;
-        }
-
-      CalcInverse(elmat);
 
       auto save_ud = trafo.PushUserData();
 
@@ -824,8 +810,8 @@ namespace ngcomp
           rhs += rhsi;
         }
 
-      rhsi = elmat * rhs;
-      diffop->Apply(interpol_fel, mir, rhsi, flux, lh);
+      SolveDualMass (interpol_fel, trafo, single_bli, rhs, lh);
+      diffop->Apply(interpol_fel, mir, rhs, flux, lh);
     }
 
 
@@ -841,28 +827,6 @@ namespace ngcomp
       ElementId ei = trafo.GetElementId();
       auto & interpol_fel = fes->GetFE(ei, lh);
 
-      FlatMatrix<double> elmat(interpol_fel.GetNDof(), lh);
-      elmat = 0.0;
-      bool symmetric_so_far = false;
-
-      try
-        {
-          for (auto & sbfi : single_bli)
-            sbfi->CalcElementMatrixAdd (interpol_fel, trafo, elmat, symmetric_so_far, lh);
-        }
-      catch (const ExceptionNOSIMD& e)
-        {
-          cout << IM(6) << e.What() << endl
-               << "switching to scalar evaluation" << endl;
-          for (auto & sbfi : single_bli)
-            sbfi->SetSimdEvaluate(false);
-          for (auto & sbfi : m3_bli)
-            sbfi->SetSimdEvaluate(false);
-          Apply (inner_fel, mir, x, flux);
-          return;
-        }
-
-      CalcInverse(elmat);
 
       auto save_ud = trafo.PushUserData();
 
@@ -884,8 +848,8 @@ namespace ngcomp
           rhs += rhsi;
         }
 
-      rhsi = elmat * rhs;
-      diffop->Apply(interpol_fel, mir, rhsi, flux);
+      SolveDualMass (interpol_fel, trafo, single_bli, rhs, lh);
+      diffop->Apply(interpol_fel, mir, rhs, flux);
     }
 
 
@@ -979,28 +943,6 @@ namespace ngcomp
       ElementId ei = trafo.GetElementId();
       auto & interpol_fel = fes->GetFE(ei, lh);
 
-      FlatMatrix<double> elmat(interpol_fel.GetNDof(), lh);
-      elmat = 0.0;
-      bool symmetric_so_far = false;
-      try
-        {
-          for (auto & sbfi : single_bli)
-            sbfi->CalcElementMatrixAdd (interpol_fel, trafo, elmat, symmetric_so_far, lh);
-        }
-      catch (const ExceptionNOSIMD& e)
-        {
-          cout << IM(6) << e.What() << endl
-               << "switching to scalar evaluation" << endl;
-          for (auto & sbfi : single_bli)
-            sbfi->SetSimdEvaluate(false);
-          for (auto & sbfi : m3_bli)
-            sbfi->SetSimdEvaluate(false);
-          CalcHessianAdd (inner_fel, mir, wprime, elvecu, hessian, lh);
-          return;          
-        }
-      
-      CalcInverse(elmat);
-
       FlatMatrix<> hessian2(inner_fel.GetNDof(), lh);
       FlatVector<> rhs(interpol_fel.GetNDof(), lh);
       FlatVector<> v2(interpol_fel.GetNDof(), lh);
@@ -1010,7 +952,8 @@ namespace ngcomp
         wprimeflat.Row(i) *= mir[i].GetWeight();
       
       diffop->ApplyTrans(interpol_fel, mir, wprimeflat, rhs, lh);
-      v2 = Trans(elmat) * rhs;
+      v2 = rhs;
+      SolveDualMassTrans (interpol_fel, trafo, single_bli, v2, lh);
 
       dual_fecf->Set (&interpol_fel, &v2);
       FlatVector<> fvelvecu(inner_fel.GetNDof(), lh);
@@ -1022,29 +965,6 @@ namespace ngcomp
         }
       // cout << "hessian2 = " << endl << hessian2 << endl;
     } 
-
-    // inverse of dual mass matrix, false if single_bli needs scalar evaluation
-    bool CalcDualMassInverse (const FiniteElement & interpol_fel, const ElementTransformation & trafo,
-                              FlatMatrix<> elmat, LocalHeap & lh) const
-    {
-      elmat = 0.0;
-      bool symmetric_so_far = false;
-      try
-        {
-          for (auto & sbfi : single_bli)
-            sbfi->CalcElementMatrixAdd (interpol_fel, trafo, elmat, symmetric_so_far, lh);
-        }
-      catch (const ExceptionNOSIMD& e)
-        {
-          for (auto & sbfi : single_bli)
-            sbfi->SetSimdEvaluate(false);
-          for (auto & sbfi : m3_bli)
-            sbfi->SetSimdEvaluate(false);
-          return false;
-        }
-      CalcInverse(elmat);
-      return true;
-    }
 
     void CalcLinearizedMatrix (const FiniteElement & inner_fel,
                                const SIMD_BaseMappedIntegrationRule & mir,
@@ -1065,13 +985,9 @@ namespace ngcomp
       size_t nshape = inner_fel.GetNDof();
       size_t ms = mir.Size();
 
-      FlatMatrix<> elmat(nint, lh);
-      if (!CalcDualMassInverse (interpol_fel, trafo, elmat, lh))
-        if (!CalcDualMassInverse (interpol_fel, trafo, elmat, lh))
-          throw ExceptionNOSIMD("InterpolateDiffOp, dual mass matrix");
-
       MixedFiniteElement mfe(inner_fel, interpol_fel);
-      FlatMatrix<> m3(nint, nshape, lh), m3i(nint, nshape, lh);
+      FlatMatrix<> m3(nint, nshape, lh);
+      FlatMatrix<> m3i(nint, nshape, lh);
       FlatVector<> elvec(nshape, lh);
       elvec = x;
       m3 = 0.0;
@@ -1080,17 +996,52 @@ namespace ngcomp
           sbfi->CalcLinearizedElementMatrix (mfe, trafo, elvec, m3i, lh);
           m3 += m3i;
         }
-      FlatMatrix<> m2m3 = elmat * m3 | lh;
+      SolveDualMass<double> (interpol_fel, trafo, single_bli, m3, lh);
 
-      // mat(i*Dim+d, p) = sum_j m2m3(j,i) * m1(j*Dim+d, p)
+      // mat(i*Dim+d, p) = sum_j (M^-1 m3)(j,i) * m1(j*Dim+d, p)
       constexpr size_t W = SIMD<double>::Size();
       FlatMatrix<SIMD<double>> m1(nint*Dim(), ms, lh);
       diffop->CalcMatrix(interpol_fel, mir, m1);
       FlatMatrix<SIMD<double>> res(nshape*Dim(), ms, lh);
       FlatMatrix<> m1d(nint, Dim()*ms*W, (double*)m1.Data());
       FlatMatrix<> resd(nshape, Dim()*ms*W, (double*)res.Data());
-      resd = Trans(m2m3) * m1d;
+      resd = Trans(m3) * m1d;
       mat.AddSize(nshape*Dim(), ms) = res;
+    }
+
+    // x += (M^-1 db/du)^T B^T flux = grad_u <dual(M^-T B^T flux), func>
+    void AddLinearizedTrans (const FiniteElement & inner_fel,
+                             const SIMD_BaseMappedIntegrationRule & mir,
+                             BareSliceVector<double> elveclin,
+                             BareSliceMatrix<SIMD<double>> flux,
+                             BareSliceVector<double> x,
+                             LocalHeap & lh) const override
+    {
+      if (testfunction)
+        {
+          DifferentialOperator::AddLinearizedTrans (inner_fel, mir, elveclin, flux, x, lh);
+          return;
+        }
+      HeapReset hr(lh);
+      const ElementTransformation & trafo = mir.GetTransformation();
+      auto save_ud = trafo.PushUserData();
+      auto & interpol_fel = fes->GetFE(trafo.GetElementId(), lh);
+      size_t nint = interpol_fel.GetNDof();
+      size_t nshape = inner_fel.GetNDof();
+
+      FlatVector<> v(nint, lh);
+      v = 0.0;
+      diffop->AddTrans(interpol_fel, mir, flux, v);
+      SolveDualMassTrans (interpol_fel, trafo, single_bli, v, lh);
+
+      dual_fecf->Set (&interpol_fel, &v);
+      FlatVector<> u(nshape, lh), y(nshape, lh);
+      u = elveclin;
+      for (auto & hbfi : hessian_bfi)
+        {
+          hbfi->ApplyElementMatrix (inner_fel, trafo, u, y, nullptr, lh);
+          x.Range(nshape) += y;
+        }
     }
 
     void CalcHessianAdd (const FiniteElement & inner_fel,
@@ -1110,11 +1061,6 @@ namespace ngcomp
       size_t nint = interpol_fel.GetNDof();
       size_t nshape = inner_fel.GetNDof();
 
-      FlatMatrix<> elmat(nint, lh);
-      if (!CalcDualMassInverse (interpol_fel, trafo, elmat, lh))
-        if (!CalcDualMassInverse (interpol_fel, trafo, elmat, lh))
-          throw ExceptionNOSIMD("InterpolateDiffOp, dual mass matrix");
-
       FlatMatrix<SIMD<double>> wp(Dim(), mir.Size(), lh);
       for (size_t i = 0; i < mir.Size(); i++)
         for (size_t d = 0; d < Dim(); d++)
@@ -1123,9 +1069,9 @@ namespace ngcomp
       FlatVector<> rhs(nint, lh);
       rhs = 0.0;
       diffop->AddTrans(interpol_fel, mir, wp, rhs);
-      FlatVector<> v2 = Trans(elmat) * rhs | lh;
+      SolveDualMassTrans (interpol_fel, trafo, single_bli, rhs, lh);
 
-      dual_fecf->Set (&interpol_fel, &v2);
+      dual_fecf->Set (&interpol_fel, &rhs);
       FlatVector<> fvelvecu(nshape, lh);
       fvelvecu = elvecu;
       FlatMatrix<> hessian2(nshape, lh);

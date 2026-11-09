@@ -119,6 +119,14 @@ namespace ngfem
     
     virtual void GetFacetDofs(int i, Array<int> & dnums) const;
     virtual void CalcDualShape (const BaseMappedIntegrationPoint & bmip, BareSliceMatrix<> shape) const;
+    // coefs += sum_i dualshape(x_i) * values_i
+    virtual void AddDualTrans (const SIMD_BaseMappedIntegrationRule & bmir, BareSliceMatrix<SIMD<double>> values,
+                               BareSliceVector<double> coefs) const
+    { throw ExceptionNOSIMD("HDivFE - simd adddualtrans not overloaded"); }
+
+    virtual void Interpolate (const ElementTransformation & trafo,
+                              const class CoefficientFunction & func, SliceMatrix<> coefs,
+                              LocalHeap & lh, int bonus_intorder = 0) const;
 
   protected:
 
@@ -208,7 +216,7 @@ namespace ngfem
     
     virtual void Interpolate (const ElementTransformation & trafo, 
                               const class CoefficientFunction & func, SliceMatrix<> coefs,
-                              LocalHeap & lh) const override;    
+                              LocalHeap & lh, int bonus_intorder = 0) const override;    
   };
 
 

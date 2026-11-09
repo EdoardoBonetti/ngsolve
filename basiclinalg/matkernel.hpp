@@ -1,12 +1,4 @@
-#if NETGEN_DEFAULT_SIMD_SIZE==1
-#include "matkernel_1.hpp"
-#elif NETGEN_DEFAULT_SIMD_SIZE==2
-#include "matkernel_2.hpp"
-#elif NETGEN_DEFAULT_SIMD_SIZE==4
-#include "matkernel_4.hpp"
-#elif NETGEN_DEFAULT_SIMD_SIZE==8
-#include "matkernel_8.hpp"
-#endif
+enum OPERATION { ADD, SUB, SET, SETNEG };
 
 
 /*
@@ -80,22 +72,36 @@ struct KMultAB
       }, sum, b, pa, da);
   }
 
+  // few fma chains: a second accumulator set for odd k
+  static constexpr bool SPLIT = H*W < 8;
+
   static NGK_INLINE void Run (size_t n, double * pa, size_t da, TB * pb, size_t db, double * pc, size_t dc)
   {
     // C rows by a bumped pointer: index arithmetic costs MSVC registers
-    TSUM sum;
+    TSUM sum, sum2;
     double * pci = pc;
-    KFor<0,H> ([] (auto i, TSUM & sum, double *& pci, size_t & dc) NGK_LAMBDA_INLINE
+    KFor<0,H> ([] (auto i, TSUM & sum, TSUM & sum2, double *& pci, size_t & dc) NGK_LAMBDA_INLINE
       {
         if constexpr (OP == SET || OP == SETNEG)
           sum.template Set<i> (TW(0.0));
         else
           sum.template Set<i> (TW(pci));
+        if constexpr (SPLIT) sum2.template Set<i> (TW(0.0));
         pci += dc;
-      }, sum, pci, dc);
+      }, sum, sum2, pci, dc);
 
-    for (size_t k = 0; k < n; k++, pa++, pb += db)
+    size_t k = 0;
+    if constexpr (SPLIT)
+      for ( ; k+2 <= n; k += 2, pa += 2, pb += 2*db)
+        {
+          Step (sum, pa, da, pb);
+          Step (sum2, pa+1, da, pb+db);
+        }
+    for ( ; k < n; k++, pa++, pb += db)
       Step (sum, pa, da, pb);
+    if constexpr (SPLIT)
+      KFor<0,H> ([] (auto i, TSUM & sum, TSUM & sum2) NGK_LAMBDA_INLINE
+        { sum.template Set<i> (sum.template Get<i>() + sum2.template Get<i>()); }, sum, sum2);
 
     KFor<0,H> ([] (auto i, TSUM & sum, double *& pc, size_t & dc) NGK_LAMBDA_INLINE
       { sum.template Get<i>().Store(pc); pc += dc; }, sum, pc, dc);
@@ -231,13 +237,15 @@ NGK_INLINE void MatKernelMultABMask
 /* ********************** MatKernelScalAB ********************** */
 
 // inner products of rows of A with rows of B, H x W results
-// ALLFMA=false keeps mul+add for H*W < 12 (shorter dependency chain)
+// ALLFMA=false keeps mul+add for 8 <= H*W < 12 (shorter dependency chain)
 template <size_t H, size_t W, bool ALLFMA, typename T>
 struct KScalAB
 {
   typedef Mat<H,W,SIMD<double>> TSUM;
   static constexpr bool simded = !std::is_same_v<T,double>;
   static constexpr size_t SW = simded ? 1 : SIMD<double>::Size();
+  // few fma chains: a second accumulator set for odd steps
+  static constexpr bool SPLIT = H*W < 8;
 
   // a is loaded where it is used: compilers fold it into the multiply
   static NGK_INLINE void Step (TSUM & sum, T * pa, size_t da, T * pb, size_t db)
@@ -247,7 +255,7 @@ struct KScalAB
         SIMD<double> b = KLoad(pb+j*db);
         KFor<0,H> ([] (auto i, auto j, TSUM & sum, T *& pa, size_t & da, SIMD<double> & b) NGK_LAMBDA_INLINE
           {
-            if constexpr (ALLFMA || H*W >= 12)
+            if constexpr (ALLFMA || SPLIT || H*W >= 12)
               sum.template Set<i,j> (FMA(KLoad(pa+i*da), b, sum.template Get<i,j>()));
             else
               sum.template Set<i,j> (sum.template Get<i,j>() + KLoad(pa+i*da)*b);
@@ -288,13 +296,27 @@ struct KScalAB
 
   static NGK_INLINE auto Run (size_t n, T * pa, size_t da, T * pb, size_t db)
   {
-    TSUM sum;
-    KFor<0,H> ([] (auto i, TSUM & sum) NGK_LAMBDA_INLINE
-      { KFor<0,W> ([] (auto j, auto i, TSUM & sum) NGK_LAMBDA_INLINE
-        { sum.template Set<i,j> (SIMD<double>(0.0)); }, i, sum); }, sum);
+    TSUM sum, sum2;
+    KFor<0,H> ([] (auto i, TSUM & sum, TSUM & sum2) NGK_LAMBDA_INLINE
+      { KFor<0,W> ([] (auto j, auto i, TSUM & sum, TSUM & sum2) NGK_LAMBDA_INLINE
+        {
+          sum.template Set<i,j> (SIMD<double>(0.0));
+          if constexpr (SPLIT) sum2.template Set<i,j> (SIMD<double>(0.0));
+        }, i, sum, sum2); }, sum, sum2);
 
-    for (size_t k = 0; k < n/SW; k++, pa += SW, pb += SW)
+    size_t k = 0;
+    if constexpr (SPLIT)
+      for ( ; k+2 <= n/SW; k += 2, pa += 2*SW, pb += 2*SW)
+        {
+          Step (sum, pa, da, pb, db);
+          Step (sum2, pa+SW, da, pb+SW, db);
+        }
+    for ( ; k < n/SW; k++, pa += SW, pb += SW)
       Step (sum, pa, da, pb, db);
+    if constexpr (SPLIT)
+      KFor<0,H> ([] (auto i, TSUM & sum, TSUM & sum2) NGK_LAMBDA_INLINE
+        { KFor<0,W> ([] (auto j, auto i, TSUM & sum, TSUM & sum2) NGK_LAMBDA_INLINE
+          { sum.template Set<i,j> (sum.template Get<i,j>() + sum2.template Get<i,j>()); }, i, sum, sum2); }, sum, sum2);
     if constexpr (!simded)
       if (size_t r = n % SW)
         Rest (sum, r, pa, da, pb, db);
@@ -306,10 +328,64 @@ struct KScalAB
   }
 };
 
+// H rows of A times one vector x: fma with two accumulator sets
+template <size_t H>
+struct KScalAx
+{
+  static constexpr int SW = SIMD<double>::Size();
+  typedef Vec<H,SIMD<double>> TS;
+
+  static NGK_INLINE auto Run (size_t n, double * pa, size_t da, double * x)
+  {
+    TS s0, s1;
+    KFor<0,H> ([] (auto i, TS & s0, TS & s1) NGK_LAMBDA_INLINE
+      { s0.template Set<i> (SIMD<double>(0.0)); s1.template Set<i> (SIMD<double>(0.0)); }, s0, s1);
+    size_t k = 0;
+    for ( ; k+2*SW <= n; k += 2*SW)
+      {
+        SIMD<double> x0(x+k), x1(x+k+SW);
+        KFor<0,H> ([] (auto i, TS & s0, TS & s1, double *& pa, size_t & da, size_t & k, SIMD<double> & x0, SIMD<double> & x1) NGK_LAMBDA_INLINE
+          {
+            s0.template Set<i> (FMA(SIMD<double>(pa+i*da+k), x0, s0.template Get<i>()));
+            s1.template Set<i> (FMA(SIMD<double>(pa+i*da+k+SW), x1, s1.template Get<i>()));
+          }, s0, s1, pa, da, k, x0, x1);
+      }
+    if (k+SW <= n)
+      {
+        SIMD<double> x0(x+k);
+        KFor<0,H> ([] (auto i, TS & s0, double *& pa, size_t & da, size_t & k, SIMD<double> & x0) NGK_LAMBDA_INLINE
+          { s0.template Set<i> (FMA(SIMD<double>(pa+i*da+k), x0, s0.template Get<i>())); }, s0, pa, da, k, x0);
+        k += SW;
+      }
+    if (k < n)
+      {
+        SIMD<mask64> mask(n-k);
+        SIMD<double> x1(x+k, mask);
+        KFor<0,H> ([] (auto i, TS & s1, double *& pa, size_t & da, size_t & k, SIMD<double> & x1, SIMD<mask64> & mask) NGK_LAMBDA_INLINE
+          { s1.template Set<i> (FMA(SIMD<double>(pa+i*da+k, mask), x1, s1.template Get<i>())); }, s1, pa, da, k, x1, mask);
+      }
+    KFor<0,H> ([] (auto i, TS & s0, TS & s1) NGK_LAMBDA_INLINE
+      { s0.template Set<i> (s0.template Get<i>() + s1.template Get<i>()); }, s0, s1);
+
+    if constexpr (H % 4 == 0)
+      return [] <size_t... I> (std::index_sequence<I...>, TS & s) NGK_LAMBDA_INLINE
+        { return Concat(make_tuple(HSum(s.template Get<4*I>(), s.template Get<4*I+1>(),
+                                        s.template Get<4*I+2>(), s.template Get<4*I+3>())...)); }
+        (std::make_index_sequence<H/4>(), s0);
+    else
+      return [] <size_t... I> (std::index_sequence<I...>, TS & s) NGK_LAMBDA_INLINE
+        { return make_tuple(HSum(s.template Get<I>())...); }
+        (std::make_index_sequence<H>(), s0);
+  }
+};
+
 template <size_t H, size_t W>
 INLINE auto MatKernelScalAB (size_t n, double * pa, size_t da, double * pb, size_t db)
 {
-  return KScalAB<H,W,false,double>::Run (n, pa, da, pb, db);
+  if constexpr (W == 1)
+    return KScalAx<H>::Run (n, pa, da, pb);
+  else
+    return KScalAB<H,W,false,double>::Run (n, pa, da, pb, db);
 }
 
 template <size_t H, size_t W>
@@ -906,29 +982,40 @@ struct KMatVec
   typedef Vec<NF,SIMD<double>> TX;
   typedef std::conditional_t<R1, double, std::conditional_t<R2, SIMD<double,2>, SIMD<double>>> TXT;
 
+  // two accumulator sets halve the fma dependency chains
+  static constexpr bool TWO = NF >= 2 || (NF >= 1 && (RM || R2));
+
   // row sums of H rows, SW-vectors per row
   template <int H>
   static NGK_INLINE Vec<H,SIMD<double>> Rows (double * pa, size_t da, TX & xs, TXT & xt, SIMD<mask64> & mask)
   {
     typedef Vec<H,SIMD<double>> TS;
-    TS sum;
-    KFor<0,H> ([] (auto k, TS & sum) NGK_LAMBDA_INLINE { sum.template Set<k> (SIMD<double>(0.0)); }, sum);
-    KFor<0,NF> ([] (auto b, TS & sum, double *& pa, size_t & da, TX & xs) NGK_LAMBDA_INLINE
+    TS sum, sum2;
+    KFor<0,H> ([] (auto k, TS & sum, TS & sum2) NGK_LAMBDA_INLINE
       {
-        KFor<0,H> ([] (auto k, auto b, TS & sum, double *& pa, size_t & da, TX & xs) NGK_LAMBDA_INLINE
-          { sum.template Set<k> (sum.template Get<k>() + SIMD<double>(pa+k*da+b*SW) * xs.template Get<b>()); },
-          b, sum, pa, da, xs);
-      }, sum, pa, da, xs);
-    KFor<0,H> ([] (auto k, TS & sum, double *& pa, size_t & da, TXT & xt, SIMD<mask64> & mask) NGK_LAMBDA_INLINE
+        sum.template Set<k> (SIMD<double>(0.0));
+        if constexpr (TWO) sum2.template Set<k> (SIMD<double>(0.0));
+      }, sum, sum2);
+    KFor<0,NF> ([] (auto b, TS & sum, TS & sum2, double *& pa, size_t & da, TX & xs) NGK_LAMBDA_INLINE
+      {
+        TS & s = (b % 2 == 0) ? sum : sum2;
+        KFor<0,H> ([] (auto k, auto b, TS & s, double *& pa, size_t & da, TX & xs) NGK_LAMBDA_INLINE
+          { s.template Set<k> (FMA(SIMD<double>(pa+k*da+b*SW), xs.template Get<b>(), s.template Get<k>())); },
+          b, s, pa, da, xs);
+      }, sum, sum2, pa, da, xs);
+    KFor<0,H> ([] (auto k, TS & sum, TS & sum2, double *& pa, size_t & da, TXT & xt, SIMD<mask64> & mask) NGK_LAMBDA_INLINE
       {
         constexpr size_t o = NF*SW;
+        TS & s = TWO ? sum2 : sum;
         if constexpr (R1 && H < 4)
-          sum.template Set<k> (sum.template Get<k>() + SIMD<double,4> (pa[k*da+o] * xt, 0,0,0));
+          s.template Set<k> (s.template Get<k>() + SIMD<double,4> (pa[k*da+o] * xt, 0,0,0));
         else if constexpr (R2)
-          sum.template Set<k> (sum.template Get<k>() + SIMD<double,4> (SIMD<double,2>(pa+k*da+o) * xt, SIMD<double,2>(0.0)));
+          s.template Set<k> (s.template Get<k>() + SIMD<double,4> (SIMD<double,2>(pa+k*da+o) * xt, SIMD<double,2>(0.0)));
         else if constexpr (RM)
-          sum.template Set<k> (sum.template Get<k>() + SIMD<double>(pa+k*da+o, mask) * xt);
-      }, sum, pa, da, xt, mask);
+          s.template Set<k> (FMA(SIMD<double>(pa+k*da+o, mask), xt, s.template Get<k>()));
+        if constexpr (TWO)
+          sum.template Set<k> (sum.template Get<k>() + sum2.template Get<k>());
+      }, sum, sum2, pa, da, xt, mask);
     return sum;
   }
 
@@ -951,10 +1038,7 @@ struct KMatVec
         if constexpr (R1)
           vsum += xt * SIMD<double,4> (pa[0*da+NF*SW], pa[1*da+NF*SW], pa[2*da+NF*SW], pa[3*da+NF*SW]);
         if constexpr (MODE == KSCALE)
-          {
-            vsum *= SIMD<double,4>(s);
-            vsum += SIMD<double,4>(y+i);
-          }
+          vsum = FMA(SIMD<double,4>(s), vsum, SIMD<double,4>(y+i));
         else if constexpr (MODE == ADD)
           vsum += SIMD<double,4>(y+i);
         vsum.Store(y+i);
@@ -964,10 +1048,7 @@ struct KMatVec
         auto sum = Rows<2> (pa, da, xs, xt, mask);
         SIMD<double,2> vsum = HSum(sum.template Get<0>(), sum.template Get<1>());
         if constexpr (MODE == KSCALE)
-          {
-            vsum *= SIMD<double,2>(s);
-            vsum += SIMD<double,2>(y+i);
-          }
+          vsum = FMA(SIMD<double,2>(s), vsum, SIMD<double,2>(y+i));
         else if constexpr (MODE == ADD)
           vsum += SIMD<double,2>(y+i);
         vsum.Store(y+i);
@@ -994,7 +1075,7 @@ struct KAddMatTransVecI
   static constexpr int SW = SIMD<double>::Size();
   static constexpr int NF = WA / SW;
   static constexpr int R = WA % SW;
-  static constexpr int U = NF <= 1 ? 4 : (NF <= 4 ? 2 : 1);
+  static constexpr int U = NF <= 2 ? 4 : (NF <= 8 ? 2 : 1);
   static constexpr bool R1 = R == 1;
   static constexpr bool R2 = R == 2 && SW == 4;
   typedef std::conditional_t<R1, SIMD<double,1>, std::conditional_t<R2, SIMD<double,2>, SIMD<double>>> TR;
@@ -1006,13 +1087,13 @@ struct KAddMatTransVecI
   {
     SIMD<double> sx(xv);
     KFor<0,NF> ([] (auto b, TY & sy, double *& pa, SIMD<double> & sx) NGK_LAMBDA_INLINE
-      { sy.template Set<b,J> (sy.template Get<b,J>() + SIMD<double>(pa+b*SW) * sx); }, sy, pa, sx);
+      { sy.template Set<b,J> (FMA(SIMD<double>(pa+b*SW), sx, sy.template Get<b,J>())); }, sy, pa, sx);
     if constexpr (R1)
-      syr.template Set<0,J> (syr.template Get<0,J>() + TR(pa+NF*SW) * sx[0]);
+      syr.template Set<0,J> (FMA(sx[0], TR(pa+NF*SW), syr.template Get<0,J>()));
     else if constexpr (R2)
-      syr.template Set<0,J> (syr.template Get<0,J>() + TR(pa+NF*SW) * sx.Lo());
+      syr.template Set<0,J> (FMA(TR(pa+NF*SW), sx.Lo(), syr.template Get<0,J>()));
     else if constexpr (R > 0)
-      syr.template Set<0,J> (syr.template Get<0,J>() + SIMD<double>(pa+NF*SW, mask) * sx);
+      syr.template Set<0,J> (FMA(SIMD<double>(pa+NF*SW, mask), sx, syr.template Get<0,J>()));
   }
 
   // remaining r < U rows go to accumulators r, r-1, ..., 1
@@ -1066,11 +1147,11 @@ struct KAddMatTransVecI
       }
 
     KFor<0,NF> ([] (auto b, TY & sy, double & s, double *& y) NGK_LAMBDA_INLINE
-      { (s * sy.template Get<b,0>() + SIMD<double>(y+b*SW)).Store(y+b*SW); }, sy, s, y);
+      { FMA(s, sy.template Get<b,0>(), SIMD<double>(y+b*SW)).Store(y+b*SW); }, sy, s, y);
     if constexpr (R1 || R2)
       (s * syr.template Get<0,0>() + TR(y+NF*SW)).Store(y+NF*SW);
     else if constexpr (R > 0)
-      (s * syr.template Get<0,0>() + SIMD<double>(y+NF*SW, mask)).Store(y+NF*SW, mask);
+      FMA(s, syr.template Get<0,0>(), SIMD<double>(y+NF*SW, mask)).Store(y+NF*SW, mask);
   }
 };
 

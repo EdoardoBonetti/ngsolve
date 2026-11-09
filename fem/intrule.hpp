@@ -929,7 +929,7 @@ namespace ngfem
   public:
     Facet2ElementTrafo(ELEMENT_TYPE aeltype, VorB _vb = BND) 
       : eltype(aeltype),
-	points(99,(Vec<3>*)ElementTopology::GetVertices (aeltype)),
+	points(ElementTopology::GetNVertices(aeltype), (Vec<3>*)ElementTopology::GetVertices (aeltype)),
         vb(_vb)
     {
       // points = ElementTopology::GetVertices (eltype);
@@ -942,7 +942,7 @@ namespace ngfem
     template <typename T>
     Facet2ElementTrafo(ELEMENT_TYPE aeltype, const BaseArrayObject<T> & vnums) 
       : eltype(aeltype),
-	points(99,(Vec<3>*)ElementTopology::GetVertices (aeltype))
+	points(ElementTopology::GetNVertices(aeltype), (Vec<3>*)ElementTopology::GetVertices (aeltype))
     {
       // points = ElementTopology::GetVertices (eltype);
       edges = ElementTopology::GetEdges (eltype).Data();
@@ -1276,7 +1276,7 @@ namespace ngfem
   public:
     Facet2SurfaceElementTrafo(ELEMENT_TYPE aeltype) :
       eltype(aeltype),
-      points(99,(Vec<3>*)ElementTopology::GetVertices (aeltype))
+      points(ElementTopology::GetNVertices(aeltype), (Vec<3>*)ElementTopology::GetVertices (aeltype))
     {
       // points = ElementTopology::GetVertices (eltype);
       edges = ElementTopology::GetEdges (eltype).Data();
@@ -1285,7 +1285,7 @@ namespace ngfem
     
     Facet2SurfaceElementTrafo(ELEMENT_TYPE aeltype, FlatArray<int> & vnums)
       : eltype(aeltype),
-        points(99,(Vec<3>*)ElementTopology::GetVertices (aeltype))
+        points(ElementTopology::GetNVertices(aeltype), (Vec<3>*)ElementTopology::GetVertices (aeltype))
     {
       // points = ElementTopology::GetVertices (eltype);
       edges = ElementTopology::GetEdges (eltype).Data();
@@ -1537,7 +1537,7 @@ namespace ngfem
                                   Allocator & lh)
       : BaseMappedIntegrationRule (ir, eltrans), mips(ir.Size(), lh)
     {
-      baseip = (char*)(void*)(BaseMappedIntegrationPoint*)(&mips[0]);
+      baseip = (char*)(void*)(BaseMappedIntegrationPoint*)(mips.Data());
       incr = sizeof (MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE,SCAL>);
     }
 
@@ -1546,11 +1546,8 @@ namespace ngfem
                                   FlatArray< MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE,SCAL> > amips)
       : BaseMappedIntegrationRule (air, aeltrans), mips(amips)
     {
-      baseip = (char*)(void*)(BaseMappedIntegrationPoint*)(&mips[0]);
-      if (mips.Size() > 1)
-        incr = (char*)(void*)(&mips[1]) - (char*)(void*)(&mips[0]);
-      else
-        incr = 0;
+      baseip = (char*)(void*)(BaseMappedIntegrationPoint*)(mips.Data());
+      incr = sizeof (MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE,SCAL>);
     }
 
     virtual ~MappedIntegrationRule() { }
@@ -1577,14 +1574,14 @@ namespace ngfem
     {
       return SliceMatrix<> (mips.Size(), DIM_SPACE*sizeof(SCAL)/sizeof(double),
                             sizeof(MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE, SCAL>) / sizeof(double),
-                            const_cast<double*> (&mips[0].GetPoint()(0)));
+                            const_cast<double*> (mips.Size() ? &mips[0].GetPoint()(0) : nullptr));
     }
 
     virtual SliceMatrix<> GetNormals() const
     {
       return SliceMatrix<> (mips.Size(), DIM_SPACE*sizeof(SCAL)/sizeof(double),
                             sizeof(MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE, SCAL>) / sizeof(double),
-                            const_cast<double*> (&mips[0].GetNV()(0)));
+                            const_cast<double*> (mips.Size() ? &mips[0].GetNV()(0) : nullptr));
     }
 
     virtual void ComputeNormalsAndMeasure (ELEMENT_TYPE et);
@@ -1608,7 +1605,7 @@ namespace ngfem
                                   Allocator & lh)
       : BaseMappedIntegrationRule (ir, eltrans), mips(ir.Size(), lh)
     {
-      baseip = (char*)(void*)(BaseMappedIntegrationPoint*)(&mips[0]);
+      baseip = (char*)(void*)(BaseMappedIntegrationPoint*)(mips.Data());
       incr = sizeof (MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE,SCAL>);
     }
 
@@ -1617,11 +1614,8 @@ namespace ngfem
                                   FlatArray< MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE,SCAL> > amips)
       : BaseMappedIntegrationRule (air, aeltrans), mips(amips)
     {
-      baseip = (char*)(void*)(BaseMappedIntegrationPoint*)(&mips[0]);
-      if (mips.Size() > 1)
-        incr = (char*)(void*)(&mips[1]) - (char*)(void*)(&mips[0]);
-      else
-        incr = 0;
+      baseip = (char*)(void*)(BaseMappedIntegrationPoint*)(mips.Data());
+      incr = sizeof (MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE,SCAL>);
     }
     
     INLINE MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE,SCAL> & operator[] (int i) const
@@ -1649,7 +1643,7 @@ namespace ngfem
       return SliceMatrix<Complex> (mips.Size(), DIM_SPACE,
                                    //&mips[1].GetPoint()(0) - &mips[0].GetPoint()(0),
                                    sizeof(MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE, SCAL>) / sizeof(Complex),
-                                   const_cast<Complex*> (&mips[0].GetPointComplex()(0)));
+                                   const_cast<Complex*> (mips.Size() ? &mips[0].GetPointComplex()(0) : nullptr));
     }
 
     virtual SliceMatrix<> GetNormals() const
@@ -2440,7 +2434,25 @@ namespace ngfem
     void SetIRZ(const SIMD_IntegrationRule * ir) { irz = ir; }
   };
 
+  // calls func(facetnr, range) for each run of SIMD points on the same facet
+  template <typename FUNC>
+  INLINE void IterateFacetBlocks (const SIMD_IntegrationRule & ir, FUNC && func)
+  {
+    for (size_t first = 0; first < ir.Size(); )
+      {
+        int fnr = ir[first].FacetNr();
+        size_t next = first+1;
+        while (next < ir.Size() && ir[next].FacetNr() == fnr) next++;
+        func (fnr, IntRange(first, next));
+        first = next;
+      }
+  }
+
   extern NGS_DLL_HEADER const SIMD_IntegrationRule & SIMD_SelectIntegrationRule (ELEMENT_TYPE eltype, int order);
+
+  // points on the vertices, edges, faces and cell of the reference element as one rule, cached;
+  // mask bit k: include the entities of dimension k (as GetNDofVEFC), points carry their facet tags
+  NGS_DLL_HEADER const SIMD_IntegrationRule & GetInterpolationRule (ELEMENT_TYPE et, int order, int mask, LocalHeap & lh);
 
   inline SIMD_IntegrationRule :: SIMD_IntegrationRule (ELEMENT_TYPE eltype, int order)
   { 
@@ -2489,6 +2501,7 @@ namespace ngfem
     INLINE size_t Size() const { return ir.Size(); }
     INLINE const SIMD_IntegrationRule & IR() const { return ir; }
     INLINE const ElementTransformation & GetTransformation () const { return eltrans; }
+    virtual void ComputeNormalsAndMeasure (ELEMENT_TYPE et) { throw Exception ("SIMD ComputeNormalsAndMeasure(ET) not overloaded"); }
     virtual void ComputeNormalsAndMeasure (ELEMENT_TYPE et, int facetnr) = 0;    
     INLINE const SIMD<BaseMappedIntegrationPoint> & operator[] (size_t i) const
     { return *static_cast<const SIMD<BaseMappedIntegrationPoint>*> ((void*)(baseip+i*incr)); }
@@ -2532,7 +2545,7 @@ namespace ngfem
       {
         dim_element = DIM_ELEMENT;
         dim_space = DIM_SPACE;
-        baseip = (char*)(void*)(SIMD<BaseMappedIntegrationPoint>*)(&mips[0]);
+        baseip = (char*)(void*)(SIMD<BaseMappedIntegrationPoint>*)(mips.Data());
         incr = sizeof (SIMD<MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE>>);
 
         for (size_t i = 0; i < ir.Size(); i++)
@@ -2549,13 +2562,15 @@ namespace ngfem
         */
         new (&points) BareSliceMatrix<SIMD<double>> (mips.Size(), DIM_SPACE,
                                                      sizeof(SIMD<MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE>>)/sizeof(SIMD<double>),
-                                                     &mips[0].Point()(0));
+                                                     mips.Size() ? &mips[0].Point()(0) : nullptr);
         
         new (&normals) BareSliceMatrix<SIMD<double>> (mips.Size(), DIM_SPACE,
                                                       sizeof(SIMD<MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE>>)/sizeof(SIMD<double>),
-                                                      &mips[0].NV()(0));
+                                                      mips.Size() ? &mips[0].NV()(0) : nullptr);
       }
 
+    // facet type and number per point (per SIMD block), volume points are skipped
+    virtual void ComputeNormalsAndMeasure (ELEMENT_TYPE et) override;
     virtual void ComputeNormalsAndMeasure (ELEMENT_TYPE et, int facetnr) override;
     SIMD<MappedIntegrationPoint<DIM_ELEMENT, DIM_SPACE>> & operator[] (size_t i) const 
     { 

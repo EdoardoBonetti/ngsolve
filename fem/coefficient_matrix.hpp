@@ -3,6 +3,22 @@
 
 namespace ngfem
 {
+  // r[h,b,a,t] = c[h,a,b,t], reshaped to dims
+  shared_ptr<CoefficientFunction> SwapAxesCF (shared_ptr<CoefficientFunction> c,
+                                              int head, int n1, int n2, int tail,
+                                              FlatArray<int> dims);
+  // c[i,j,A,B] = sum_k t[i,k,A] m[k,j,B]
+  shared_ptr<CoefficientFunction> MultTensorMatCF (shared_ptr<CoefficientFunction> t,
+                                                   shared_ptr<CoefficientFunction> m);
+  // r[i,I,A,B] = eps_ijk eps_IJK a[j,J,A] b[k,K,B]
+  shared_ptr<CoefficientFunction> TensorCrossCF (shared_ptr<CoefficientFunction> a,
+                                                 shared_ptr<CoefficientFunction> b);
+  // r[i...,j...] = a[i...] b[j...]
+  shared_ptr<CoefficientFunction> TensorProductCF (shared_ptr<CoefficientFunction> a,
+                                                   shared_ptr<CoefficientFunction> b);
+  // r[i,A,B] = eps_ijk a[j,A] b[k,B]
+  shared_ptr<CoefficientFunction> CrossTensorCF (shared_ptr<CoefficientFunction> a,
+                                                 shared_ptr<CoefficientFunction> b);
 
 
   class IdentityCoefficientFunction : public T_CoefficientFunction<IdentityCoefficientFunction, CoefficientFunctionNoDerivative>
@@ -89,6 +105,12 @@ namespace ngfem
     int inner_dim;
     using BASE = T_CoefficientFunction<MultMatMatCoefficientFunction>;
   public:
+    Array<shared_ptr<CoefficientFunction>> InputVJP (shared_ptr<CoefficientFunction> w) const override
+    {
+      // A B: A gets w B^T, B gets A^T w
+      return { w * c2->Transpose(), c1->Transpose() * w };
+    }
+
     // MultMatMatCoefficientFunction() = default;
     MultMatMatCoefficientFunction (shared_ptr<CoefficientFunction> ac1,
                                    shared_ptr<CoefficientFunction> ac2)
@@ -346,17 +368,9 @@ namespace ngfem
       auto diffc1 = c1->DiffJacobi (var, cache);
       auto diffc2 = c2->DiffJacobi (var, cache);
     
-      auto diffc1_trans = diffc1 -> TensorTranspose( 0, 1 ) -> Reshape( inner_dim, h*dimvar );
-      auto prod1 = c2->Transpose() * diffc1_trans;
-      Array<int> dimtmp{w, h};
-      dimtmp += var->Dimensions();
-      auto prod1trans = prod1->Reshape(dimtmp) -> TensorTranspose( 0, 1 );
-    
-      auto diffc2_trans = diffc2 -> Reshape( Array<int>{inner_dim,w*dimvar} );
-      auto prod2 = c1 * diffc2_trans;
-      auto prod2trans = prod2->Reshape(dimres);
-
-      auto res = prod1trans + prod2trans;
+      auto prod1 = MultTensorMatCF (diffc1 -> Reshape( Array<int>{h,inner_dim,dimvar} ), c2) -> Reshape(dimres);
+      auto prod2 = (c1 * diffc2 -> Reshape( Array<int>{inner_dim,w*dimvar} )) -> Reshape(dimres);
+      auto res = prod1 + prod2;
       cache[thisptr] = res;
       return res;
     }
@@ -718,6 +732,11 @@ namespace ngfem
       return TransposeCF (c1->Diff(var, dir));
     }
 
+    Array<shared_ptr<CoefficientFunction>> InputVJP (shared_ptr<CoefficientFunction> w) const override
+    {
+      return { w->Transpose() };
+    }
+
     shared_ptr<CoefficientFunction> DiffJacobi (const CoefficientFunction * var, T_DJC & cache) const override
     {
       auto thisptr = const_pointer_cast<CoefficientFunction>(this->shared_from_this());
@@ -742,6 +761,11 @@ class TraceCoefficientFunction : public T_CoefficientFunction<TraceCoefficientFu
   shared_ptr<CoefficientFunction> c1;
   using BASE = T_CoefficientFunction<TraceCoefficientFunction>;
 public:
+  Array<shared_ptr<CoefficientFunction>> InputVJP (shared_ptr<CoefficientFunction> w) const override
+  {
+    return { w * IdentityCF(c1->Dimensions()[0]) };
+  }
+
   // TraceCoefficientFunction() = default;
   TraceCoefficientFunction (shared_ptr<CoefficientFunction> ac1)
     : T_CoefficientFunction<TraceCoefficientFunction>(1, ac1->IsComplex()), c1(ac1)

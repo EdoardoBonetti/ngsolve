@@ -116,6 +116,21 @@ namespace ngfem
   }
 
 
+  string Code :: AssignNew (int i, int comp, FlatArray<int> dims, CodeExpr expr, bool iscomplex) const
+  {
+    if (!code_uses_tensors)
+      return Var(i, comp, dims).Assign(expr);
+    string res;
+    if (comp == 0)
+      {
+        res = "Tens<" + GetType(iscomplex);
+        for (auto d : dims)
+          res += ',' + ToLiteral(d);
+        res += "> var_" + ToLiteral(i) + ";\n";
+      }
+    return res + Var(i, comp, dims).Assign(expr, false);
+  }
+
   string Code :: GetType (bool iscomplex) const
   {
     string type = iscomplex ? "Complex" : "double";
@@ -342,6 +357,8 @@ namespace ngfem
         CCode operator *(int val, const CCode &c) { return CCode(1.0*val)*c; }
         CCode operator -(double val, const CCode &c) { return CCode(val)-c; }
         CCode operator *(double val, const CCode &c) { return CCode(val)*c; }
+        // GLSL float version of ngcore::ClampPyramidApex
+        CCode ClampPyramidApex (const CCode &z) { return CCode("min("+z.s+",0.999999)"); }
 
         ostream &operator <<(ostream & s, const CCode &c) {
             s << c.s;

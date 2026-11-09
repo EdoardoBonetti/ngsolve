@@ -53,7 +53,7 @@ namespace ngcomp
     ///
     bool fixed_order;
 
-    bool RT = false; 
+    bool et_RT[30] = { false };   // RT per element type, see hdiv_ndof::SetupRT
 
     // highest-order facet dofs discontinuous ?
     bool highest_order_dc;
@@ -61,6 +61,10 @@ namespace ngcomp
     bool hide_all_dofs;
     // discontinuous facet pairs:
     Array<IVec<2>> dc_pairs;
+
+    // D^-1 of full-order trigs, tets, per vertex-order class
+    mutable std::atomic<double*> dual_inverse[2][64] {};
+    void ClearDualInverse ();
   public:
     HDivHighOrderFESpace (shared_ptr<MeshAccess> ama, const Flags & flags, 
                           bool parseflags=false);
@@ -164,6 +168,15 @@ namespace ngcomp
     {
       return Range (first_inner_dof[nr], first_inner_dof[nr+1]);
     }
+
+    // L2 space of matching order, containing div of this space
+    shared_ptr<FESpace> CreateDivergenceSpace() const;
+
+    // FacetFESpace for u.n
+    shared_ptr<FESpace> CreateMultiplierSpace (Flags flags = Flags()) const override;
+
+    // MCS stress space (HCurlDiv) paired with this velocity space
+    shared_ptr<FESpace> CreateStressSpace (Flags flags = Flags(), bool weaksym = false) const;
 
   };
 

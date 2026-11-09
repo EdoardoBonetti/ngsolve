@@ -550,7 +550,7 @@ namespace ngbla
     }
     
     /// move matrix
-    INLINE Matrix (Matrix && m2)
+    INLINE Matrix (Matrix && m2) noexcept
       : FlatMatrix<T,ORD> (0, 0, nullptr)
     {
       ngcore::Swap(this->layout, m2.layout);
@@ -658,7 +658,7 @@ namespace ngbla
       return *this;
     }
 
-    Matrix & operator= (Matrix && m2) 
+    Matrix & operator= (Matrix && m2) noexcept
     {
       // this->h = m2.h;      
       // this->w = m2.w;
@@ -671,6 +671,43 @@ namespace ngbla
     Matrix & operator+= (const M2 & m) 
     { 
       MatExpr<FlatMatrix<T,ORD> >::operator+= (m);
+      return *this;
+    }
+  };
+
+
+  /**
+     A Matrix class with memory allocation/deallocation, like VectorMem.
+     If h*w fits into the static size S, the matrix uses the static memory,
+     otherwise dynamic memory is allocated.
+  */
+  template <int S, typename T = double, ORDERING ORD = RowMajor>
+  class MatrixMem : public FlatMatrix<T,ORD>
+  {
+    T mem[S];
+  public:
+    typedef typename mat_traits<T>::TSCAL TSCAL;
+
+    INLINE MatrixMem (size_t ah, size_t aw) : FlatMatrix<T,ORD> (0, 0, nullptr)
+    { this->AssignMemory (ah, aw, (ah*aw <= S) ? &mem[0] : new T[ah*aw]); }
+
+    /// deallocates dynamic memory
+    INLINE ~MatrixMem() { if (this->Height()*this->Width() > S) delete [] this->Data(); }
+
+    // the data may live inside the object
+    MatrixMem (const MatrixMem &) = delete;
+    MatrixMem & operator= (const MatrixMem &) = delete;
+
+    INLINE MatrixMem & operator= (TSCAL s)
+    {
+      FlatMatrix<T,ORD>::operator= (s);
+      return *this;
+    }
+
+    template<typename TB>
+    INLINE MatrixMem & operator= (const Expr<TB> & m)
+    {
+      MatExpr<FlatMatrix<T,ORD> >::operator= (m);
       return *this;
     }
   };
@@ -1791,6 +1828,12 @@ namespace ngbla
     {
       // static_assert( Dist() == InnerSize() );      
       return FlatVector<T> (Height()*Width(), Data());
+    }
+
+    // complex h x w as real h x 2w, real and imaginary parts interleaved
+    INLINE auto AsRealMatrix () const requires (std::is_same_v<T,Complex> && ORD==RowMajor)
+    {
+      return SliceMatrix<double> (Height(), 2*Width(), 2*Dist(), reinterpret_cast<double*>(Data()));
     }
 
     auto Bare() const

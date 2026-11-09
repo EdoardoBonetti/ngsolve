@@ -418,43 +418,43 @@ namespace ngfem
   template<int D>
   void ScalarFiniteElement<D> :: Interpolate (const ElementTransformation & trafo, 
                                               const CoefficientFunction & func, SliceMatrix<> coefs,
-                                              LocalHeap & lh) const
+                                              LocalHeap & lh, int bonus_intorder) const
   {
     HeapReset hr(lh);
-    
-    FlatMatrix<> elflux(GetNDof(), coefs.Width(), lh);
-    elflux = 0.0;
+    coefs = 0.0;
+
+    auto [nv,ne,nf,nc] = GetNDofVEFC();
+    int nvefc[] = { nv, ne, nf, nc };
 
     try
     {
-      for (int el_vb = D; el_vb >= 0; el_vb--)
-      {
-        Facet2ElementTrafo f2el (ElementType(), VorB(el_vb));
-        for (int locfnr : Range(f2el.GetNFacets()))
-        {
-          SIMD_IntegrationRule irfacet(f2el.FacetType(locfnr), 2 * Order());
-          auto & irvol = f2el(locfnr, irfacet, lh);
-          auto & mir = trafo(irvol, lh);
+      // all facet points in one rule: one mapping and one evaluation per element
+      int mask = 0;
+      for (int k = 0; k <= D; k++)
+        if (nvefc[k]) mask |= 1 << k;
+      auto & rule = GetInterpolationRule (ElementType(), 2 * Order() + bonus_intorder, mask, lh);
+      auto & mir = trafo(rule, lh);
 
-          FlatMatrix<SIMD<double>> mfluxi(coefs.Width(), mir.IR().Size(), lh);
-          func.Evaluate (mir, mfluxi);
+      FlatMatrix<SIMD<double>> mfluxi(coefs.Width(), mir.Size(), lh);
+      func.Evaluate (mir, mfluxi);
 
-          for (size_t j : Range(mir))
-            mfluxi.Col(j) *= mir[j].IP().Weight();
+      for (size_t j : Range(mir))
+        mfluxi.Col(j) *= mir[j].IP().Weight();
 
-          for (int i = 0; i < coefs.Width(); i++)
-            AddDualTrans (mir.IR(), mfluxi.Row(i), elflux.Col(i));
-        }
-      }
+      // facet number and vb are taken per point
+      for (int i = 0; i < coefs.Width(); i++)
+        AddDualTrans (rule, mfluxi.Row(i), coefs.Col(i));
     }
     catch (const ExceptionNOSIMD& e)
     {
+      coefs = 0.0;
       for (int el_vb = D; el_vb >= 0; el_vb--)
       {
+        if (!nvefc[D-el_vb]) continue;
         Facet2ElementTrafo f2el (ElementType(), VorB(el_vb));
         for (int locfnr : Range(f2el.GetNFacets()))
         {
-          IntegrationRule irfacet(f2el.FacetType(locfnr), 2 * Order());
+          IntegrationRule irfacet(f2el.FacetType(locfnr), 2 * Order() + bonus_intorder);
           auto & irvol = f2el(locfnr, irfacet, lh);
           auto & mir = trafo(irvol, lh);
 
@@ -465,14 +465,13 @@ namespace ngfem
             mfluxi.Row(j) *= mir[j].IP().Weight();
 
           for (int i = 0; i < coefs.Width(); i++)
-            AddDualTrans (mir.IR(), mfluxi.Col(i), elflux.Col(i));
+            AddDualTrans (mir.IR(), mfluxi.Col(i), coefs.Col(i));
         }
       }
     }
 
-    for (int i = 0; i < coefs.Width(); i++)
-      if (!SolveDuality (elflux.Col(i), coefs.Col(i), lh))
-        throw Exception("scalar interpolate need solveduality");
+    if (!SolveDuality (coefs, lh))
+      throw Exception("scalar interpolate need solveduality");
 
     /*
       ... otherwise 
@@ -499,8 +498,22 @@ namespace ngfem
   
 
   template <int D>
-  bool ScalarFiniteElement<D> :: SolveDuality (SliceVector<> rhs, SliceVector<> u,
-                                               LocalHeap & lh) const
+  bool ScalarFiniteElement<D> :: SolveDuality (SliceMatrix<> x, LocalHeap & lh) const
+  {
+    if (!DualityMassDiagonal()) return false;
+    HeapReset hr(lh);
+    FlatVector<> rhs(x.Height(), lh);
+    for (size_t j = 0; j < x.Width(); j++)
+      {
+        rhs = x.Col(j);
+        SolveDuality1 (rhs, x.Col(j), lh);
+      }
+    return true;
+  }
+
+  template <int D>
+  bool ScalarFiniteElement<D> :: SolveDuality1 (SliceVector<> rhs, SliceVector<> u,
+                                                LocalHeap & lh) const
   {
     if (!DualityMassDiagonal()) return false;
 
