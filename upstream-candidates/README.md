@@ -1,0 +1,77 @@
+# Upstream candidates: what this fork could give back to NGSolve
+
+Fork branch `ngsolve` at a4b5bfd04 (upstream master merged on 2026-11-09) against pristine upstream
+master 6e701b568 (netgen 9d852668). Both built the same way (RelWithDebInfo, no GUI, OCC, UMFPACK,
+Accelerate) on the Mac (M1 Max, 10 cores, 32 GB). Everything here reruns with one command:
+
+```bash
+./run_ab.sh 2>&1 | tee results/run_ab.log      # tests + benchmarks, upstream then fork
+```
+
+`source env.sh fork|upstream` selects the build (`install-dev` or `../../upstream-ref/install`).
+Every result is a JSON in `results/` with wall time, peak memory, machine, threads, command and commit.
+
+## Regression tests: master fails, the fork passes
+
+`tests_ab.py` runs the fork's 17 test files, each in its own process. Fork: 17/17 pass. Upstream master:
+
+| test file | upstream master | what it shows |
+|---|---|---|
+| test_tangential_simd_bbnd | 1 of 3 fail | `specialcf.tangential` is 0 in SIMD edge (BBND) forms: the matrix assembles to zero |
+| test_edgefacetangential_simd | 1 of 2 fail | `EdgeFaceTangentialVectors` has no SIMD Evaluate; the integrator switches to scalar for good |
+| test_other_bnd_assembled | 2 of 2 fail | `u.Other(bnd=g)` boundary-facet term missing from the assembled matrix |
+| test_irspace_set | 6 of 6 fail | `IntegrationRuleSpace(order>=6).Set` in 3D: SIMD blocks of 64 points land on wrong dofs (garbage/NaN) |
+| test_equivalence_keys | 1 of 1 fail | `code_uses_equivalence_keys=True`: generated C++ does not compile (12 compiler errors) |
+| test_periodic | 4 of 8 fail | `.Other()` on periodic facets evaluated at wrong points when the translation reorders vertex numbers |
+| test_l2prolongation_refined | 8 of 15 fail | L2/VectorL2/SurfaceL2 `hoprolongation` on spaces created after `Refine` (L2 error 1e-5 → 9e-2) |
+| test_device_krylov | 5 of 7 fail | DeviceCG/DeviceTFQMR give NaN after exact convergence between residual checks |
+| test_localhoprolongation | 9 of 11 fail | feature: `H1(localhoprolongation=True)` |
+| test_hcurlcurl_prolongation, _trig | 15 of 15 fail | feature: HCurlCurl has no prolongation |
+| test_refine1d (ngsolve + netgen) | 15 of 15 fail | feature: 1D adaptive bisection and exact L2 prolongation |
+| test_solvers | 3 of 6 fail | feature: GPLHR |
+| test_tendexlines | error | feature: TendexLines |
+| netgen test_split_alfeld | 1 of 3 fail | `ngmesh.SplitAlfeld()` puts the 3D vertex outside the tet (inverted elements, volume 2 on the unit cube) |
+| test_inverse_temporary | passes | the crash needs MKL Pardiso (asc203); not reproducible on the Mac |
+
+## Measured speed-ups (same machine, same options)
+
+| item | setup | upstream master | fork | gain |
+|---|---|---|---|---|
+| Field lines (netgen `FieldLineCalc`) | 2000 lines, 46,531 tets, `bench_fieldlines.py` | 9.26 s | 0.49 s (10 threads); 1.91 s (1 thread) | **19×**; 4.9× from the element hint alone |
+| H1 high-order transfer under adaptive refinement | L-shape, p = 4, 5 levels to 2.28 M dofs, `bench_hoprol.py` | 1.23 s, 636 MB (`hoprolongation`) | 0.47 s, 407 MB (`localhoprolongation`) | **2.6×**, −36 % memory; exact (1.4e-14) |
+| Non-Hermitian eigenvalues near a target | −Δu + b·∇u = λu, unit cube, H1 p = 2, 4 eigenvalues, `bench_gplhr.py` | Arnoldi + UMFPACK, 20 vectors: 83.4 s, 10.5 GB | GPLHR + BDDC: 48.0 s, 9.5 GB | **1.7×** at 147k dofs; slower below ~50k dofs |
+| Edge form with `EdgeFaceTangentialVectors` | VectorH1 p = 3, 137k dofs, `bench_simd_edgeface.py` | 0.172 s (scalar fallback) | 0.106 s (SIMD) | **1.6×**, identical matrix |
+| Complex system, real BDDC preconditioner | 62,821 dofs, GMRES, `bench_complex_precond.py` | raises `SparseCholesky::MultAdd: illegal combination of scalar types` | 17 iterations, true residual 2.8e-11 | works vs. does not |
+| `mesh.Refine()` (netgen cluster update skipped) | 3D, `bench_refine.py` | 1.42 s (3.2 M tets), 15.07 s (20.4 M) | 1.36 s, 14.58 s | 3–4 % |
+
+Notes on the numbers:
+- Field lines: the traced length agrees (1429.105 vs 1428.993); the fork has 3.6 % more segments because
+  upstream carries the RK step size and critical value from one line into the next. The fork's output is the
+  same at 1 and 10 threads.
+- GPLHR: GPLHR and Arnoldi(20) agree on 58.609 and the triple 88.217 at every size. Times (Arnoldi / GPLHR):
+  1.9 / 3.4 s at 19k dofs, 5.9 / 8.8 s at 37k, 15.3 / 13.4 s at 63k, 83.4 / 48.0 s at 147k. Memory is close
+  because BDDC's own factorization dominates; a multigrid preconditioner would be needed to show a memory gain.
+  With only 5 vectors Arnoldi returned values that are not eigenvalues (119.5, 133.5, 5256; exact: 88.22 ×3,
+  117.83 ×3), since it has no convergence test. First run with num = 5: `results/gplhr_n5_first_run/`.
+- Equivalence keys: correctness only here (master fails to compile, fork compiles; compile 2.17 s without keys,
+  2.04 s with). The earlier measurement on the XCTS source term in the NR repo was 46.1 s → 13.9 s with keys.
+- `mesh.Refine` at 154 M tets ran 248 s vs 164 s, but that level was near the memory limit; not claimed.
+- Also found: `ngsolve.webgui.FieldLines(start_points=<numpy array>)` fails on its own `assert`
+  (truth value of an array). One-line fix: `start_points is not None`.
+
+## Does each change apply to today's master?
+
+Cherry-pick of the original commits onto 6e701b568 (2026-11-09):
+applies cleanly: Other(bnd=g), Inverse keep_alive, IRSpace split rules, ZeroCF key, periodic facets, DeviceCG SafeDiv,
+L2 prolongation on refined meshes, GPLHR, local H1 prolongation, HCurlCurl prolongation, HDiv 2D prolongation,
+AdjMatrix, 1D refinement; netgen: SplitAlfeld, parallel field lines, Refine cluster skip, 1D bisection.
+Needs a small rebase: SIMD edge forms (upstream reworked `intrule.cpp` on 2026-11-03), real operators on complex
+vectors (sparsecholesky/umfpack), block-selective smoothing (blockjacobi).
+Already upstream: OCC < 7.8 shape hasher, NG_TCL macros.
+
+## Fixed in the fork today because of the upstream merge
+- `ComputeNormalAndMeasureET` (new in master, ba256c2e2) sets the edge tangent only for `double`, so the SIMD
+  tangent is 0 again: 8e7f19d9f. **This is a bug in current master.**
+- Master merges the facet rules of an element into one SIMD rule (11e5bb11c); the fork's SIMD
+  `EdgeFaceTangentialVectors` now takes the edge per point: a4b5bfd04.
+- HDiv `RT` became per element type (`et_RT[]`); the fork's HDiv hoprolongation follows: b7308a62d.

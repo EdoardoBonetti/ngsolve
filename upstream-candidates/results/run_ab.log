@@ -1,0 +1,1285 @@
+=== upstream: 6.2.2608-262-g6e701b568
+test_edgefacetangential_simd.py               rc=   1  1 failed, 1 passed in 0.55s
+test_tangential_simd_bbnd.py                  rc=   1  1 failed, 2 passed in 0.61s
+test_other_bnd_assembled.py                   rc=   1  2 failed in 0.54s
+test_inverse_temporary.py                     rc=   0  3 passed, 1 skipped in 0.55s
+test_irspace_set.py                           rc=   1  6 failed in 9.66s
+test_equivalence_keys.py                      rc=   1  1 failed in 2.34s
+test_periodic.py                              rc=   1  4 failed, 4 passed in 2.63s
+test_device_krylov.py                         rc=   1  5 failed, 2 passed, 1 warning in 25.12s
+test_l2prolongation_refined.py                rc=   1  8 failed, 7 passed in 2.91s
+test_localhoprolongation.py                   rc=   1  9 failed, 2 passed in 6.98s
+test_hcurlcurl_prolongation.py                rc=   1  6 failed in 0.60s
+test_hcurlcurl_prolongation_trig.py           rc=   1  9 failed in 0.55s
+test_refine1d.py                              rc=   1  10 failed in 0.56s
+test_solvers.py                               rc=   1  3 failed, 3 passed in 1.11s
+test_tendexlines.py                           rc=   2  1 error in 0.90s
+netgen/test_split_alfeld.py                   rc=   1  1 failed, 2 passed in 0.22s
+netgen/test_refine1d.py                       rc=   1  5 failed in 0.20s
+{
+ "test_edgefacetangential_simd.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_edgefacetangential_orthonormal": "PASSED",
+   "test_edgefacetangential_simd": "FAILED"
+  },
+  "summary": "1 failed, 1 passed in 0.55s",
+  "seconds": 0.830922124965582
+ },
+ "test_tangential_simd_bbnd.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_tangential_bbnd_simd_matches_scalar[ef]": "PASSED",
+   "test_tangential_bbnd_simd_matches_scalar[shift]": "PASSED",
+   "test_tangential_bbnd_simd_matches_scalar[tt]": "FAILED"
+  },
+  "summary": "1 failed, 2 passed in 0.61s",
+  "seconds": 0.8320995829999447
+ },
+ "test_other_bnd_assembled.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_other_bnd_1d": "FAILED",
+   "test_other_bnd_2d": "FAILED"
+  },
+  "summary": "2 failed in 0.54s",
+  "seconds": 0.7605535420007072
+ },
+ "test_inverse_temporary.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_inverse_of_temporary[None]": "PASSED",
+   "test_inverse_of_temporary[umfpack]": "PASSED",
+   "test_inverse_of_temporary[sparsecholesky]": "PASSED",
+   "[1]": "SKIPPED"
+  },
+  "summary": "3 passed, 1 skipped in 0.55s",
+  "seconds": 0.7701151249930263
+ },
+ "test_irspace_set.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_irspace_set[5-True]": "FAILED",
+   "test_irspace_set[5-False]": "FAILED",
+   "test_irspace_set[6-True]": "FAILED",
+   "test_irspace_set[6-False]": "FAILED",
+   "test_irspace_set[8-True]": "FAILED",
+   "test_irspace_set[8-False]": "FAILED"
+  },
+  "summary": "6 failed in 9.66s",
+  "seconds": 9.87953708297573
+ },
+ "test_equivalence_keys.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_scalar_and_one_component_zero_are_distinct": "FAILED"
+  },
+  "summary": "1 failed in 2.34s",
+  "seconds": 2.563671957992483
+ },
+ "test_periodic.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_periodicH1": "PASSED",
+   "test_periodic_set_order": "PASSED",
+   "test_quasiperiodic": "PASSED",
+   "test_periodic_spaces_random_numbering": "PASSED",
+   "test_periodic_skeleton_random_numbering[2]": "FAILED",
+   "test_periodic_skeleton_random_numbering[3]": "FAILED",
+   "test_periodic_dg_jumps_random_numbering[2]": "FAILED",
+   "test_periodic_dg_jumps_random_numbering[3]": "FAILED"
+  },
+  "summary": "4 failed, 4 passed in 2.63s",
+  "seconds": 2.8569382919813506
+ },
+ "test_device_krylov.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_devicecg_matches_cg[False]": "PASSED",
+   "test_devicecg_matches_cg[True]": "PASSED",
+   "test_safediv": "FAILED",
+   "test_exact_convergence[False-DeviceCGSolver]": "FAILED",
+   "test_exact_convergence[False-DeviceTFQMRSolver]": "FAILED",
+   "test_exact_convergence[True-DeviceCGSolver]": "FAILED",
+   "test_exact_convergence[True-DeviceTFQMRSolver]": "FAILED"
+  },
+  "summary": "5 failed, 2 passed, 1 warning in 25.12s",
+  "seconds": 25.34181695804
+ },
+ "test_l2prolongation_refined.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_prolongation_after_refine[L2-2-0]": "PASSED",
+   "test_prolongation_after_refine[L2-3-0]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-2-0]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-2-1]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-2-2]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-3-0]": "PASSED",
+   "test_prolongation_after_refine[SurfaceL2-3-0]": "PASSED",
+   "test_prolongation_after_refine[L2-2-1]": "FAILED",
+   "test_prolongation_after_refine[L2-2-2]": "FAILED",
+   "test_prolongation_after_refine[L2-3-1]": "FAILED",
+   "test_prolongation_after_refine[L2-3-2]": "FAILED",
+   "test_prolongation_after_refine[VectorL2-3-1]": "FAILED",
+   "test_prolongation_after_refine[VectorL2-3-2]": "FAILED",
+   "test_prolongation_after_refine[SurfaceL2-3-1]": "FAILED",
+   "test_prolongation_after_refine[SurfaceL2-3-2]": "FAILED"
+  },
+  "summary": "8 failed, 7 passed in 2.91s",
+  "seconds": 3.134030374989379
+ },
+ "test_localhoprolongation.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_local_equals_global[2-1]": "PASSED",
+   "test_local_equals_global[3-1]": "PASSED",
+   "test_local_equals_global[2-2]": "FAILED",
+   "test_local_equals_global[2-3]": "FAILED",
+   "test_local_equals_global[2-4]": "FAILED",
+   "test_local_equals_global[2-5]": "FAILED",
+   "test_local_equals_global[3-2]": "FAILED",
+   "test_local_equals_global[3-3]": "FAILED",
+   "test_local_equals_global_onlyonce[True]": "FAILED",
+   "test_local_equals_global_onlyonce[False]": "FAILED",
+   "test_exact_for_polynomials": "FAILED"
+  },
+  "summary": "9 failed, 2 passed in 6.98s",
+  "seconds": 7.193661583005451
+ },
+ "test_hcurlcurl_prolongation.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_hcurlcurl_prolongation[0-0]": "FAILED",
+   "test_hcurlcurl_prolongation[0-1]": "FAILED",
+   "test_hcurlcurl_prolongation[0-2]": "FAILED",
+   "test_hcurlcurl_prolongation[1-0]": "FAILED",
+   "test_hcurlcurl_prolongation[1-1]": "FAILED",
+   "test_hcurlcurl_prolongation[1-2]": "FAILED"
+  },
+  "summary": "6 failed in 0.60s",
+  "seconds": 0.8117667920305394
+ },
+ "test_hcurlcurl_prolongation_trig.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_hcurlcurl_prolongation_trig[0-0]": "FAILED",
+   "test_hcurlcurl_prolongation_trig[0-1]": "FAILED",
+   "test_hcurlcurl_prolongation_trig[0-2]": "FAILED",
+   "test_hcurlcurl_prolongation_trig[1-0]": "FAILED",
+   "test_hcurlcurl_prolongation_trig[1-1]": "FAILED",
+   "test_hcurlcurl_prolongation_trig[1-2]": "FAILED",
+   "test_hcurlcurl_prolongation_trig_l2[0]": "FAILED",
+   "test_hcurlcurl_prolongation_trig_l2[1]": "FAILED",
+   "test_hcurlcurl_prolongation_trig_l2[2]": "FAILED"
+  },
+  "summary": "9 failed in 0.55s",
+  "seconds": 0.7669091669959016
+ },
+ "test_refine1d.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_element_count_and_parents": "FAILED",
+   "test_refine_all_doubles": "FAILED",
+   "test_l2_update_is_exact[0]": "FAILED",
+   "test_l2_update_is_exact[1]": "FAILED",
+   "test_l2_update_is_exact[2]": "FAILED",
+   "test_l2_update_is_exact[3]": "FAILED",
+   "test_l2_update_is_exact[5]": "FAILED",
+   "test_l2_update_two_levels": "FAILED",
+   "test_h1_order1_update_is_exact": "FAILED",
+   "test_solve_on_refined_mesh": "FAILED"
+  },
+  "summary": "10 failed in 0.56s",
+  "seconds": 0.7769779579830356
+ },
+ "test_solvers.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_arnoldi": "PASSED",
+   "test_newton_with_dirichlet": "PASSED",
+   "test_krylovspace_solvers": "PASSED",
+   "test_gplhr_convection_diffusion": "FAILED",
+   "test_gplhr_interior_complex_target": "FAILED",
+   "test_gplhr_needs_complex_vectors": "FAILED"
+  },
+  "summary": "3 failed, 3 passed in 1.11s",
+  "seconds": 1.326087124994956
+ },
+ "test_tendexlines.py": {
+  "returncode": 2,
+  "crashed": false,
+  "tests": {
+   "test_tendexlines.py": "ERROR"
+  },
+  "summary": "1 error in 0.90s",
+  "seconds": 1.189190624980256
+ },
+ "netgen/test_split_alfeld.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_split_2d[SplitAlfeld]": "PASSED",
+   "test_split_2d[SplitPowellSabin]": "PASSED",
+   "test_split_alfeld_3d": "FAILED"
+  },
+  "summary": "1 failed, 2 passed in 0.22s",
+  "seconds": 0.428250041033607
+ },
+ "netgen/test_refine1d.py": {
+  "returncode": 1,
+  "crashed": false,
+  "tests": {
+   "test_refine_without_edge_regions": "FAILED",
+   "test_refine_marked_segments": "FAILED",
+   "test_refine_none_is_noop": "FAILED",
+   "test_refine_all_equals_uniform": "FAILED",
+   "test_repeated_refinement_and_children_are_conforming": "FAILED"
+  },
+  "summary": "5 failed in 0.20s",
+  "seconds": 0.4139867089688778
+ }
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/tests_upstream.json
+{
+ "ne": 9081,
+ "nedges": 12217,
+ "ndof": 137199,
+ "order": 3,
+ "assemble_s_best": 0.17230337497312576,
+ "assemble_s_all": [
+  0.20506637496873736,
+  0.17230337497312576,
+  0.21103220904478803
+ ],
+ "simd_evaluate": false,
+ "mat_norm": 114.46010461432247
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/simd_edgeface_upstream.json
+{
+ "ne": 46531,
+ "lines": 2000,
+ "trace_s_best": 9.281058416003361,
+ "trace_s_all": [
+  9.306248208042234,
+  9.281058416003361,
+  9.309932500007562
+ ],
+ "sizes": {
+  "pstart": 314208,
+  "pend": 314208,
+  "value": 104736
+ }
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/fieldlines_upstream.json
+{
+ "uniform": [
+  {
+   "ne": 50632,
+   "nv": 9918,
+   "refine_s": 0.025441415957175195
+  },
+  {
+   "ne": 405056,
+   "nv": 73227,
+   "refine_s": 0.16110229201149195
+  },
+  {
+   "ne": 3240448,
+   "nv": 562549,
+   "refine_s": 1.4197884579771198
+  }
+ ],
+ "adaptive": [
+  {
+   "ne": 47376,
+   "nv": 9171,
+   "refine_s": 0.024084291013423353
+  },
+  {
+   "ne": 357495,
+   "nv": 64610,
+   "refine_s": 0.1498284160043113
+  },
+  {
+   "ne": 2701632,
+   "nv": 475945,
+   "refine_s": 1.4661610830225982
+  },
+  {
+   "ne": 20426903,
+   "nv": 3571080,
+   "refine_s": 15.065503332996741
+  },
+  {
+   "ne": 154489508,
+   "nv": 26988451,
+   "refine_s": 248.1884521250031
+  }
+ ]
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/refine_upstream.json
+{
+ "keys": 0,
+ "compile_s": 2.6566202079993673,
+ "ok": true,
+ "rel_diff": 0.0
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k0_upstream.json
+Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+{
+ "keys": 1,
+ "compile_s": 2.1909246249706484,
+ "ok": true,
+ "rel_diff": 0.0
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k1_upstream.json
+{
+ "ndof": 62821,
+ "order": 3,
+ "iterations": 0,
+ "first_res": null,
+ "last_res": null,
+ "true_rel_res": 0.9562575104064877,
+ "solve_s": 0.0023077920195646584,
+ "error": "SparseCholesky::MultAdd: illegal combination of scalar types, matrix double, x Complex, y double"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/complex_precond_upstream.json
+{'ndof': 56273, 'refine_s': 0.021310999989509583, 'fes_update_s': 0.006979125028010458, 'gf_update_s': 4.832982085645199e-06, 'err': 7.07715895047749e-15}
+{'ndof': 142937, 'refine_s': 0.04332583403447643, 'fes_update_s': 0.006964832951780409, 'gf_update_s': 8.083006832748652e-06, 'err': 7.170248927001654e-15}
+{'ndof': 360977, 'refine_s': 0.11004604201298207, 'fes_update_s': 0.01602412498323247, 'gf_update_s': 8.66700429469347e-06, 'err': 7.30789635826771e-15}
+{'ndof': 908601, 'refine_s': 0.2602501250221394, 'fes_update_s': 0.03601008397527039, 'gf_update_s': 7.5830030255019665e-06, 'err': 7.511919306815944e-15}
+{'ndof': 2281129, 'refine_s': 0.6288958340301178, 'fes_update_s': 0.09685941599309444, 'gf_update_s': 9.624985978007317e-06, 'err': 7.749957968973222e-15}
+{
+ "order": 4,
+ "flag": "hoprolongation",
+ "levels": [
+  {
+   "ndof": 56273,
+   "refine_s": 0.021310999989509583,
+   "fes_update_s": 0.006979125028010458,
+   "gf_update_s": 4.832982085645199e-06,
+   "err": 7.07715895047749e-15
+  },
+  {
+   "ndof": 142937,
+   "refine_s": 0.04332583403447643,
+   "fes_update_s": 0.006964832951780409,
+   "gf_update_s": 8.083006832748652e-06,
+   "err": 7.170248927001654e-15
+  },
+  {
+   "ndof": 360977,
+   "refine_s": 0.11004604201298207,
+   "fes_update_s": 0.01602412498323247,
+   "gf_update_s": 8.66700429469347e-06,
+   "err": 7.30789635826771e-15
+  },
+  {
+   "ndof": 908601,
+   "refine_s": 0.2602501250221394,
+   "fes_update_s": 0.03601008397527039,
+   "gf_update_s": 7.5830030255019665e-06,
+   "err": 7.511919306815944e-15
+  },
+  {
+   "ndof": 2281129,
+   "refine_s": 0.6288958340301178,
+   "fes_update_s": 0.09685941599309444,
+   "gf_update_s": 9.624985978007317e-06,
+   "err": 7.749957968973222e-15
+  }
+ ],
+ "total_update_s": 0.16287637391360477
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/hoprol_hoprolongation_upstream.json
+{
+ "method": "arnoldi",
+ "ndof": 5728,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 0.10656508302781731,
+ "eigenvalues": [
+  [
+   58.607578733894705,
+   -1.4811099890492964e-05
+  ],
+  [
+   88.12455265671434,
+   0.013285950914386455
+  ],
+  [
+   119.46210597982403,
+   -2.1632695866503022
+  ],
+  [
+   131.3832491970144,
+   5.246804694955257
+  ],
+  [
+   5256.786424488393,
+   -176.16137199122852
+  ]
+ ],
+ "inverse": "umfpack"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.12_upstream.json
+{
+ "method": "arnoldi",
+ "ndof": 19380,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 0.9996892079943791,
+ "eigenvalues": [
+  [
+   58.60867675219734,
+   3.3992161490812116e-08
+  ],
+  [
+   88.18994754685735,
+   -0.00032459324465623356
+  ],
+  [
+   119.52806627798368,
+   0.1091242147378952
+  ],
+  [
+   133.51605770897484,
+   -0.27922964426332
+  ],
+  [
+   176.65145328252137,
+   25.173370701272685
+  ]
+ ],
+ "inverse": "umfpack"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.08_upstream.json
+{
+ "method": "arnoldi",
+ "ndof": 36716,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 3.02327875001356,
+ "eigenvalues": [
+  [
+   58.608808740786664,
+   1.5347996351036567e-06
+  ],
+  [
+   88.20240117904028,
+   -0.0015775317110389517
+  ],
+  [
+   119.21657929188667,
+   0.24674058793452622
+  ],
+  [
+   134.4049754355346,
+   -0.896050128244532
+  ],
+  [
+   177.0549118229816,
+   21.30084081634911
+  ]
+ ],
+ "inverse": "umfpack"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.06_upstream.json
+{
+ "method": "arnoldi",
+ "ndof": 62933,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 9.178673499962315,
+ "eigenvalues": [
+  [
+   58.60879141220089,
+   -2.1474129508529014e-07
+  ],
+  [
+   88.20644154497647,
+   0.0001459737827014714
+  ],
+  [
+   118.9835118862189,
+   -0.0067545216113217375
+  ],
+  [
+   134.83312018332072,
+   -0.05439100227547366
+  ],
+  [
+   180.8304159562734,
+   -21.332111351846276
+  ]
+ ],
+ "inverse": "umfpack"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.045_upstream.json
+=== fork: 6.2.2608-332-ga4b5bfd04
+test_edgefacetangential_simd.py               rc=   0  2 passed in 0.57s
+test_tangential_simd_bbnd.py                  rc=   0  3 passed in 0.58s
+test_other_bnd_assembled.py                   rc=   0  2 passed in 0.52s
+test_inverse_temporary.py                     rc=   0  3 passed, 1 skipped in 0.55s
+test_irspace_set.py                           rc=   0  6 passed in 9.66s
+test_equivalence_keys.py                      rc=   0  1 passed in 2.68s
+test_periodic.py                              rc=   0  8 passed in 2.60s
+test_device_krylov.py                         rc=   0  7 passed, 1 warning in 19.91s
+test_l2prolongation_refined.py                rc=   0  15 passed in 5.71s
+test_localhoprolongation.py                   rc=   0  11 passed in 7.05s
+test_hcurlcurl_prolongation.py                rc=   0  6 passed in 1.18s
+test_hcurlcurl_prolongation_trig.py           rc=   0  9 passed in 0.54s
+test_refine1d.py                              rc=   0  10 passed in 0.52s
+test_solvers.py                               rc=   0  6 passed in 1.55s
+test_tendexlines.py                           rc=   0  3 passed in 0.84s
+netgen/test_split_alfeld.py                   rc=   0  3 passed in 0.21s
+netgen/test_refine1d.py                       rc=   0  5 passed in 0.19s
+{
+ "test_edgefacetangential_simd.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_edgefacetangential_simd": "PASSED",
+   "test_edgefacetangential_orthonormal": "PASSED"
+  },
+  "summary": "2 passed in 0.57s",
+  "seconds": 0.8551463329931721
+ },
+ "test_tangential_simd_bbnd.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_tangential_bbnd_simd_matches_scalar[tt]": "PASSED",
+   "test_tangential_bbnd_simd_matches_scalar[ef]": "PASSED",
+   "test_tangential_bbnd_simd_matches_scalar[shift]": "PASSED"
+  },
+  "summary": "3 passed in 0.58s",
+  "seconds": 0.8074170420295559
+ },
+ "test_other_bnd_assembled.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_other_bnd_1d": "PASSED",
+   "test_other_bnd_2d": "PASSED"
+  },
+  "summary": "2 passed in 0.52s",
+  "seconds": 0.7316277089994401
+ },
+ "test_inverse_temporary.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_inverse_of_temporary[None]": "PASSED",
+   "test_inverse_of_temporary[umfpack]": "PASSED",
+   "test_inverse_of_temporary[sparsecholesky]": "PASSED",
+   "[1]": "SKIPPED"
+  },
+  "summary": "3 passed, 1 skipped in 0.55s",
+  "seconds": 0.767184208962135
+ },
+ "test_irspace_set.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_irspace_set[5-True]": "PASSED",
+   "test_irspace_set[5-False]": "PASSED",
+   "test_irspace_set[6-True]": "PASSED",
+   "test_irspace_set[6-False]": "PASSED",
+   "test_irspace_set[8-True]": "PASSED",
+   "test_irspace_set[8-False]": "PASSED"
+  },
+  "summary": "6 passed in 9.66s",
+  "seconds": 9.87962979200529
+ },
+ "test_equivalence_keys.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_scalar_and_one_component_zero_are_distinct": "PASSED"
+  },
+  "summary": "1 passed in 2.68s",
+  "seconds": 2.8993661670247093
+ },
+ "test_periodic.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_periodicH1": "PASSED",
+   "test_periodic_set_order": "PASSED",
+   "test_quasiperiodic": "PASSED",
+   "test_periodic_skeleton_random_numbering[2]": "PASSED",
+   "test_periodic_skeleton_random_numbering[3]": "PASSED",
+   "test_periodic_dg_jumps_random_numbering[2]": "PASSED",
+   "test_periodic_dg_jumps_random_numbering[3]": "PASSED",
+   "test_periodic_spaces_random_numbering": "PASSED"
+  },
+  "summary": "8 passed in 2.60s",
+  "seconds": 2.8376507500070147
+ },
+ "test_device_krylov.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_safediv": "PASSED",
+   "test_exact_convergence[False-DeviceCGSolver]": "PASSED",
+   "test_exact_convergence[False-DeviceTFQMRSolver]": "PASSED",
+   "test_exact_convergence[True-DeviceCGSolver]": "PASSED",
+   "test_exact_convergence[True-DeviceTFQMRSolver]": "PASSED",
+   "test_devicecg_matches_cg[False]": "PASSED",
+   "test_devicecg_matches_cg[True]": "PASSED"
+  },
+  "summary": "7 passed, 1 warning in 19.91s",
+  "seconds": 20.130642291973345
+ },
+ "test_l2prolongation_refined.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_prolongation_after_refine[L2-2-0]": "PASSED",
+   "test_prolongation_after_refine[L2-2-1]": "PASSED",
+   "test_prolongation_after_refine[L2-2-2]": "PASSED",
+   "test_prolongation_after_refine[L2-3-0]": "PASSED",
+   "test_prolongation_after_refine[L2-3-1]": "PASSED",
+   "test_prolongation_after_refine[L2-3-2]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-2-0]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-2-1]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-2-2]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-3-0]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-3-1]": "PASSED",
+   "test_prolongation_after_refine[VectorL2-3-2]": "PASSED",
+   "test_prolongation_after_refine[SurfaceL2-3-0]": "PASSED",
+   "test_prolongation_after_refine[SurfaceL2-3-1]": "PASSED",
+   "test_prolongation_after_refine[SurfaceL2-3-2]": "PASSED"
+  },
+  "summary": "15 passed in 5.71s",
+  "seconds": 5.933873374946415
+ },
+ "test_localhoprolongation.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_local_equals_global[2-1]": "PASSED",
+   "test_local_equals_global[2-2]": "PASSED",
+   "test_local_equals_global[2-3]": "PASSED",
+   "test_local_equals_global[2-4]": "PASSED",
+   "test_local_equals_global[2-5]": "PASSED",
+   "test_local_equals_global[3-1]": "PASSED",
+   "test_local_equals_global[3-2]": "PASSED",
+   "test_local_equals_global[3-3]": "PASSED",
+   "test_local_equals_global_onlyonce[True]": "PASSED",
+   "test_local_equals_global_onlyonce[False]": "PASSED",
+   "test_exact_for_polynomials": "PASSED"
+  },
+  "summary": "11 passed in 7.05s",
+  "seconds": 7.268493458046578
+ },
+ "test_hcurlcurl_prolongation.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_hcurlcurl_prolongation[0-0]": "PASSED",
+   "test_hcurlcurl_prolongation[0-1]": "PASSED",
+   "test_hcurlcurl_prolongation[0-2]": "PASSED",
+   "test_hcurlcurl_prolongation[1-0]": "PASSED",
+   "test_hcurlcurl_prolongation[1-1]": "PASSED",
+   "test_hcurlcurl_prolongation[1-2]": "PASSED"
+  },
+  "summary": "6 passed in 1.18s",
+  "seconds": 1.3965739159611985
+ },
+ "test_hcurlcurl_prolongation_trig.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_hcurlcurl_prolongation_trig[0-0]": "PASSED",
+   "test_hcurlcurl_prolongation_trig[0-1]": "PASSED",
+   "test_hcurlcurl_prolongation_trig[0-2]": "PASSED",
+   "test_hcurlcurl_prolongation_trig[1-0]": "PASSED",
+   "test_hcurlcurl_prolongation_trig[1-1]": "PASSED",
+   "test_hcurlcurl_prolongation_trig[1-2]": "PASSED",
+   "test_hcurlcurl_prolongation_trig_l2[0]": "PASSED",
+   "test_hcurlcurl_prolongation_trig_l2[1]": "PASSED",
+   "test_hcurlcurl_prolongation_trig_l2[2]": "PASSED"
+  },
+  "summary": "9 passed in 0.54s",
+  "seconds": 0.760041916044429
+ },
+ "test_refine1d.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_element_count_and_parents": "PASSED",
+   "test_refine_all_doubles": "PASSED",
+   "test_l2_update_is_exact[0]": "PASSED",
+   "test_l2_update_is_exact[1]": "PASSED",
+   "test_l2_update_is_exact[2]": "PASSED",
+   "test_l2_update_is_exact[3]": "PASSED",
+   "test_l2_update_is_exact[5]": "PASSED",
+   "test_l2_update_two_levels": "PASSED",
+   "test_h1_order1_update_is_exact": "PASSED",
+   "test_solve_on_refined_mesh": "PASSED"
+  },
+  "summary": "10 passed in 0.52s",
+  "seconds": 0.7413781670038588
+ },
+ "test_solvers.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_arnoldi": "PASSED",
+   "test_newton_with_dirichlet": "PASSED",
+   "test_krylovspace_solvers": "PASSED",
+   "test_gplhr_convection_diffusion": "PASSED",
+   "test_gplhr_interior_complex_target": "PASSED",
+   "test_gplhr_needs_complex_vectors": "PASSED"
+  },
+  "summary": "6 passed in 1.55s",
+  "seconds": 1.7945196249638684
+ },
+ "test_tendexlines.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_radial_lines": "PASSED",
+   "test_degenerate_family_gives_no_lines": "PASSED",
+   "test_metric_and_plane": "PASSED"
+  },
+  "summary": "3 passed in 0.84s",
+  "seconds": 1.1294595419894904
+ },
+ "netgen/test_split_alfeld.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_split_alfeld_3d": "PASSED",
+   "test_split_2d[SplitAlfeld]": "PASSED",
+   "test_split_2d[SplitPowellSabin]": "PASSED"
+  },
+  "summary": "3 passed in 0.21s",
+  "seconds": 0.4236320829950273
+ },
+ "netgen/test_refine1d.py": {
+  "returncode": 0,
+  "crashed": false,
+  "tests": {
+   "test_refine_without_edge_regions": "PASSED",
+   "test_refine_marked_segments": "PASSED",
+   "test_refine_none_is_noop": "PASSED",
+   "test_refine_all_equals_uniform": "PASSED",
+   "test_repeated_refinement_and_children_are_conforming": "PASSED"
+  },
+  "summary": "5 passed in 0.19s",
+  "seconds": 0.39386645797640085
+ }
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/tests_fork.json
+{
+ "ne": 9081,
+ "nedges": 12217,
+ "ndof": 137199,
+ "order": 3,
+ "assemble_s_best": 0.10614483297104016,
+ "assemble_s_all": [
+  0.10614483297104016,
+  0.13600445800693706,
+  0.1133837079978548
+ ],
+ "simd_evaluate": true,
+ "mat_norm": 114.46010461432247
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/simd_edgeface_fork.json
+{
+ "ne": 46531,
+ "lines": 2000,
+ "trace_s_best": 0.3941224589943886,
+ "trace_s_all": [
+  0.4009840410435572,
+  0.39656154200201854,
+  0.3941224589943886
+ ],
+ "sizes": {
+  "pstart": 325689,
+  "pend": 325689,
+  "value": 108563
+ }
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/fieldlines_fork.json
+{
+ "uniform": [
+  {
+   "ne": 50632,
+   "nv": 9918,
+   "refine_s": 0.02303429105086252
+  },
+  {
+   "ne": 405056,
+   "nv": 73227,
+   "refine_s": 0.1478518329677172
+  },
+  {
+   "ne": 3240448,
+   "nv": 562549,
+   "refine_s": 1.362210417049937
+  }
+ ],
+ "adaptive": [
+  {
+   "ne": 47376,
+   "nv": 9171,
+   "refine_s": 0.02238083304837346
+  },
+  {
+   "ne": 357495,
+   "nv": 64610,
+   "refine_s": 0.14539495797362179
+  },
+  {
+   "ne": 2701632,
+   "nv": 475945,
+   "refine_s": 1.4458244999987073
+  },
+  {
+   "ne": 20426903,
+   "nv": 3571080,
+   "refine_s": 14.583394457993563
+  },
+  {
+   "ne": 154489508,
+   "nv": 26988451,
+   "refine_s": 164.39118641696405
+  }
+ ]
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/refine_fork.json
+{
+ "keys": 0,
+ "compile_s": 2.3051039580022916,
+ "ok": true,
+ "rel_diff": 0.0
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k0_fork.json
+Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::CoordCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+Warning: using default CalcEquivalenceKey for ngfem::VectorialCoefficientFunction
+{
+ "keys": 1,
+ "compile_s": 1.775653540971689,
+ "ok": true,
+ "rel_diff": 0.0
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/equivkeys_k1_fork.json
+{
+ "ndof": 62821,
+ "order": 3,
+ "iterations": 17,
+ "first_res": 0.8283688997417075,
+ "last_res": 2.7581012792255317e-10,
+ "true_rel_res": 2.8373239655621447e-11,
+ "solve_s": 0.24799599999096245,
+ "error": null
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/complex_precond_fork.json
+{'ndof': 56273, 'refine_s': 0.017198082990944386, 'fes_update_s': 0.0026346250087954104, 'gf_update_s': 2.667016815394163e-06, 'err': 7.0795929908091226e-15}
+{'ndof': 142937, 'refine_s': 0.04073283396428451, 'fes_update_s': 0.005410000041592866, 'gf_update_s': 4.875008016824722e-06, 'err': 7.17237762500965e-15}
+{'ndof': 360977, 'refine_s': 0.09776966599747539, 'fes_update_s': 0.014245208993088454, 'gf_update_s': 7.0829992182552814e-06, 'err': 7.305901422551604e-15}
+{'ndof': 908601, 'refine_s': 0.23296995798591524, 'fes_update_s': 0.03487020800821483, 'gf_update_s': 7.4169947765767574e-06, 'err': 7.507417223048382e-15}
+{'ndof': 2281129, 'refine_s': 0.6029337500222027, 'fes_update_s': 0.08482291700784117, 'gf_update_s': 7.499998901039362e-06, 'err': 7.746735138625433e-15}
+{
+ "order": 4,
+ "flag": "hoprolongation",
+ "levels": [
+  {
+   "ndof": 56273,
+   "refine_s": 0.017198082990944386,
+   "fes_update_s": 0.0026346250087954104,
+   "gf_update_s": 2.667016815394163e-06,
+   "err": 7.0795929908091226e-15
+  },
+  {
+   "ndof": 142937,
+   "refine_s": 0.04073283396428451,
+   "fes_update_s": 0.005410000041592866,
+   "gf_update_s": 4.875008016824722e-06,
+   "err": 7.17237762500965e-15
+  },
+  {
+   "ndof": 360977,
+   "refine_s": 0.09776966599747539,
+   "fes_update_s": 0.014245208993088454,
+   "gf_update_s": 7.0829992182552814e-06,
+   "err": 7.305901422551604e-15
+  },
+  {
+   "ndof": 908601,
+   "refine_s": 0.23296995798591524,
+   "fes_update_s": 0.03487020800821483,
+   "gf_update_s": 7.4169947765767574e-06,
+   "err": 7.507417223048382e-15
+  },
+  {
+   "ndof": 2281129,
+   "refine_s": 0.6029337500222027,
+   "fes_update_s": 0.08482291700784117,
+   "gf_update_s": 7.499998901039362e-06,
+   "err": 7.746735138625433e-15
+  }
+ ],
+ "total_update_s": 0.14201250107726082
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/hoprol_hoprolongation_fork.json
+{'ndof': 56273, 'refine_s': 0.007293874979950488, 'fes_update_s': 0.0013723340234719217, 'gf_update_s': 2.415967173874378e-06, 'err': 1.0659098763275449e-14}
+{'ndof': 142937, 'refine_s': 0.019228874996770173, 'fes_update_s': 0.003381374990567565, 'gf_update_s': 3.00002284348011e-06, 'err': 1.2571271944258855e-14}
+{'ndof': 360977, 'refine_s': 0.03755029197782278, 'fes_update_s': 0.00911495799664408, 'gf_update_s': 2.5420449674129486e-06, 'err': 1.3528031740713379e-14}
+{'ndof': 908601, 'refine_s': 0.0911541249952279, 'fes_update_s': 0.01994270901195705, 'gf_update_s': 7.207971066236496e-06, 'err': 1.3949774269005557e-14}
+{'ndof': 2281129, 'refine_s': 0.2298777080141008, 'fes_update_s': 0.04729000001680106, 'gf_update_s': 4.583969712257385e-06, 'err': 1.4140342982358289e-14}
+{
+ "order": 4,
+ "flag": "localhoprolongation",
+ "levels": [
+  {
+   "ndof": 56273,
+   "refine_s": 0.007293874979950488,
+   "fes_update_s": 0.0013723340234719217,
+   "gf_update_s": 2.415967173874378e-06,
+   "err": 1.0659098763275449e-14
+  },
+  {
+   "ndof": 142937,
+   "refine_s": 0.019228874996770173,
+   "fes_update_s": 0.003381374990567565,
+   "gf_update_s": 3.00002284348011e-06,
+   "err": 1.2571271944258855e-14
+  },
+  {
+   "ndof": 360977,
+   "refine_s": 0.03755029197782278,
+   "fes_update_s": 0.00911495799664408,
+   "gf_update_s": 2.5420449674129486e-06,
+   "err": 1.3528031740713379e-14
+  },
+  {
+   "ndof": 908601,
+   "refine_s": 0.0911541249952279,
+   "fes_update_s": 0.01994270901195705,
+   "gf_update_s": 7.207971066236496e-06,
+   "err": 1.3949774269005557e-14
+  },
+  {
+   "ndof": 2281129,
+   "refine_s": 0.2298777080141008,
+   "fes_update_s": 0.04729000001680106,
+   "gf_update_s": 4.583969712257385e-06,
+   "err": 1.4140342982358289e-14
+  }
+ ],
+ "total_update_s": 0.08112112601520494
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/hoprol_localhoprolongation_fork.json
+{
+ "method": "arnoldi",
+ "ndof": 5728,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 0.10959154198644683,
+ "eigenvalues": [
+  [
+   58.60757873389461,
+   -1.4811099896079026e-05
+  ],
+  [
+   88.1245526567145,
+   0.013285950914357032
+  ],
+  [
+   119.46210597982481,
+   -2.1632695866513716
+  ],
+  [
+   131.38324919701125,
+   5.246804694956234
+  ],
+  [
+   5256.786424487803,
+   -176.1613719904266
+  ]
+ ],
+ "inverse": "umfpack"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.12_fork.json
+WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
+{
+ "method": "gplhr",
+ "ndof": 5728,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 7.215212250011973,
+ "eigenvalues": [
+  [
+   58.607561853923706,
+   -1.0442610038612108e-07
+  ],
+  [
+   88.1386356253003,
+   2.2383531186874176e-06
+  ],
+  [
+   88.18408314080028,
+   -7.096907973967868e-08
+  ],
+  [
+   88.18999622819894,
+   1.1606028344931993e-07
+  ],
+  [
+   117.67658701124445,
+   3.3941165630045277e-06
+  ]
+ ],
+ "pre": "bddc(-Laplace)"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.12_fork.json
+{
+ "method": "arnoldi",
+ "ndof": 19380,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 1.006827917008195,
+ "eigenvalues": [
+  [
+   58.60867663160279,
+   -1.3862453747011883e-06
+  ],
+  [
+   88.19026666551498,
+   0.001579582312172043
+  ],
+  [
+   119.4064809801096,
+   -0.3305217249767113
+  ],
+  [
+   134.03462041448617,
+   1.3472542191524552
+  ],
+  [
+   173.61689787368732,
+   -20.86582120259869
+  ]
+ ],
+ "inverse": "umfpack"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.08_fork.json
+WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
+{
+ "method": "gplhr",
+ "ndof": 19380,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 26.475547249952797,
+ "eigenvalues": [
+  [
+   58.60866318673634,
+   6.182184711834276e-08
+  ],
+  [
+   88.2018846643682,
+   -5.412004075544636e-07
+  ],
+  [
+   88.20954886545698,
+   -6.892803317801723e-08
+  ],
+  [
+   88.21225313717291,
+   -3.108915514658383e-07
+  ],
+  [
+   117.79712350683575,
+   7.348600798152806e-05
+  ]
+ ],
+ "pre": "bddc(-Laplace)"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.08_fork.json
+{
+ "method": "arnoldi",
+ "ndof": 36716,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 3.046202541969251,
+ "eigenvalues": [
+  [
+   58.60880790793473,
+   1.6477916044123915e-07
+  ],
+  [
+   88.20345475570383,
+   -0.0002388143361200072
+  ],
+  [
+   119.05539353629558,
+   0.04037010005042371
+  ],
+  [
+   134.77493013870338,
+   -0.2690246274048091
+  ],
+  [
+   178.51054382792435,
+   20.683438657853046
+  ]
+ ],
+ "inverse": "umfpack"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.06_fork.json
+WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
+{
+ "method": "gplhr",
+ "ndof": 36716,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 60.65505137498258,
+ "eigenvalues": [
+  [
+   58.608799091203984,
+   2.7311437855061284e-08
+  ],
+  [
+   88.2118119329051,
+   -1.7671032979049456e-07
+  ],
+  [
+   88.2149652934341,
+   2.0277157257222843e-08
+  ],
+  [
+   88.21551930664208,
+   1.126048816809589e-07
+  ],
+  [
+   117.81428142160728,
+   5.0410976976128083e-05
+  ]
+ ],
+ "pre": "bddc(-Laplace)"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.06_fork.json
+{
+ "method": "arnoldi",
+ "ndof": 62933,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 9.413686833984684,
+ "eigenvalues": [
+  [
+   58.608791937184584,
+   1.2570099548141835e-07
+  ],
+  [
+   88.20590421395795,
+   -6.252521255641186e-05
+  ],
+  [
+   119.0494366155553,
+   -0.00577510659933
+  ],
+  [
+   134.72522597123773,
+   0.21313942857559123
+  ],
+  [
+   179.59721796924896,
+   -19.415631587030873
+  ]
+ ],
+ "inverse": "umfpack"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_arnoldi_h0.045_fork.json
+WARNING: GPLHR did not converge, 4 of 5 eigenvalues converged in 300 iterations
+{
+ "method": "gplhr",
+ "ndof": 62933,
+ "order": 2,
+ "num": 5,
+ "sigma": 0.0,
+ "solve_s": 106.63531454198528,
+ "eigenvalues": [
+  [
+   58.60878360832758,
+   1.596435872822921e-08
+  ],
+  [
+   88.21415086183147,
+   -1.6934946570480898e-07
+  ],
+  [
+   88.21596340810231,
+   5.769410928336778e-08
+  ],
+  [
+   88.21638070593058,
+   4.35367632250636e-09
+  ],
+  [
+   117.81968707491365,
+   -3.941342801208598e-05
+  ]
+ ],
+ "pre": "bddc(-Laplace)"
+}
+-> /Users/edoardobonetti/Applications/ngsuite/ngsolve-src/upstream-candidates/results/gplhr_gplhr_h0.045_fork.json
+=== done

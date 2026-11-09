@@ -1,0 +1,46 @@
+{
+ "name": "gplhr_gplhr_h0.06",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-332-ga4b5bfd04",
+ "netgen_version": "6.2.2608.post82.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "method": "gplhr",
+  "ndof": 36716,
+  "order": 2,
+  "num": 5,
+  "sigma": 0.0,
+  "solve_s": 60.65505137498258,
+  "eigenvalues": [
+   [
+    58.608799091203984,
+    2.7311437855061284e-08
+   ],
+   [
+    88.2118119329051,
+    -1.7671032979049456e-07
+   ],
+   [
+    88.2149652934341,
+    2.0277157257222843e-08
+   ],
+   [
+    88.21551930664208,
+    1.126048816809589e-07
+   ],
+   [
+    117.81428142160728,
+    5.0410976976128083e-05
+   ]
+  ],
+  "pre": "bddc(-Laplace)"
+ },
+ "wall_s": 61.21799887495581,
+ "peak_mem_mb": 1494.65625,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 10,
+ "cpu_count": 10,
+ "command": "python3 bench_gplhr.py --method gplhr --maxh 0.06",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:47:41"
+}

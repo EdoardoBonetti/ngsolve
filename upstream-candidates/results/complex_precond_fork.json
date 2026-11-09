@@ -1,0 +1,25 @@
+{
+ "name": "complex_precond",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-332-ga4b5bfd04",
+ "netgen_version": "6.2.2608.post82.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "ndof": 62821,
+  "order": 3,
+  "iterations": 17,
+  "first_res": 0.8283688997417075,
+  "last_res": 2.7581012792255317e-10,
+  "true_rel_res": 2.8373239655621447e-11,
+  "solve_s": 0.24799599999096245,
+  "error": null
+ },
+ "wall_s": 0.8866761659737676,
+ "peak_mem_mb": 401.71875,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 10,
+ "cpu_count": 10,
+ "command": "python3 bench_complex_precond.py",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:45:51"
+}

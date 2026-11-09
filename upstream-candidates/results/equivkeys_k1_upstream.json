@@ -1,0 +1,21 @@
+{
+ "name": "equivkeys_k1",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/upstream-ref/install/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "keys": 1,
+  "ok": false,
+  "compile_s": 1.4412143749650568,
+  "error": "problem calling compiler, command: ngscxx -c code_0.cpp -o  code_0.o"
+ },
+ "wall_s": 1.4567117500118911,
+ "peak_mem_mb": 103.90625,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 1,
+ "cpu_count": 10,
+ "command": "python3 bench_equivkeys.py --keys 1",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:51:26"
+}

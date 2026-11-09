@@ -1,0 +1,57 @@
+{
+ "name": "hoprol_localhoprolongation",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-332-ga4b5bfd04",
+ "netgen_version": "6.2.2608.post82.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "order": 4,
+  "flag": "localhoprolongation",
+  "levels": [
+   {
+    "ndof": 56273,
+    "refine_s": 0.007293874979950488,
+    "fes_update_s": 0.0013723340234719217,
+    "gf_update_s": 2.415967173874378e-06,
+    "err": 1.0659098763275449e-14
+   },
+   {
+    "ndof": 142937,
+    "refine_s": 0.019228874996770173,
+    "fes_update_s": 0.003381374990567565,
+    "gf_update_s": 3.00002284348011e-06,
+    "err": 1.2571271944258855e-14
+   },
+   {
+    "ndof": 360977,
+    "refine_s": 0.03755029197782278,
+    "fes_update_s": 0.00911495799664408,
+    "gf_update_s": 2.5420449674129486e-06,
+    "err": 1.3528031740713379e-14
+   },
+   {
+    "ndof": 908601,
+    "refine_s": 0.0911541249952279,
+    "fes_update_s": 0.01994270901195705,
+    "gf_update_s": 7.207971066236496e-06,
+    "err": 1.3949774269005557e-14
+   },
+   {
+    "ndof": 2281129,
+    "refine_s": 0.2298777080141008,
+    "fes_update_s": 0.04729000001680106,
+    "gf_update_s": 4.583969712257385e-06,
+    "err": 1.4140342982358289e-14
+   }
+  ],
+  "total_update_s": 0.08112112601520494
+ },
+ "wall_s": 2.161261666973587,
+ "peak_mem_mb": 407.09375,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 10,
+ "cpu_count": 10,
+ "command": "python3 bench_hoprol.py --flag localhoprolongation",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:45:57"
+}

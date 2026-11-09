@@ -1,0 +1,46 @@
+{
+ "name": "gplhr_arnoldi_h0.12",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/upstream-ref/install/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "method": "arnoldi",
+  "ndof": 5728,
+  "order": 2,
+  "num": 5,
+  "sigma": 0.0,
+  "solve_s": 0.10656508302781731,
+  "eigenvalues": [
+   [
+    58.607578733894705,
+    -1.4811099890492964e-05
+   ],
+   [
+    88.12455265671434,
+    0.013285950914386455
+   ],
+   [
+    119.46210597982403,
+    -2.1632695866503022
+   ],
+   [
+    131.3832491970144,
+    5.246804694955257
+   ],
+   [
+    5256.786424488393,
+    -176.16137199122852
+   ]
+  ],
+  "inverse": "umfpack"
+ },
+ "wall_s": 0.24581429199315608,
+ "peak_mem_mb": 185.28125,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 10,
+ "cpu_count": 10,
+ "command": "python3 bench_gplhr.py --method arnoldi --maxh 0.12",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:40:48"
+}

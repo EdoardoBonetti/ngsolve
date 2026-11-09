@@ -1,0 +1,29 @@
+{
+ "name": "simd_edgeface",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-332-ga4b5bfd04",
+ "netgen_version": "6.2.2608.post82.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "ne": 9081,
+  "nedges": 12217,
+  "ndof": 137199,
+  "order": 3,
+  "assemble_s_best": 0.10614483297104016,
+  "assemble_s_all": [
+   0.10614483297104016,
+   0.13600445800693706,
+   0.1133837079978548
+  ],
+  "simd_evaluate": true,
+  "mat_norm": 114.46010461432247
+ },
+ "wall_s": 0.754215250024572,
+ "peak_mem_mb": 335.984375,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 10,
+ "cpu_count": 10,
+ "command": "python3 bench_simd_edgeface.py",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:42:11"
+}

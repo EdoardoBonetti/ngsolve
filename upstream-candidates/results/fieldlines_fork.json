@@ -1,0 +1,30 @@
+{
+ "name": "fieldlines",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-332-ga4b5bfd04",
+ "netgen_version": "6.2.2608.post82.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "ne": 46531,
+  "lines": 2000,
+  "trace_s_best": 0.3941224589943886,
+  "trace_s_all": [
+   0.4009840410435572,
+   0.39656154200201854,
+   0.3941224589943886
+  ],
+  "sizes": {
+   "pstart": 325689,
+   "pend": 325689,
+   "value": 108563
+  }
+ },
+ "wall_s": 2.4148029999923892,
+ "peak_mem_mb": 213.59375,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 10,
+ "cpu_count": 10,
+ "command": "python3 bench_fieldlines.py",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:42:14"
+}

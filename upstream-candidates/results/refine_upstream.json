@@ -1,0 +1,61 @@
+{
+ "name": "refine",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/upstream-ref/install/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "uniform": [
+   {
+    "ne": 50632,
+    "nv": 9918,
+    "refine_s": 0.025441415957175195
+   },
+   {
+    "ne": 405056,
+    "nv": 73227,
+    "refine_s": 0.16110229201149195
+   },
+   {
+    "ne": 3240448,
+    "nv": 562549,
+    "refine_s": 1.4197884579771198
+   }
+  ],
+  "adaptive": [
+   {
+    "ne": 47376,
+    "nv": 9171,
+    "refine_s": 0.024084291013423353
+   },
+   {
+    "ne": 357495,
+    "nv": 64610,
+    "refine_s": 0.1498284160043113
+   },
+   {
+    "ne": 2701632,
+    "nv": 475945,
+    "refine_s": 1.4661610830225982
+   },
+   {
+    "ne": 20426903,
+    "nv": 3571080,
+    "refine_s": 15.065503332996741
+   },
+   {
+    "ne": 154489508,
+    "nv": 26988451,
+    "refine_s": 248.1884521250031
+   }
+  ]
+ },
+ "wall_s": 290.147564999992,
+ "peak_mem_mb": 13649.875,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 10,
+ "cpu_count": 10,
+ "command": "python3 bench_refine.py",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:40:34"
+}

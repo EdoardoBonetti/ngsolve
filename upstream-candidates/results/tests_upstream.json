@@ -1,0 +1,252 @@
+{
+ "name": "tests",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/upstream-ref/install/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "test_edgefacetangential_simd.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_edgefacetangential_orthonormal": "PASSED",
+    "test_edgefacetangential_simd": "FAILED"
+   },
+   "summary": "1 failed, 1 passed in 0.55s",
+   "seconds": 0.830922124965582
+  },
+  "test_tangential_simd_bbnd.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_tangential_bbnd_simd_matches_scalar[ef]": "PASSED",
+    "test_tangential_bbnd_simd_matches_scalar[shift]": "PASSED",
+    "test_tangential_bbnd_simd_matches_scalar[tt]": "FAILED"
+   },
+   "summary": "1 failed, 2 passed in 0.61s",
+   "seconds": 0.8320995829999447
+  },
+  "test_other_bnd_assembled.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_other_bnd_1d": "FAILED",
+    "test_other_bnd_2d": "FAILED"
+   },
+   "summary": "2 failed in 0.54s",
+   "seconds": 0.7605535420007072
+  },
+  "test_inverse_temporary.py": {
+   "returncode": 0,
+   "crashed": false,
+   "tests": {
+    "test_inverse_of_temporary[None]": "PASSED",
+    "test_inverse_of_temporary[umfpack]": "PASSED",
+    "test_inverse_of_temporary[sparsecholesky]": "PASSED",
+    "[1]": "SKIPPED"
+   },
+   "summary": "3 passed, 1 skipped in 0.55s",
+   "seconds": 0.7701151249930263
+  },
+  "test_irspace_set.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_irspace_set[5-True]": "FAILED",
+    "test_irspace_set[5-False]": "FAILED",
+    "test_irspace_set[6-True]": "FAILED",
+    "test_irspace_set[6-False]": "FAILED",
+    "test_irspace_set[8-True]": "FAILED",
+    "test_irspace_set[8-False]": "FAILED"
+   },
+   "summary": "6 failed in 9.66s",
+   "seconds": 9.87953708297573
+  },
+  "test_equivalence_keys.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_scalar_and_one_component_zero_are_distinct": "FAILED"
+   },
+   "summary": "1 failed in 2.34s",
+   "seconds": 2.563671957992483
+  },
+  "test_periodic.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_periodicH1": "PASSED",
+    "test_periodic_set_order": "PASSED",
+    "test_quasiperiodic": "PASSED",
+    "test_periodic_spaces_random_numbering": "PASSED",
+    "test_periodic_skeleton_random_numbering[2]": "FAILED",
+    "test_periodic_skeleton_random_numbering[3]": "FAILED",
+    "test_periodic_dg_jumps_random_numbering[2]": "FAILED",
+    "test_periodic_dg_jumps_random_numbering[3]": "FAILED"
+   },
+   "summary": "4 failed, 4 passed in 2.63s",
+   "seconds": 2.8569382919813506
+  },
+  "test_device_krylov.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_devicecg_matches_cg[False]": "PASSED",
+    "test_devicecg_matches_cg[True]": "PASSED",
+    "test_safediv": "FAILED",
+    "test_exact_convergence[False-DeviceCGSolver]": "FAILED",
+    "test_exact_convergence[False-DeviceTFQMRSolver]": "FAILED",
+    "test_exact_convergence[True-DeviceCGSolver]": "FAILED",
+    "test_exact_convergence[True-DeviceTFQMRSolver]": "FAILED"
+   },
+   "summary": "5 failed, 2 passed, 1 warning in 25.12s",
+   "seconds": 25.34181695804
+  },
+  "test_l2prolongation_refined.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_prolongation_after_refine[L2-2-0]": "PASSED",
+    "test_prolongation_after_refine[L2-3-0]": "PASSED",
+    "test_prolongation_after_refine[VectorL2-2-0]": "PASSED",
+    "test_prolongation_after_refine[VectorL2-2-1]": "PASSED",
+    "test_prolongation_after_refine[VectorL2-2-2]": "PASSED",
+    "test_prolongation_after_refine[VectorL2-3-0]": "PASSED",
+    "test_prolongation_after_refine[SurfaceL2-3-0]": "PASSED",
+    "test_prolongation_after_refine[L2-2-1]": "FAILED",
+    "test_prolongation_after_refine[L2-2-2]": "FAILED",
+    "test_prolongation_after_refine[L2-3-1]": "FAILED",
+    "test_prolongation_after_refine[L2-3-2]": "FAILED",
+    "test_prolongation_after_refine[VectorL2-3-1]": "FAILED",
+    "test_prolongation_after_refine[VectorL2-3-2]": "FAILED",
+    "test_prolongation_after_refine[SurfaceL2-3-1]": "FAILED",
+    "test_prolongation_after_refine[SurfaceL2-3-2]": "FAILED"
+   },
+   "summary": "8 failed, 7 passed in 2.91s",
+   "seconds": 3.134030374989379
+  },
+  "test_localhoprolongation.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_local_equals_global[2-1]": "PASSED",
+    "test_local_equals_global[3-1]": "PASSED",
+    "test_local_equals_global[2-2]": "FAILED",
+    "test_local_equals_global[2-3]": "FAILED",
+    "test_local_equals_global[2-4]": "FAILED",
+    "test_local_equals_global[2-5]": "FAILED",
+    "test_local_equals_global[3-2]": "FAILED",
+    "test_local_equals_global[3-3]": "FAILED",
+    "test_local_equals_global_onlyonce[True]": "FAILED",
+    "test_local_equals_global_onlyonce[False]": "FAILED",
+    "test_exact_for_polynomials": "FAILED"
+   },
+   "summary": "9 failed, 2 passed in 6.98s",
+   "seconds": 7.193661583005451
+  },
+  "test_hcurlcurl_prolongation.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_hcurlcurl_prolongation[0-0]": "FAILED",
+    "test_hcurlcurl_prolongation[0-1]": "FAILED",
+    "test_hcurlcurl_prolongation[0-2]": "FAILED",
+    "test_hcurlcurl_prolongation[1-0]": "FAILED",
+    "test_hcurlcurl_prolongation[1-1]": "FAILED",
+    "test_hcurlcurl_prolongation[1-2]": "FAILED"
+   },
+   "summary": "6 failed in 0.60s",
+   "seconds": 0.8117667920305394
+  },
+  "test_hcurlcurl_prolongation_trig.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_hcurlcurl_prolongation_trig[0-0]": "FAILED",
+    "test_hcurlcurl_prolongation_trig[0-1]": "FAILED",
+    "test_hcurlcurl_prolongation_trig[0-2]": "FAILED",
+    "test_hcurlcurl_prolongation_trig[1-0]": "FAILED",
+    "test_hcurlcurl_prolongation_trig[1-1]": "FAILED",
+    "test_hcurlcurl_prolongation_trig[1-2]": "FAILED",
+    "test_hcurlcurl_prolongation_trig_l2[0]": "FAILED",
+    "test_hcurlcurl_prolongation_trig_l2[1]": "FAILED",
+    "test_hcurlcurl_prolongation_trig_l2[2]": "FAILED"
+   },
+   "summary": "9 failed in 0.55s",
+   "seconds": 0.7669091669959016
+  },
+  "test_refine1d.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_element_count_and_parents": "FAILED",
+    "test_refine_all_doubles": "FAILED",
+    "test_l2_update_is_exact[0]": "FAILED",
+    "test_l2_update_is_exact[1]": "FAILED",
+    "test_l2_update_is_exact[2]": "FAILED",
+    "test_l2_update_is_exact[3]": "FAILED",
+    "test_l2_update_is_exact[5]": "FAILED",
+    "test_l2_update_two_levels": "FAILED",
+    "test_h1_order1_update_is_exact": "FAILED",
+    "test_solve_on_refined_mesh": "FAILED"
+   },
+   "summary": "10 failed in 0.56s",
+   "seconds": 0.7769779579830356
+  },
+  "test_solvers.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_arnoldi": "PASSED",
+    "test_newton_with_dirichlet": "PASSED",
+    "test_krylovspace_solvers": "PASSED",
+    "test_gplhr_convection_diffusion": "FAILED",
+    "test_gplhr_interior_complex_target": "FAILED",
+    "test_gplhr_needs_complex_vectors": "FAILED"
+   },
+   "summary": "3 failed, 3 passed in 1.11s",
+   "seconds": 1.326087124994956
+  },
+  "test_tendexlines.py": {
+   "returncode": 2,
+   "crashed": false,
+   "tests": {
+    "test_tendexlines.py": "ERROR"
+   },
+   "summary": "1 error in 0.90s",
+   "seconds": 1.189190624980256
+  },
+  "netgen/test_split_alfeld.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_split_2d[SplitAlfeld]": "PASSED",
+    "test_split_2d[SplitPowellSabin]": "PASSED",
+    "test_split_alfeld_3d": "FAILED"
+   },
+   "summary": "1 failed, 2 passed in 0.22s",
+   "seconds": 0.428250041033607
+  },
+  "netgen/test_refine1d.py": {
+   "returncode": 1,
+   "crashed": false,
+   "tests": {
+    "test_refine_without_edge_regions": "FAILED",
+    "test_refine_marked_segments": "FAILED",
+    "test_refine_none_is_noop": "FAILED",
+    "test_refine_all_equals_uniform": "FAILED",
+    "test_repeated_refinement_and_children_are_conforming": "FAILED"
+   },
+   "summary": "5 failed in 0.20s",
+   "seconds": 0.4139867089688778
+  }
+ },
+ "wall_s": 60.392221333051566,
+ "peak_mem_mb": 93.78125,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": null,
+ "cpu_count": 10,
+ "command": "python3 tests_ab.py",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:35:12"
+}

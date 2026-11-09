@@ -1,0 +1,25 @@
+{
+ "name": "complex_precond",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/upstream-ref/install/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "ndof": 62821,
+  "order": 3,
+  "iterations": 0,
+  "first_res": null,
+  "last_res": null,
+  "true_rel_res": 0.9562575104064877,
+  "solve_s": 0.0023077920195646584,
+  "error": "SparseCholesky::MultAdd: illegal combination of scalar types, matrix double, x Complex, y double"
+ },
+ "wall_s": 1.0296606670017354,
+ "peak_mem_mb": 382.390625,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 10,
+ "cpu_count": 10,
+ "command": "python3 bench_complex_precond.py",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:40:44"
+}

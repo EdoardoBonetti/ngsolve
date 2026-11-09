@@ -1,0 +1,43 @@
+{
+ "name": "gplhr_arnoldi_k20_n4_h0.045",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-332-ga4b5bfd04",
+ "netgen_version": "6.2.2608.post82.dev0",
+ "ngsolve_path": "/Users/edoardobonetti/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "method": "arnoldi",
+  "ndof": 62933,
+  "order": 2,
+  "num": 4,
+  "sigma": 0.0,
+  "solve_s": 16.450849458982702,
+  "eigenvalues": [
+   [
+    58.60878363130963,
+    -1.5134798094348476e-15
+   ],
+   [
+    88.2141507781065,
+    -2.0239685488983048e-13
+   ],
+   [
+    88.21596341108358,
+    -2.546425700369612e-12
+   ],
+   [
+    88.21638068850802,
+    -5.474659053445959e-12
+   ]
+  ],
+  "inverse": "umfpack",
+  "krylov": 20
+ },
+ "wall_s": 17.60667512496002,
+ "peak_mem_mb": 2953.953125,
+ "machine": "e241-018.eduroam.tuwien.ac.at",
+ "threads": 10,
+ "cpu_count": 10,
+ "command": "python3 bench_gplhr.py --method arnoldi --krylov 20 --num 4 --maxh 0.045",
+ "script_commit": "a4b5bfd04",
+ "date": "2026-11-09 11:53:40"
+}
