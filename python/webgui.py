@@ -575,7 +575,7 @@ def FieldLines(
     tolerance: float = 0.0005,
     direction: int = 0,
 ):
-    assert start_region or (mesh and start_points), "Either start_region or mesh and start_points must be provided"
+    assert start_region is not None or (mesh is not None and start_points is not None), "Either start_region or mesh and start_points must be provided"
     rules = {}
     # use 5th order integration rule for all element types as potential starting points
     for et in [
