@@ -17,7 +17,8 @@ FILES = [(NGS, f) for f in [
     "test_inverse_temporary.py", "test_irspace_set.py", "test_equivalence_keys.py", "test_periodic.py",
     "test_device_krylov.py", "test_l2prolongation_refined.py", "test_localhoprolongation.py",
     "test_hcurlcurl_prolongation.py", "test_hcurlcurl_prolongation_trig.py", "test_refine1d.py",
-    "test_solvers.py", "test_tendexlines.py"]] + [(NG, f) for f in ["test_split_alfeld.py", "test_refine1d.py"]]
+    "test_solvers.py", "test_tendexlines.py", "test_multivector_orthogonalize.py",
+    "test_real_operator_complex_vector.py"]] + [(NG, f) for f in ["test_split_alfeld.py", "test_refine1d.py"]]
 
 t0 = time.perf_counter()
 out = {}

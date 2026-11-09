@@ -16,6 +16,8 @@ def build_info():
 
 
 def script_commit():
+    if os.environ.get("NGS_SCRIPT_COMMIT"):          # set by musica/sweep_ab.py (the run dir has no git)
+        return os.environ["NGS_SCRIPT_COMMIT"]
     try:
         return subprocess.check_output(["git", "-C", str(HERE), "rev-parse", "--short", "HEAD"],
                                        text=True).strip()
@@ -29,9 +31,11 @@ def peak_mem_mb():
 
 
 def save(name, data, t_start, threads):
+    if os.environ.get("NGS_TAG"):                    # size label of a sweep (S, M, L), set by musica/sweep_ab.py
+        name = f"{name}_{os.environ['NGS_TAG']}"
     out = {"name": name, **build_info(), "data": data,
            "wall_s": time.perf_counter() - t_start, "peak_mem_mb": peak_mem_mb(),
-           "machine": socket.gethostname(), "threads": threads, "cpu_count": os.cpu_count(),
+           "machine": socket.gethostname(), "cluster": os.environ.get("NGS_MACHINE", "mac"), "threads": threads, "cpu_count": os.cpu_count(),
            "command": " ".join([sys.executable.split("/")[-1]] + sys.argv),
            "script_commit": script_commit(),
            "date": time.strftime("%Y-%m-%d %H:%M:%S")}
