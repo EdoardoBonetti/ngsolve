@@ -156,11 +156,10 @@ def test_solve(n, cplx):
     assert X.shape == (n, 3)
     assert rel(X, np.linalg.solve(a, B)) < TOL
     check_untouched(M, a)
-    if n > 1:
-        s = a.copy()
-        s[:, -1] = s[:, 0]
-        with pytest.raises(Exception):
-            Matrix(s).Solve(Vector(b))
+    s = a.copy()
+    s[:, -1] = 0          # exactly singular (two equal columns only give a pivot of rounding size, like numpy)
+    with pytest.raises(Exception):
+        Matrix(s).Solve(Vector(b))
 
 
 def test_bla_types():
