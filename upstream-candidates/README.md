@@ -85,12 +85,18 @@ Already upstream: OCC < 7.8 shape hasher, NG_TCL macros.
   (b878c4c28, on master), merged here; test `test_periodic.py::test_periodic_dual_set` (8 of 10 fail on master).
   Merge-request text (for GitLab, later): `pr-periodic-dual-inverse.md`. **This is a bug in current master.**
   Sent as GitHub PR NGSolve/ngsolve#102 on 2026-11-09: leave it as it is (do not modify). Later fixes follow the rule above.
+- `MultiVector.Orthogonalize()` **without `ipmat`** (found 2026-11-09 on 6.2.2608-332): the block-recursive branch of
+  `MultiVector::T_Orthogonalize` (`linalg/multivector.cpp`, `ipmat == nullptr`) passed `InnerProduct(mv1, mv2)`, which
+  is (size2 × size1), to `mv2->Add(mv1, ·)`, which expects (size1 × size2): the projection used the transposed block.
+  With one vector in the first half (n = 2, 3) the transpose has the same memory layout, so the vectors stayed
+  orthonormal there; from n = 4 they did not. The R factor got the block below the diagonal, so V = Q R failed
+  already for n = 2, 3. Fix on branch `fix-multivector-orthogonalize` (5643b8bb7, on master 6e701b568), merged here
+  (c7460854f); fixed in the fork from 6.2.2608-340. Test `tests/pytest/test_multivector_orthogonalize.py`
+  (n = 1…16, real and complex, with and without `ipmat`; Gram error and V = Q R both < 1e-12).
+  Before (6.2.2608-337): 30 of 64 cases fail, every case without `ipmat` and n ≥ 2; max |G − I| from 4.75e-02 (n = 4)
+  to 3.46e-01 (n ≤ 16). After (6.2.2608-340): 64 of 64 pass; over n = 1…16 the worst max |G − I| is 1.1e-15 (real),
+  6.7e-16 (complex), and the worst |V_old − V_new R| / |V_old| is 4.0e-16. **This is a bug in current master.**
+  Not sent anywhere (rule above).
 
 ## Found, not fixed yet (local fix to do)
-- `MultiVector.Orthogonalize()` **without `ipmat`** is wrong for 4 or more vectors (largest off-diagonal Gram entry
-  2e-2 … 1e-1 for 4 … 16 random vectors; exact for 2–3 vectors, with `ipmat=IdentityMatrix(n)` and with
-  `AppendOrthogonalize`). Found 2026-11-09 on 6.2.2608-332. Suspect: the recursive block branch of
-  `MultiVector::T_Orthogonalize` (`linalg/multivector.cpp`, `ipmat == nullptr`), which only goes wrong once the first
-  half holds ≥ 2 vectors, as if the `InnerProduct(mv1, mv2)` block were used transposed. Reproducer: fill a
-  `MultiVector(gf.vec, 5)` with random vectors, call `Orthogonalize()`, check the Gram matrix against the identity.
-  Workaround in the skill `ngs-native`.
+(none)
