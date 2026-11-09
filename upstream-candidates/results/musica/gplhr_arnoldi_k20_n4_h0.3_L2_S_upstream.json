@@ -1,0 +1,46 @@
+{
+ "name": "gplhr_arnoldi_k20_n4_h0.3_L2_S",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "~/musica-ab-upstream/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "method": "arnoldi",
+  "ndof": 19769,
+  "order": 2,
+  "num": 4,
+  "sigma": 0.0,
+  "levels": 2,
+  "solve_s": 2.099029066004732,
+  "pre_hierarchy_s": 0.0,
+  "eigenvalues": [
+   [
+    58.607654317539776,
+    5.83210353891937e-14
+   ],
+   [
+    88.16713147496428,
+    -2.3434249390167073e-13
+   ],
+   [
+    88.19999474931619,
+    5.929475226479754e-13
+   ],
+   [
+    88.2031814468423,
+    -2.9370302449939657e-13
+   ]
+  ],
+  "inverse": "umfpack",
+  "krylov": 20
+ },
+ "wall_s": 2.181322819000343,
+ "peak_mem_mb": 392.73828125,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_gplhr.py --maxh 0.3 --levels 2 --method arnoldi --krylov 20 --num 4 --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:47:54"
+}

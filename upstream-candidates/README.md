@@ -17,7 +17,7 @@ Every result is a JSON in `results/` with wall time, peak memory, machine, threa
 
 ## Regression tests: master fails, the fork passes
 
-`tests_ab.py` runs the fork's 17 test files, each in its own process. Fork: 17/17 pass. Upstream master:
+`tests_ab.py` runs the fork's 19 test files, each in its own process. Fork: all pass. Upstream master:
 
 | test file | upstream master | what it shows |
 |---|---|---|
@@ -36,6 +36,8 @@ Every result is a JSON in `results/` with wall time, peak memory, machine, threa
 | test_tendexlines | error | feature: TendexLines |
 | netgen test_split_alfeld | 1 of 3 fail | `ngmesh.SplitAlfeld()` puts the 3D vertex outside the tet (inverted elements, volume 2 on the unit cube) |
 | test_inverse_temporary | passes | the crash needs MKL Pardiso (the Linux workstation); not reproducible on the Mac |
+| test_multivector_orthogonalize | 30 of 64 fail | `MultiVector.Orthogonalize()` without `ipmat` not orthonormal from 4 vectors on |
+| test_real_operator_complex_vector | 1 of 6 fail | a real BDDC applied to a complex vector raises (matrix, Cholesky, UMFPACK, Jacobi already work on master) |
 
 ## Measured speed-ups (same machine, same options)
 
@@ -62,6 +64,42 @@ Notes on the numbers:
 - `mesh.Refine` at 154 M tets ran 248 s vs 164 s, but that level was near the memory limit; not claimed.
 - Also found: `ngsolve.webgui.FieldLines(start_points=<numpy array>)` fails on its own `assert`
   (truth value of an array). One-line fix: `start_points is not None`.
+
+## Small / medium / large on MUSICA (2026-11-09)
+
+Proposal PDF for Joachim: `report/proposal.pdf` (2 pages; `report/proposal.tex`, built with
+`latexmk -lualatex`). Figure and table: `python3 plot_sweep.py` from `results/musica/*.json`.
+
+Both variants built on MUSICA with identical options (Release, CPU only, UMFPACK; `musica/remote-setup-ab.sh`)
+from pinned clones (fork cfd8f92b6, master 6e701b568; `musica/ab.sh`). One CPU node share per job (48 cores,
+192 GB); each upstream/fork pair runs back to back in the same job. The regular CPU queue had multi-day waits,
+so the sweep ran as eleven 10-minute jobs on the dev QOS (`musica/submit_sweep.sh`, chunks in
+`musica/sweep_ab.py`), several sharing a node: expect a few % of timing noise. Times are the operation only.
+
+| item | small | medium | large |
+|---|---|---|---|
+| Field lines, 48 threads | 0.774 → 0.0137 s, **56×** | 5.45 → 0.0747 s, **73×** | 75.2 → 0.976 s, **77×** |
+| H1 p = 4 transfer, `localhoprolongation` | 0.0084 → 0.0048 s, **1.8×** | 0.162 → 0.103 s, **1.6×** | 1.09 → 0.605 s, **1.8×** (2.4 → 1.3 GB) |
+| 4 eigenvalues: Arnoldi(20) + UMFPACK → GPLHR + geometric multigrid | 2.10 → 2.62 s, **0.80×** | 15.1 → 7.18 s, **2.1×** | 135 → 21.7 s, **6.2×** (14.6 → 1.8 GB) |
+| SIMD edge form | 0.0069 → 0.0042 s, **1.6×** | 0.032 → 0.026 s, **1.25×** | 0.185 → 0.132 s, **1.4×** |
+| complex system, best complex BDDC → real BDDC | 0.045 → 0.053 s, **0.85×** | 0.373 → 0.341 s, **1.09×** | 7.11 → 4.59 s, **1.55×** (5.5 → 3.9 GB) |
+| `mesh.Refine()` | 1.01 → 0.963 s, **1.05×** | 11.1 → 10.6 s, **1.05×** | 121 → 116 s, **1.05×** |
+
+Sizes: field lines 500 / 2 000 / 10 000 lines on 6 k / 47 k / 379 k tets; H1 transfer to 0.14 / 2.3 / 14.3 M dofs;
+eigenproblem H1 p = 2 with 20 / 83 / 287 k dofs (and 5 k: 0.26 vs 0.77 s); edge form VectorH1 p = 3 with
+18 / 137 / 987 k dofs; complex system H1 p = 3 with 9 / 63 / 443 k dofs; `Refine` to 3.2 / 20 / 154 M tets
+(levels of one run; the separate large refine run exceeds 10 minutes and timed out by design).
+
+Notes:
+- Field lines on one thread (fork): 0.198 / 1.51 / 24.8 s, i.e. 3.9× / 3.6× / 3.0× from the element hint alone.
+- GPLHR: at order 2 every H1 dof is a vertex or edge dof, so BDDC's wirebasket is the whole space and BDDC costs a
+  full direct solve: that is why GPLHR + BDDC lost below 50k dofs on the Mac. With geometric multigrid (nested
+  meshes, `--pre multigrid --levels k`) GPLHR wins from about 30k dofs and uses less memory at every size
+  (−37 % at 20k, −66 % at 83k, −88 % at 287k). Eigenvalues agree to the printed digits at every size. On the Mac
+  at 20k dofs the two tie with 4 threads (1.69 vs 1.65 s).
+- Complex system: master's two workarounds (complex BDDC of the same form; BDDC of the complex system) need the
+  same iterations (16 / 17 / 19) as the fork's real BDDC; the fork saves the complex factorizations.
+- Every fork result matches master: matrix norms identical, eigenvalues equal, interpolation errors 1e-14 in both.
 
 ## Does each change apply to today's master?
 

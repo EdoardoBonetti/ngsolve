@@ -1,0 +1,62 @@
+[
+ {
+  "bench": "refine",
+  "size": "S",
+  "variant": "upstream",
+  "script": "bench_refine.py",
+  "args": "--maxh 0.2 --levels 3  --threads 48",
+  "returncode": 0,
+  "wall_s": 13.338540461001685,
+  "log": "refine_S_upstream_.log"
+ },
+ {
+  "bench": "refine",
+  "size": "S",
+  "variant": "fork",
+  "script": "bench_refine.py",
+  "args": "--maxh 0.2 --levels 3  --threads 48",
+  "returncode": 0,
+  "wall_s": 12.887529440995422,
+  "log": "refine_S_fork_.log"
+ },
+ {
+  "bench": "refine",
+  "size": "M",
+  "variant": "upstream",
+  "script": "bench_refine.py",
+  "args": "--maxh 0.1 --levels 3  --threads 48",
+  "returncode": 0,
+  "wall_s": 162.5702585149993,
+  "log": "refine_M_upstream_.log"
+ },
+ {
+  "bench": "refine",
+  "size": "M",
+  "variant": "fork",
+  "script": "bench_refine.py",
+  "args": "--maxh 0.1 --levels 3  --threads 48",
+  "returncode": 0,
+  "wall_s": 156.13267401200574,
+  "log": "refine_M_fork_.log"
+ },
+ {
+  "bench": "refine",
+  "size": "L",
+  "variant": "upstream",
+  "script": "bench_refine.py",
+  "args": "--maxh 0.1 --levels 4  --threads 48",
+  "returncode": "timeout",
+  "wall_s": 195.23832048100303,
+  "log": "refine_L_upstream_.log"
+ },
+ {
+  "bench": "refine",
+  "size": "L",
+  "variant": "fork",
+  "script": "bench_refine.py",
+  "args": "--maxh 0.1 --levels 4  --threads 48",
+  "returncode": "timeout",
+  "wall_s": 5.023599200001627,
+  "log": "refine_L_fork_.log"
+ }
+]

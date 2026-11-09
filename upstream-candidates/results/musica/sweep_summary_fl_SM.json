@@ -1,0 +1,62 @@
+[
+ {
+  "bench": "fieldlines",
+  "size": "S",
+  "variant": "upstream",
+  "script": "bench_fieldlines.py",
+  "args": "--maxh 0.1 --lines 500  --threads 48",
+  "returncode": 0,
+  "wall_s": 3.122494139999617,
+  "log": "fieldlines_S_upstream_.log"
+ },
+ {
+  "bench": "fieldlines",
+  "size": "S",
+  "variant": "fork",
+  "script": "bench_fieldlines.py",
+  "args": "--maxh 0.1 --lines 500  --threads 48",
+  "returncode": 0,
+  "wall_s": 0.66694668999844,
+  "log": "fieldlines_S_fork_.log"
+ },
+ {
+  "bench": "fieldlines",
+  "size": "S_t1",
+  "variant": "fork",
+  "script": "bench_fieldlines.py",
+  "args": "--maxh 0.1 --lines 500 --threads 1",
+  "returncode": 0,
+  "wall_s": 1.2203253799962113,
+  "log": "fieldlines_S_t1_fork_threads1.log"
+ },
+ {
+  "bench": "fieldlines",
+  "size": "M",
+  "variant": "upstream",
+  "script": "bench_fieldlines.py",
+  "args": "--maxh 0.05 --lines 2000 --reps 2  --threads 48",
+  "returncode": 0,
+  "wall_s": 12.785192395997,
+  "log": "fieldlines_M_upstream_.log"
+ },
+ {
+  "bench": "fieldlines",
+  "size": "M",
+  "variant": "fork",
+  "script": "bench_fieldlines.py",
+  "args": "--maxh 0.05 --lines 2000 --reps 2  --threads 48",
+  "returncode": 0,
+  "wall_s": 2.0695063460007077,
+  "log": "fieldlines_M_fork_.log"
+ },
+ {
+  "bench": "fieldlines",
+  "size": "M_t1",
+  "variant": "fork",
+  "script": "bench_fieldlines.py",
+  "args": "--maxh 0.05 --lines 2000 --reps 2 --threads 1",
+  "returncode": 0,
+  "wall_s": 4.926221996996901,
+  "log": "fieldlines_M_t1_fork_threads1.log"
+ }
+]

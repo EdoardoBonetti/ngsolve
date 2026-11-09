@@ -1,0 +1,12 @@
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X ccc@{}}
+\toprule
+& \textbf{small} & \textbf{medium} & \textbf{large}\\
+\midrule
+Field lines & 0.774 $\to$ 0.0137 s, \textbf{56$\times$} & 5.45 $\to$ 0.0747 s, \textbf{73$\times$} & 75.2 $\to$ 0.976 s, \textbf{77$\times$} \\
+H1 transfer (\texttt{localhoprolongation}) & 0.00839 $\to$ 0.00476 s, \textbf{1.8$\times$} & 0.162 $\to$ 0.103 s, \textbf{1.6$\times$} & 1.09 $\to$ 0.605 s, \textbf{1.8$\times$} \\
+Eigenvalues (GPLHR + MG vs Arnoldi + UMFPACK) & 2.1 $\to$ 2.62 s, \textbf{0.80$\times$} & 15.1 $\to$ 7.18 s, \textbf{2.1$\times$} & 135 $\to$ 21.7 s, \textbf{6.2$\times$} \\
+SIMD edge forms & 0.00686 $\to$ 0.00419 s, \textbf{1.6$\times$} & 0.032 $\to$ 0.0256 s, \textbf{1.2$\times$} & 0.185 $\to$ 0.132 s, \textbf{1.4$\times$} \\
+Complex system: real BDDC vs best complex BDDC & 0.045 $\to$ 0.0532 s, \textbf{0.85$\times$} & 0.373 $\to$ 0.341 s, \textbf{1.09$\times$} & 7.11 $\to$ 4.59 s, \textbf{1.5$\times$} \\
+\texttt{mesh.Refine} & 1.01 $\to$ 0.963 s, \textbf{1.05$\times$} & 11.1 $\to$ 10.6 s, \textbf{1.05$\times$} & 121 $\to$ 116 s, \textbf{1.05$\times$} \\
+\bottomrule
+\end{tabularx}

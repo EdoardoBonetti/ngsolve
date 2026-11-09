@@ -1,0 +1,62 @@
+[
+ {
+  "bench": "gplhr",
+  "size": "XS",
+  "variant": "upstream",
+  "script": "bench_gplhr.py",
+  "args": "--maxh 0.25 --levels 1 --method arnoldi --krylov 20 --num 4 --threads 48",
+  "returncode": 0,
+  "wall_s": 0.6674131539984955,
+  "log": "gplhr_XS_upstream_methodarnoldikrylov20num4.log"
+ },
+ {
+  "bench": "gplhr",
+  "size": "XS",
+  "variant": "fork",
+  "script": "bench_gplhr.py",
+  "args": "--maxh 0.25 --levels 1 --method gplhr --pre multigrid --num 4 --threads 48",
+  "returncode": 0,
+  "wall_s": 1.2191415349952877,
+  "log": "gplhr_XS_fork_methodgplhrpremultigridnum4.log"
+ },
+ {
+  "bench": "gplhr",
+  "size": "S",
+  "variant": "upstream",
+  "script": "bench_gplhr.py",
+  "args": "--maxh 0.3 --levels 2 --method arnoldi --krylov 20 --num 4 --threads 48",
+  "returncode": 0,
+  "wall_s": 2.520099157001823,
+  "log": "gplhr_S_upstream_methodarnoldikrylov20num4.log"
+ },
+ {
+  "bench": "gplhr",
+  "size": "S",
+  "variant": "fork",
+  "script": "bench_gplhr.py",
+  "args": "--maxh 0.3 --levels 2 --method gplhr --pre multigrid --num 4 --threads 48",
+  "returncode": 0,
+  "wall_s": 3.0752907920032158,
+  "log": "gplhr_S_fork_methodgplhrpremultigridnum4.log"
+ },
+ {
+  "bench": "gplhr",
+  "size": "M",
+  "variant": "upstream",
+  "script": "bench_gplhr.py",
+  "args": "--maxh 0.35 --levels 3 --method arnoldi --krylov 20 --num 4 --threads 48",
+  "returncode": 0,
+  "wall_s": 15.637970818002941,
+  "log": "gplhr_M_upstream_methodarnoldikrylov20num4.log"
+ },
+ {
+  "bench": "gplhr",
+  "size": "M",
+  "variant": "fork",
+  "script": "bench_gplhr.py",
+  "args": "--maxh 0.35 --levels 3 --method gplhr --pre multigrid --num 4 --threads 48",
+  "returncode": 0,
+  "wall_s": 7.693126881000353,
+  "log": "gplhr_M_fork_methodgplhrpremultigridnum4.log"
+ }
+]

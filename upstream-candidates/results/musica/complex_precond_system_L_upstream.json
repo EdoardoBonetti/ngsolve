@@ -1,0 +1,29 @@
+{
+ "name": "complex_precond_system_L",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "~/musica-ab-upstream/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "ndof": 442962,
+  "order": 3,
+  "pre": "system",
+  "iterations": 19,
+  "first_res": 1.8694022917131594,
+  "last_res": 2.917947607864638e-10,
+  "true_rel_res": 3.670131619920937e-11,
+  "setup_s": 5.365486335998867,
+  "solve_s": 1.7420875530006015,
+  "total_s": 7.107573888999468,
+  "error": null
+ },
+ "wall_s": 8.256769168001483,
+ "peak_mem_mb": 5509.796875,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_complex_precond.py --maxh 0.04 --pre system --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:48:03"
+}

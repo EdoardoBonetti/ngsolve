@@ -1,0 +1,72 @@
+{
+ "name": "hoprol_hoprolongation_L",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-346-gcfd8f92b6",
+ "netgen_version": "6.2.2608.post107.dev0",
+ "ngsolve_path": "~/musica-ab-fork/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "order": 4,
+  "flag": "hoprolongation",
+  "levels": [
+   {
+    "ndof": 56273,
+    "refine_s": 0.019551226003386546,
+    "fes_update_s": 0.002321879001101479,
+    "gf_update_s": 2.5699991965666413e-06,
+    "err": 6.1661591555654265e-15
+   },
+   {
+    "ndof": 142937,
+    "refine_s": 0.03945699999894714,
+    "fes_update_s": 0.0056772430034470744,
+    "gf_update_s": 3.8099969970062375e-06,
+    "err": 6.189992373185067e-15
+   },
+   {
+    "ndof": 360977,
+    "refine_s": 0.09579588800261263,
+    "fes_update_s": 0.014575119996152353,
+    "gf_update_s": 3.8900034269317985e-06,
+    "err": 6.228132447885914e-15
+   },
+   {
+    "ndof": 908601,
+    "refine_s": 0.239928973998758,
+    "fes_update_s": 0.03695045200583991,
+    "gf_update_s": 6.079993909224868e-06,
+    "err": 6.285424245222328e-15
+   },
+   {
+    "ndof": 2281129,
+    "refine_s": 0.6115809330003685,
+    "fes_update_s": 0.10365034099959303,
+    "gf_update_s": 7.4599956860765815e-06,
+    "err": 6.3641048714765284e-15
+   },
+   {
+    "ndof": 5717137,
+    "refine_s": 1.5061786619990016,
+    "fes_update_s": 0.26265975500427885,
+    "gf_update_s": 8.44999885885045e-06,
+    "err": 6.454272775786014e-15
+   },
+   {
+    "ndof": 14318009,
+    "refine_s": 3.7598954230052186,
+    "fes_update_s": 0.6503814159950707,
+    "gf_update_s": 8.84000473888591e-06,
+    "err": 6.552361442159717e-15
+   }
+  ],
+  "total_update_s": 1.076257305998297
+ },
+ "wall_s": 19.186293459999433,
+ "peak_mem_mb": 2449.8828125,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_hoprol.py --maxdof 1e7 --flag hoprolongation --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:48:26"
+}

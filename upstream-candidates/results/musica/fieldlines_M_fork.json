@@ -1,0 +1,30 @@
+{
+ "name": "fieldlines_M",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-346-gcfd8f92b6",
+ "netgen_version": "6.2.2608.post107.dev0",
+ "ngsolve_path": "~/musica-ab-fork/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "ne": 46531,
+  "lines": 2000,
+  "trace_s_best": 0.07469118700100807,
+  "trace_s_all": [
+   0.08109265700477408,
+   0.07469118700100807
+  ],
+  "sizes": {
+   "pstart": 325689,
+   "pend": 325689,
+   "value": 108563
+  }
+ },
+ "wall_s": 1.6833741510054097,
+ "peak_mem_mb": 215.9453125,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_fieldlines.py --maxh 0.05 --lines 2000 --reps 2 --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:47:48"
+}

@@ -1,0 +1,37 @@
+{
+ "name": "hoprol_localhoprolongation_S",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-346-gcfd8f92b6",
+ "netgen_version": "6.2.2608.post107.dev0",
+ "ngsolve_path": "~/musica-ab-fork/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "order": 4,
+  "flag": "localhoprolongation",
+  "levels": [
+   {
+    "ndof": 56273,
+    "refine_s": 0.010100706000230275,
+    "fes_update_s": 0.0013646330044139177,
+    "gf_update_s": 2.540000423323363e-06,
+    "err": 7.603127422876306e-15
+   },
+   {
+    "ndof": 142937,
+    "refine_s": 0.016399031999753788,
+    "fes_update_s": 0.0033880019982461818,
+    "gf_update_s": 2.219996531493962e-06,
+    "err": 8.320231135194183e-15
+   }
+  ],
+  "total_update_s": 0.004757394999614917
+ },
+ "wall_s": 0.3762978060040041,
+ "peak_mem_mb": 123.95703125,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_hoprol.py --maxdof 1e5 --flag localhoprolongation --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:47:33"
+}

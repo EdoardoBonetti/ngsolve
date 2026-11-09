@@ -1,0 +1,82 @@
+[
+ {
+  "bench": "complex_precond",
+  "size": "S",
+  "variant": "upstream",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.16 --pre real --threads 48",
+  "returncode": 0,
+  "wall_s": 1.2739756049995776,
+  "log": "complex_precond_S_upstream_prereal.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "S",
+  "variant": "upstream",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.16 --pre complex --threads 48",
+  "returncode": 0,
+  "wall_s": 0.4728051019992563,
+  "log": "complex_precond_S_upstream_precomplex.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "S",
+  "variant": "upstream",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.16 --pre system --threads 48",
+  "returncode": 0,
+  "wall_s": 0.4667479839990847,
+  "log": "complex_precond_S_upstream_presystem.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "S",
+  "variant": "fork",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.16 --pre real --threads 48",
+  "returncode": 0,
+  "wall_s": 0.4673614510029438,
+  "log": "complex_precond_S_fork_prereal.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "M",
+  "variant": "upstream",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.08 --pre real --threads 48",
+  "returncode": 0,
+  "wall_s": 0.8180574029975105,
+  "log": "complex_precond_M_upstream_prereal.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "M",
+  "variant": "upstream",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.08 --pre complex --threads 48",
+  "returncode": 0,
+  "wall_s": 0.9684205419980572,
+  "log": "complex_precond_M_upstream_precomplex.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "M",
+  "variant": "upstream",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.08 --pre system --threads 48",
+  "returncode": 0,
+  "wall_s": 0.9682814530024189,
+  "log": "complex_precond_M_upstream_presystem.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "M",
+  "variant": "fork",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.08 --pre real --threads 48",
+  "returncode": 0,
+  "wall_s": 0.9179924299969571,
+  "log": "complex_precond_M_fork_prereal.log"
+ }
+]

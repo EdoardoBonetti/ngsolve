@@ -1,0 +1,42 @@
+[
+ {
+  "bench": "complex_precond",
+  "size": "L",
+  "variant": "upstream",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.04 --pre real --threads 48",
+  "returncode": 0,
+  "wall_s": 4.678727067999716,
+  "log": "complex_precond_L_upstream_prereal.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "L",
+  "variant": "upstream",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.04 --pre complex --threads 48",
+  "returncode": 0,
+  "wall_s": 8.789997052997933,
+  "log": "complex_precond_L_upstream_precomplex.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "L",
+  "variant": "upstream",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.04 --pre system --threads 48",
+  "returncode": 0,
+  "wall_s": 8.739813776999654,
+  "log": "complex_precond_L_upstream_presystem.log"
+ },
+ {
+  "bench": "complex_precond",
+  "size": "L",
+  "variant": "fork",
+  "script": "bench_complex_precond.py",
+  "args": "--maxh 0.04 --pre real --threads 48",
+  "returncode": 0,
+  "wall_s": 6.132886362000136,
+  "log": "complex_precond_L_fork_prereal.log"
+ }
+]

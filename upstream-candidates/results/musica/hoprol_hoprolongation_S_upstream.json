@@ -1,0 +1,37 @@
+{
+ "name": "hoprol_hoprolongation_S",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "~/musica-ab-upstream/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "order": 4,
+  "flag": "hoprolongation",
+  "levels": [
+   {
+    "ndof": 56273,
+    "refine_s": 0.02061336999759078,
+    "fes_update_s": 0.0023247780045494437,
+    "gf_update_s": 3.260000084992498e-06,
+    "err": 6.166894884778806e-15
+   },
+   {
+    "ndof": 142937,
+    "refine_s": 0.040675173004274257,
+    "fes_update_s": 0.00606197799788788,
+    "gf_update_s": 2.439999661874026e-06,
+    "err": 6.1899922673916375e-15
+   }
+  ],
+  "total_update_s": 0.00839245600218419
+ },
+ "wall_s": 0.4189824579952983,
+ "peak_mem_mb": 136.51171875,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_hoprol.py --maxdof 1e5 --flag hoprolongation --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:47:32"
+}

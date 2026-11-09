@@ -1,0 +1,32 @@
+[
+ {
+  "bench": "fieldlines",
+  "size": "L",
+  "variant": "upstream",
+  "script": "bench_fieldlines.py",
+  "args": "--maxh 0.025 --lines 10000 --reps 1  --threads 48",
+  "returncode": 0,
+  "wall_s": 88.21443385099701,
+  "log": "fieldlines_L_upstream_.log"
+ },
+ {
+  "bench": "fieldlines",
+  "size": "L",
+  "variant": "fork",
+  "script": "bench_fieldlines.py",
+  "args": "--maxh 0.025 --lines 10000 --reps 1  --threads 48",
+  "returncode": 0,
+  "wall_s": 14.047740515998157,
+  "log": "fieldlines_L_fork_.log"
+ },
+ {
+  "bench": "fieldlines",
+  "size": "L_t1",
+  "variant": "fork",
+  "script": "bench_fieldlines.py",
+  "args": "--maxh 0.025 --lines 10000 --reps 1 --threads 1",
+  "returncode": 0,
+  "wall_s": 37.643901909003034,
+  "log": "fieldlines_L_t1_fork_threads1.log"
+ }
+]

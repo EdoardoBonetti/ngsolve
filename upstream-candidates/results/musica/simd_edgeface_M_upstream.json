@@ -1,0 +1,30 @@
+{
+ "name": "simd_edgeface_M",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "~/musica-ab-upstream/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "ne": 9081,
+  "nedges": 12217,
+  "ndof": 137199,
+  "order": 3,
+  "assemble_s_best": 0.031954826998116914,
+  "assemble_s_all": [
+   0.03228911800397327,
+   0.03207556700363057,
+   0.031954826998116914
+  ],
+  "simd_evaluate": false,
+  "mat_norm": 114.46010461432247
+ },
+ "wall_s": 0.31525381800020114,
+ "peak_mem_mb": 385.99609375,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_simd_edgeface.py --maxh 0.08 --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:47:30"
+}

@@ -1,0 +1,29 @@
+{
+ "name": "complex_precond_real_S",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "~/musica-ab-upstream/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "ndof": 9391,
+  "order": 3,
+  "pre": "real",
+  "iterations": 0,
+  "first_res": null,
+  "last_res": null,
+  "true_rel_res": 1.0,
+  "setup_s": 0.033991799005889334,
+  "solve_s": 0.0015784909992362373,
+  "total_s": 0.03557029000512557,
+  "error": "SparseCholesky::MultAdd: illegal combination of scalar types, matrix double, x Complex, y double"
+ },
+ "wall_s": 0.1228698560007615,
+ "peak_mem_mb": 133.85546875,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_complex_precond.py --maxh 0.16 --pre real --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:47:32"
+}

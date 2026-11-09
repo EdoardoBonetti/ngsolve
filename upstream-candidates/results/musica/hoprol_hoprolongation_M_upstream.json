@@ -1,0 +1,58 @@
+{
+ "name": "hoprol_hoprolongation_M",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "~/musica-ab-upstream/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "order": 4,
+  "flag": "hoprolongation",
+  "levels": [
+   {
+    "ndof": 56273,
+    "refine_s": 0.019812043996353168,
+    "fes_update_s": 0.0023180179996415973,
+    "gf_update_s": 2.9700022423639894e-06,
+    "err": 6.167039845967182e-15
+   },
+   {
+    "ndof": 142937,
+    "refine_s": 0.03966402800142532,
+    "fes_update_s": 0.005705629999283701,
+    "gf_update_s": 3.1800009310245514e-06,
+    "err": 6.19032897230097e-15
+   },
+   {
+    "ndof": 360977,
+    "refine_s": 0.09607483800209593,
+    "fes_update_s": 0.014104634996328969,
+    "gf_update_s": 4.449997504707426e-06,
+    "err": 6.230517112650757e-15
+   },
+   {
+    "ndof": 908601,
+    "refine_s": 0.2413199450020329,
+    "fes_update_s": 0.03652609499840764,
+    "gf_update_s": 5.989997589495033e-06,
+    "err": 6.285755113928827e-15
+   },
+   {
+    "ndof": 2281129,
+    "refine_s": 0.6218908279988682,
+    "fes_update_s": 0.10364909799682209,
+    "gf_update_s": 8.430004527326673e-06,
+    "err": 6.3650816544379754e-15
+   }
+  ],
+  "total_update_s": 0.16232849599327892
+ },
+ "wall_s": 3.314568526002404,
+ "peak_mem_mb": 485.6015625,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_hoprol.py --maxdof 1e6 --flag hoprolongation --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:47:37"
+}

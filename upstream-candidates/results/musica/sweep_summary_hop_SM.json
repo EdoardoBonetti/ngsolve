@@ -1,0 +1,62 @@
+[
+ {
+  "bench": "hoprol",
+  "size": "S",
+  "variant": "upstream",
+  "script": "bench_hoprol.py",
+  "args": "--maxdof 1e5 --flag hoprolongation --threads 48",
+  "returncode": 0,
+  "wall_s": 1.5735778890011716,
+  "log": "hoprol_S_upstream_flaghoprolongation.log"
+ },
+ {
+  "bench": "hoprol",
+  "size": "S",
+  "variant": "fork",
+  "script": "bench_hoprol.py",
+  "args": "--maxdof 1e5 --flag localhoprolongation --threads 48",
+  "returncode": 0,
+  "wall_s": 0.8170941179996589,
+  "log": "hoprol_S_fork_flaglocalhoprolongation.log"
+ },
+ {
+  "bench": "hoprol",
+  "size": "S",
+  "variant": "fork",
+  "script": "bench_hoprol.py",
+  "args": "--maxdof 1e5 --flag hoprolongation --threads 48",
+  "returncode": 0,
+  "wall_s": 0.7672595729964087,
+  "log": "hoprol_S_fork_flaghoprolongation.log"
+ },
+ {
+  "bench": "hoprol",
+  "size": "M",
+  "variant": "upstream",
+  "script": "bench_hoprol.py",
+  "args": "--maxdof 1e6 --flag hoprolongation --threads 48",
+  "returncode": 0,
+  "wall_s": 3.671407595000346,
+  "log": "hoprol_M_upstream_flaghoprolongation.log"
+ },
+ {
+  "bench": "hoprol",
+  "size": "M",
+  "variant": "fork",
+  "script": "bench_hoprol.py",
+  "args": "--maxdof 1e6 --flag localhoprolongation --threads 48",
+  "returncode": 0,
+  "wall_s": 3.270725289999973,
+  "log": "hoprol_M_fork_flaglocalhoprolongation.log"
+ },
+ {
+  "bench": "hoprol",
+  "size": "M",
+  "variant": "fork",
+  "script": "bench_hoprol.py",
+  "args": "--maxdof 1e6 --flag hoprolongation --threads 48",
+  "returncode": 0,
+  "wall_s": 3.7218796069937525,
+  "log": "hoprol_M_fork_flaghoprolongation.log"
+ }
+]

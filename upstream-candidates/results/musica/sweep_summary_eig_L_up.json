@@ -1,0 +1,12 @@
+[
+ {
+  "bench": "gplhr",
+  "size": "L",
+  "variant": "upstream",
+  "script": "bench_gplhr.py",
+  "args": "--maxh 0.25 --levels 3 --method arnoldi --krylov 20 --num 4 --threads 48",
+  "returncode": 0,
+  "wall_s": 135.86541334299545,
+  "log": "gplhr_L_upstream_methodarnoldikrylov20num4.log"
+ }
+]

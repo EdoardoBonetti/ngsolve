@@ -1,0 +1,45 @@
+{
+ "name": "gplhr_gplhr_multigrid_n4_h0.3_L2_S",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-346-gcfd8f92b6",
+ "netgen_version": "6.2.2608.post107.dev0",
+ "ngsolve_path": "~/musica-ab-fork/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "method": "gplhr",
+  "ndof": 19769,
+  "order": 2,
+  "num": 4,
+  "sigma": 0.0,
+  "levels": 2,
+  "solve_s": 2.624790033994941,
+  "pre_hierarchy_s": 0.026236095000058413,
+  "eigenvalues": [
+   [
+    58.60765459185687,
+    -6.566344580753781e-08
+   ],
+   [
+    88.16712884561844,
+    -1.7344927353557787e-07
+   ],
+   [
+    88.19999453877598,
+    -9.661489318885351e-07
+   ],
+   [
+    88.203181541218,
+    2.0987680092876576e-07
+   ]
+  ],
+  "pre": "multigrid(-Laplace)"
+ },
+ "wall_s": 2.706204109999817,
+ "peak_mem_mb": 246.16796875,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_gplhr.py --maxh 0.3 --levels 2 --method gplhr --pre multigrid --num 4 --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:47:57"
+}

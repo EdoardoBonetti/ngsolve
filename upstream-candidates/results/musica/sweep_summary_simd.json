@@ -1,0 +1,62 @@
+[
+ {
+  "bench": "simd_edgeface",
+  "size": "S",
+  "variant": "upstream",
+  "script": "bench_simd_edgeface.py",
+  "args": "--maxh 0.16  --threads 48",
+  "returncode": 0,
+  "wall_s": 0.6198771229974227,
+  "log": "simd_edgeface_S_upstream_.log"
+ },
+ {
+  "bench": "simd_edgeface",
+  "size": "S",
+  "variant": "fork",
+  "script": "bench_simd_edgeface.py",
+  "args": "--maxh 0.16  --threads 48",
+  "returncode": 0,
+  "wall_s": 0.5170621350043803,
+  "log": "simd_edgeface_S_fork_.log"
+ },
+ {
+  "bench": "simd_edgeface",
+  "size": "M",
+  "variant": "upstream",
+  "script": "bench_simd_edgeface.py",
+  "args": "--maxh 0.08  --threads 48",
+  "returncode": 0,
+  "wall_s": 0.6676870390001568,
+  "log": "simd_edgeface_M_upstream_.log"
+ },
+ {
+  "bench": "simd_edgeface",
+  "size": "M",
+  "variant": "fork",
+  "script": "bench_simd_edgeface.py",
+  "args": "--maxh 0.08  --threads 48",
+  "returncode": 0,
+  "wall_s": 0.6175585949968081,
+  "log": "simd_edgeface_M_fork_.log"
+ },
+ {
+  "bench": "simd_edgeface",
+  "size": "L",
+  "variant": "upstream",
+  "script": "bench_simd_edgeface.py",
+  "args": "--maxh 0.04  --threads 48",
+  "returncode": 0,
+  "wall_s": 2.1238625230034813,
+  "log": "simd_edgeface_L_upstream_.log"
+ },
+ {
+  "bench": "simd_edgeface",
+  "size": "L",
+  "variant": "fork",
+  "script": "bench_simd_edgeface.py",
+  "args": "--maxh 0.04  --threads 48",
+  "returncode": 0,
+  "wall_s": 2.020791915994778,
+  "log": "simd_edgeface_L_fork_.log"
+ }
+]

@@ -1,0 +1,32 @@
+[
+ {
+  "bench": "hoprol",
+  "size": "L",
+  "variant": "upstream",
+  "script": "bench_hoprol.py",
+  "args": "--maxdof 1e7 --flag hoprolongation --threads 48",
+  "returncode": 0,
+  "wall_s": 20.40016929599369,
+  "log": "hoprol_L_upstream_flaghoprolongation.log"
+ },
+ {
+  "bench": "hoprol",
+  "size": "L",
+  "variant": "fork",
+  "script": "bench_hoprol.py",
+  "args": "--maxdof 1e7 --flag localhoprolongation --threads 48",
+  "returncode": 0,
+  "wall_s": 15.487042175001989,
+  "log": "hoprol_L_fork_flaglocalhoprolongation.log"
+ },
+ {
+  "bench": "hoprol",
+  "size": "L",
+  "variant": "fork",
+  "script": "bench_hoprol.py",
+  "args": "--maxdof 1e7 --flag hoprolongation --threads 48",
+  "returncode": 0,
+  "wall_s": 19.593484099001216,
+  "log": "hoprol_L_fork_flaghoprolongation.log"
+ }
+]

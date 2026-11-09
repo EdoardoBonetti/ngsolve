@@ -1,0 +1,62 @@
+{
+ "name": "refine_S",
+ "variant": "upstream",
+ "ngsolve_version": "6.2.2608-262-g6e701b568",
+ "netgen_version": "6.2.2608.post92.dev0",
+ "ngsolve_path": "~/musica-ab-upstream/venv/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "uniform": [
+   {
+    "ne": 5696,
+    "nv": 1295,
+    "refine_s": 0.0035857730035786517
+   },
+   {
+    "ne": 45568,
+    "nv": 8909,
+    "refine_s": 0.01697170799889136
+   },
+   {
+    "ne": 364544,
+    "nv": 65881,
+    "refine_s": 0.1022708579985192
+   }
+  ],
+  "adaptive": [
+   {
+    "ne": 5161,
+    "nv": 1158,
+    "refine_s": 0.0031677639999543317
+   },
+   {
+    "ne": 38811,
+    "nv": 7536,
+    "refine_s": 0.011877003002155107
+   },
+   {
+    "ne": 292659,
+    "nv": 53441,
+    "refine_s": 0.08591606600384694
+   },
+   {
+    "ne": 2217764,
+    "nv": 394925,
+    "refine_s": 0.7505806730041513
+   },
+   {
+    "ne": 16783777,
+    "nv": 2962220,
+    "refine_s": 8.92175595000299
+   }
+  ]
+ },
+ "wall_s": 12.873619108002458,
+ "peak_mem_mb": 4401.25,
+ "machine": "MUSICA",
+ "cluster": "MUSICA",
+ "threads": 48,
+ "cpu_count": 384,
+ "command": "python3 bench_refine.py --maxh 0.2 --levels 3 --threads 48",
+ "script_commit": "bdcda8481",
+ "date": "2026-11-09 15:47:59"
+}

@@ -1,0 +1,12 @@
+[
+ {
+  "bench": "gplhr",
+  "size": "L",
+  "variant": "fork",
+  "script": "bench_gplhr.py",
+  "args": "--maxh 0.25 --levels 3 --method gplhr --pre multigrid --num 4 --threads 48",
+  "returncode": 0,
+  "wall_s": 22.4830859529975,
+  "log": "gplhr_L_fork_methodgplhrpremultigridnum4.log"
+ }
+]
