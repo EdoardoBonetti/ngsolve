@@ -199,10 +199,33 @@ Already upstream: OCC < 7.8 shape hasher, NG_TCL macros.
   Dev build only (`install-dev`); not merged, not in Netgen.app, not sent anywhere (rule above).
   Earlier attempt, superseded: branch `fix-realcompile-diffjacobi` (e41856bb7, 2026-11-02) turned the derivatives off
   for realcompiled integrands, which also loses the `dcf_dtest` path of `Apply`.
+- **`SymbolicEnergy` builds the Hessian of the energy on first use** (2026-11-12, performance; found with the item
+  above). With `symbolic_integrator_uses_diff` set, `SymbolicEnergy::SymbolicEnergy` (`fem/symbolicintegrator.cpp`)
+  computed the gradient blocks `dcf` (reverse mode, used by `Apply` through `EnergyGradient`) and also the Hessian
+  blocks `ddcf` (used only by the SIMD `AddLinearizedElementMatrix`), so a realcompiled `Variation(E * dx)` compiled
+  its Hessian when the form was built, also in a `nonassemble` form that is only applied. **Present in current
+  master** (6e701b568, same constructor); b89c87e30 and then 6d80a8ad3 cherry-pick onto it without conflicts
+  (`git merge-tree`, 2026-11-12; not built there).
+  Fix: `ddcf` is built on the first call of `DDcf(i, j)` (`std::call_once`, safe inside the parallel assembly), and
+  only if every gradient block was built (as before: an exception there skipped the Hessian); its one reader goes
+  through it; `dcf` stays in the constructor. Branch `lazy-energy-hessian` (6d80a8ad3, on `lazy-trial-jacobian`
+  cb4abee5c); only `fem/symbolicintegrator.{hpp,cpp}` and the test. The class layout changes, so add-ons that derive
+  from `SymbolicEnergy` need a rebuild.
+  Test: two cases added to `tests/pytest/test_lazy_trial_jacobian.py`, a realcompiled energy on `H1**N` (order 2)
+  whose trial proxies `u` and `Grad(u)` interact (Hessian blocks (u, u), (Grad u, u), (Grad u, Grad u)):
+  (a) `N = 8`, `nonassemble`: building the form compiles at most one derivative per trial proxy, `Apply` compiles
+  nothing, `Apply` and `Energy` equal the `uses_diff`-off results to 1e-12; (b) `N = 3`: the first
+  `AssembleLinearization` under `TaskManager` compiles the Hessian and gives the `uses_diff`-off matrix to 1e-12.
+  Before (dev build 6.2.2608-355-gb89c87e30): (a) fails with 5 compiles while the form is built (2 gradient + 3
+  Hessian blocks), (b) fails (nothing left to compile on first use). After (dev build 6.2.2608-358-g6d80a8ad3): the
+  file's 4 tests pass in 62 s; full `tests/pytest` (without `mpi_only`) 687 passed, 33 skipped
+  (`~/Applications/ngsuite/update_20261112_lazyenergy_dev_ngsolve_pytest.log`).
+  Cost for the `N = 8` energy (488 unknowns, clang on the Mac, 8 threads, after the fix): energy compile 2.6 s,
+  building the `nonassemble` form 6.7 s (2 gradient compiles), first `AssembleLinearization` 58.5 s (the 3 Hessian
+  compiles; second 1 ms; with `uses_diff` off 6 ms), matrices equal to 9.0e-17. Not timed on master.
+  Dev build only (`install-dev`); not merged, not in Netgen.app, not sent anywhere (rule above).
 
 ## Found, not fixed yet (local fix to do)
-- **`SymbolicEnergy` builds its Hessian in the constructor** (found 2026-11-12 with the item above):
-  `fem/symbolicintegrator.cpp`, `SymbolicEnergy::SymbolicEnergy`, computes `dcf` (gradient, used by `Apply`) and
-  `ddcf` (Hessian blocks, used only by linearizations) when `symbolic_integrator_uses_diff` is set, so a realcompiled
-  `Variation(...)` energy in a `nonassemble` form compiles its Hessian too. Same lazy fix applies.
-  `ContactIntegrator` (`comp/contact.cpp`) builds both derivatives eagerly regardless of the flag.
+- **`ContactIntegrator` builds both derivatives of its integrand eagerly** (found 2026-11-12 with the lazy Jacobian
+  items above): `comp/contact.cpp` computes `dcf_dtest` and `ddcf_dtest_dtrial` in the constructor regardless of
+  `symbolic_integrator_uses_diff`, so a realcompiled contact integrand compiles both. Same lazy fix would apply.
