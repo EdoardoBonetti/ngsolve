@@ -1,0 +1,37 @@
+{
+ "name": "lazy_jacobian_N50_p2",
+ "variant": "fork",
+ "ngsolve_version": "6.2.2608-355-gb89c87e30",
+ "netgen_version": "6.2.2608.post82.dev0",
+ "ngsolve_path": "~/Applications/ngsuite/install-dev/Contents/Resources/lib/python3.13/site-packages/ngsolve",
+ "data": {
+  "N": 50,
+  "order": 2,
+  "maxh": 0.05,
+  "ne": 942,
+  "ndof": 282600,
+  "integrand_compile_s": 202.97766199999023,
+  "uses_diff_0": {
+   "build_s": 0.014657624997198582,
+   "apply_ms_min": 7.676666020415723,
+   "apply_ms_median": 8.295750012621284,
+   "apply_calls": 150
+  },
+  "uses_diff_1": {
+   "build_s": 49.50660824996885,
+   "apply_ms_min": 1.1527499882504344,
+   "apply_ms_median": 1.246666011866182,
+   "apply_calls": 150
+  },
+  "rel_diff": 0.0
+ },
+ "wall_s": 257.3173971250071,
+ "peak_mem_mb": 159.578125,
+ "machine": "mac",
+ "cluster": "mac",
+ "threads": 8,
+ "cpu_count": 10,
+ "command": "python3 bench_lazy_jacobian.py --N 50 --maxh 0.05 --order 2 --lin 0 --threads 8",
+ "script_commit": "f8a657bc9",
+ "date": "2026-11-12 11:29:17"
+}

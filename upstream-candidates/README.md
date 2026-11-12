@@ -165,5 +165,44 @@ Already upstream: OCC < 7.8 shape hasher, NG_TCL macros.
   | Eigh 200 × 200 | 2.59 ms | 2.63 ms | lam to 3.6e-15 |
   | Solve 200 × 200 | 0.165 ms | 0.182 ms | x to 1.2e-14 |
 
+## Fixed on local branches (not merged into `ngsolve` yet)
+- **Symbolic integrators build the trial Jacobian of the integrand on first use** (2026-11-12, performance).
+  With `ngsglobals.symbolic_integrator_uses_diff = True` (set by `python/utils.py` since 1fcae9b0e, 2026-10-17) the
+  constructors of `SymbolicBilinearFormIntegrator` and `SymbolicFacetBilinearFormIntegrator`
+  (`fem/symbolicintegrator.cpp`) differentiated the integrand by the test functions (`dcf_dtest`, which `Apply`
+  evaluates once instead of once per test component) and also by the test and trial functions
+  (`ddcf_dtest_dtrial`, used only by element matrices and linearizations). `CompiledCoefficientFunction::DiffJacobi`
+  compiles each derivative with the parent's `realcompile` flag, so every realcompiled integrand paid a C++ compile of
+  its trial Jacobian when the form was built, also in a `nonassemble` form that is only applied. Found with a
+  realcompiled 50-component DG face flux: its Jacobian was 140 MB of C++, which gcc 13 (-O2) compiled for two days
+  before an internal compiler error. On the Mac (clang), for the 24-component integrand of the test below: integrand
+  2.5 s, `dcf_dtest` 2.1 s, trial Jacobian 75.5 s. **Present in current master** (same constructors).
+  Fix: `ddcf_dtest_dtrial` is built on the first call of `DDcfDtestDtrial(l1, k1)` (`std::call_once`, so it is safe
+  inside the parallel assembly); all seven users go through it; `dcf_dtest` stays in the constructor. Branch
+  `lazy-trial-jacobian` (b89c87e30, on `ngsolve` 1a293621e); only `fem/symbolicintegrator.{hpp,cpp}` and the test.
+  The class layout changes, so add-ons that derive from these integrators need a rebuild.
+  Test `tests/pytest/test_lazy_trial_jacobian.py` (a logging `ngscxx` in front of the real one counts the compiles):
+  (1) `L2**24`, realcompiled nonlinear volume term and inner-facet jump term, `nonassemble`: building the form compiles
+  at most one derivative per integrator, `Apply` compiles nothing and equals the result with `uses_diff` off to 1e-12;
+  (2) `L2**4`: `AssembleLinearization` and `Assemble` under `TaskManager` compile the Jacobians on first use and
+  give the matrices of `uses_diff` off to 1e-12. Before (dev build without the fix): (1) fails with 5 derivative
+  compiles while the form is built (2 `dcf_dtest` + 3 Jacobian entries). After (dev build 6.2.2608-355): 2 of 2 pass
+  in 40 s; full `tests/pytest` (without `mpi_only`) 685 passed, 33 skipped.
+  A/B with `bench_lazy_jacobian.py` (`results/lazy_jacobian_N*_p2_*.json`; L2**N, p = 2, 8 threads; Apply = median of
+  150 calls, the two variants interleaved): N = 24 (367 200 unknowns): building the `nonassemble` form with
+  `uses_diff` on takes 127.1 s on master (it compiles the Jacobians) and 6.4 s on the branch (2 `dcf_dtest`
+  compiles); on the branch the first `AssembleLinearization` compiles the Jacobians (121.9 s; master 0.69 s). Apply
+  with `uses_diff` on / off: master 1.47 / 3.96 ms, branch 1.48 / 3.61 ms. N = 50 (282 600 unknowns, branch only):
+  build 49.5 s, Apply 1.25 ms on vs 8.30 ms off (6.6×). Every Apply equals the `uses_diff`-off result (rel_diff 0).
+  So a realcompiled matrix-free form can keep `uses_diff` on and get the 2.4× (N = 24) to 6.6× (N = 50) faster Apply
+  without compiling the Jacobian.
+  Dev build only (`install-dev`); not merged, not in Netgen.app, not sent anywhere (rule above).
+  Earlier attempt, superseded: branch `fix-realcompile-diffjacobi` (e41856bb7, 2026-11-02) turned the derivatives off
+  for realcompiled integrands, which also loses the `dcf_dtest` path of `Apply`.
+
 ## Found, not fixed yet (local fix to do)
-(none)
+- **`SymbolicEnergy` builds its Hessian in the constructor** (found 2026-11-12 with the item above):
+  `fem/symbolicintegrator.cpp`, `SymbolicEnergy::SymbolicEnergy`, computes `dcf` (gradient, used by `Apply`) and
+  `ddcf` (Hessian blocks, used only by linearizations) when `symbolic_integrator_uses_diff` is set, so a realcompiled
+  `Variation(...)` energy in a `nonassemble` form compiles its Hessian too. Same lazy fix applies.
+  `ContactIntegrator` (`comp/contact.cpp`) builds both derivatives eagerly regardless of the flag.
