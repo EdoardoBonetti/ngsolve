@@ -220,9 +220,12 @@ Already upstream: OCC < 7.8 shape hasher, NG_TCL macros.
   Hessian blocks), (b) fails (nothing left to compile on first use). After (dev build 6.2.2608-358-g6d80a8ad3): the
   file's 4 tests pass in 62 s; full `tests/pytest` (without `mpi_only`) 687 passed, 33 skipped
   (`~/Applications/ngsuite/update_20261112_lazyenergy_dev_ngsolve_pytest.log`).
-  Cost for the `N = 8` energy (488 unknowns, clang on the Mac, 8 threads, after the fix): energy compile 2.6 s,
-  building the `nonassemble` form 6.7 s (2 gradient compiles), first `AssembleLinearization` 58.5 s (the 3 Hessian
-  compiles; second 1 ms; with `uses_diff` off 6 ms), matrices equal to 9.0e-17. Not timed on master.
+  A/B with `bench_lazy_energy.py` (`results/lazy_energy_N8_p2_{fork,upstream}.json`, script 02195ad3c; the test
+  energy with N = 8, order 2, maxh 0.3, 488 unknowns, 8 threads, clang): energy compile 2.6 s (fork) / 2.4 s
+  (master); building the `nonassemble` form with `uses_diff` on takes 65.1 s on master (2 gradient + 3 Hessian
+  compiles) and 6.0 s on the branch (2 gradient compiles); the branch compiles the Hessian in the first
+  `AssembleLinearization` (59.4 s; master 5.5 ms; second call 1.3 ms; with `uses_diff` off 4.1 ms). On both builds
+  `Apply`, `Energy` and the linearized matrix with `uses_diff` on equal the off results (rel_diff 1.2e-18, 0, 9.0e-17).
   Dev build only (`install-dev`); not merged, not in Netgen.app, not sent anywhere (rule above).
 
 ## Found, not fixed yet (local fix to do)
