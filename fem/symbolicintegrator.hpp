@@ -13,6 +13,7 @@ namespace ngcomp
 }
 
 
+#include <mutex>
 #include "integrator.hpp"
 #include "coefficient.hpp"
 
@@ -524,7 +525,12 @@ public:
     bool has_interpolate; // is there an interpolate in the expression tree ? 
     shared_ptr<BilinearFormIntegrator> linearization;
     Array<shared_ptr<CoefficientFunction>> dcf_dtest;  // derivatives by test-functions
-    Matrix<shared_ptr<CoefficientFunction>> ddcf_dtest_dtrial;  // derivatives by test- and trial-functions
+    // derivatives by test- and trial-functions: built on first use, read them through DDcfDtestDtrial
+    mutable Matrix<shared_ptr<CoefficientFunction>> ddcf_dtest_dtrial;
+    mutable std::once_flag ddcf_dtest_dtrial_built;
+    // d^2 cf / d test_l1 d trial_k1, or nullptr. Builds all of them on the first call (thread-safe): the matrix-free
+    // Apply needs only dcf_dtest, and for a Compile(realcompile=True) integrand every derivative is a C++ compile.
+    NGS_DLL_HEADER CoefficientFunction * DDcfDtestDtrial (size_t l1, size_t k1) const;
     void LinearizedProxyValues (int l1, int k1, const SIMD_BaseMappedIntegrationRule & mir, ProxyUserData & ud,
                                 FlatMatrix<SIMD<double>> proxyvalues, LocalHeap & lh) const;
   public:
@@ -754,7 +760,11 @@ public:
     bool element_boundary;
     bool neighbor_testfunction;
     Array<shared_ptr<CoefficientFunction>> dcf_dtest;  // derivatives by test-functions
-    Matrix<shared_ptr<CoefficientFunction>> ddcf_dtest_dtrial;  // derivatives by test- and trial-functions
+    // derivatives by test- and trial-functions: built on first use, read them through DDcfDtestDtrial
+    mutable Matrix<shared_ptr<CoefficientFunction>> ddcf_dtest_dtrial;
+    mutable std::once_flag ddcf_dtest_dtrial_built;
+    // d^2 cf / d test_l1 d trial_k1, or nullptr; builds all of them on the first call (thread-safe)
+    NGS_DLL_HEADER CoefficientFunction * DDcfDtestDtrial (size_t l1, size_t k1) const;
   public:
     NGS_DLL_HEADER SymbolicFacetBilinearFormIntegrator (shared_ptr<CoefficientFunction> acf, VorB avb, bool aelement_boundary);
 

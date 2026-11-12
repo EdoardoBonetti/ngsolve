@@ -1399,35 +1399,51 @@ namespace ngfem
     dcf_dtest.SetSize(test_proxies.Size());
     ddcf_dtest_dtrial.SetSize(test_proxies.Size(), trial_proxies.Size());
 
+    // the derivatives by the trial functions, ddcf_dtest_dtrial, are built on first use (DDcfDtestDtrial)
     if (symbolic_integrator_uses_diff)
-      {
-        for (auto i : Range(test_proxies))
-          {
-            try
-              {
-                CoefficientFunction::T_DJC cache;
-                dcf_dtest[i] = cf->DiffJacobi(test_proxies[i], cache);
-              }
-            catch (const Exception& e)
-              {
-                cout << IM(5) << "dcf_dtest has thrown exception " << e.What() << endl;
-              }
+      for (auto i : Range(test_proxies))
+        {
+          try
+            {
+              CoefficientFunction::T_DJC cache;
+              dcf_dtest[i] = cf->DiffJacobi(test_proxies[i], cache);
+            }
+          catch (const Exception& e)
+            {
+              cout << IM(5) << "dcf_dtest has thrown exception " << e.What() << endl;
+            }
+        }
+  }
 
-            for (auto j : Range(trial_proxies))
-              {
-                if (dcf_dtest[i])
-                  try
-                    {
-                      CoefficientFunction::T_DJC cache2;
-                        ddcf_dtest_dtrial(i, j) = dcf_dtest[i]->DiffJacobi(trial_proxies[j], cache2);
-                    }
-                  catch (const Exception& e)
-                    {
-                      cout << IM(5) << "ddcf_dtest_dtrial has thrown exception " << e.What() << endl;
-                    }
-              }
-          }
+  // ddcf(i, j) = d dcf_dtest[i] / d trial_proxies[j] for every dcf_dtest[i] that exists. The constructors used to do
+  // this; a matrix-free Apply only needs dcf_dtest, and Compile(realcompile=True) compiles every derivative to C++.
+  static void BuildDDcfDtestDtrial (FlatArray<shared_ptr<CoefficientFunction>> dcf_dtest,
+                                    FlatArray<ProxyFunction*> trial_proxies,
+                                    Matrix<shared_ptr<CoefficientFunction>> & ddcf)
+  {
+    for (auto i : Range(dcf_dtest))
+      {
+        if (!dcf_dtest[i]) continue;
+        for (auto j : Range(trial_proxies))
+          try
+            {
+              CoefficientFunction::T_DJC cache2;
+              ddcf(i, j) = dcf_dtest[i]->DiffJacobi(trial_proxies[j], cache2);
+            }
+          catch (const Exception& e)
+            {
+              cout << IM(5) << "ddcf_dtest_dtrial has thrown exception " << e.What() << endl;
+            }
       }
+  }
+
+  CoefficientFunction * SymbolicBilinearFormIntegrator ::
+  DDcfDtestDtrial (size_t l1, size_t k1) const
+  {
+    std::call_once (ddcf_dtest_dtrial_built,
+                    [this] () { BuildDDcfDtestDtrial (dcf_dtest, trial_proxies, ddcf_dtest_dtrial); });
+    if (l1 >= ddcf_dtest_dtrial.Height() || k1 >= ddcf_dtest_dtrial.Width()) return nullptr;
+    return ddcf_dtest_dtrial(l1, k1).get();
   }
 
 
@@ -1662,11 +1678,12 @@ namespace ngfem
                       FlatMatrix<SIMD<SCAL>> hbdbmat1(elmat.Width(), vdim2 * ir.Size(), bdbmat1.Data());
                       FlatMatrix<SIMD<SCAL_SHAPES>> hbbmat2(elmat.Height(), vdim2 * ir.Size(), bbmat2.Data());
 
-                      if (ddcf_dtest_dtrial(l1nr, k1nr))
+                      CoefficientFunction * ddcf = DDcfDtestDtrial(l1nr, k1nr);
+                      if (ddcf)
                         {
 //                          RegionTimer regdmat(tdmat);
 //                          cout << "use ddcf_dtest_dtrial" << endl;
-                          ddcf_dtest_dtrial(l1nr, k1nr)->Evaluate(mir, proxyvalues);
+                          ddcf->Evaluate(mir, proxyvalues);
 
                           if (is_diagonal)
                             for (auto k : Range(dim_proxy1))
@@ -1760,7 +1777,7 @@ namespace ngfem
                               for (size_t kk = 0; kk < dim_proxy1; kk++)
                                 if (nonzeros(l1+jj, k1+kk))
                                   {
-                                    auto pv = ddcf_dtest_dtrial(l1nr, k1nr) ?
+                                    auto pv = ddcf ?
                                       proxyvalues.Row(jj*dim_proxy1+kk) : proxyvalues.Row(kk*dim_proxy2+jj);
                                     add_dvs (jj, kk, [&] (size_t i) { return pv(i)*weights(i); });
                                   }
@@ -1853,7 +1870,7 @@ namespace ngfem
                               if (nonzeros(l1+j, k1+k))
                                 {
                                   // ddcf is test-major, the component-wise fill trial-major
-                                  auto proxyvalues_jk = ddcf_dtest_dtrial(l1nr, k1nr) ?
+                                  auto proxyvalues_jk = ddcf ?
                                           proxyvalues.Row(j*dim_proxy1+k) : proxyvalues.Row(k*dim_proxy2+j);
                                   auto bbmat1_k = bbmat1.RowSlice(k, dim_proxy1).Rows(r1);
                                   auto bdbmat1_j = bdbmat1.RowSlice(j, dim_proxy2).Rows(r1);
@@ -1980,14 +1997,14 @@ namespace ngfem
                 FlatMatrix<SCAL_SHAPES, ColMajor> bmat1(proxy1->Dimension(), elmat.Width(), lh);
                 FlatMatrix<SCAL_SHAPES, ColMajor> bmat2(proxy2->Dimension(), elmat.Height(), lh);
 
-                if (ddcf_dtest_dtrial(l1nr, k1nr))
+                if (CoefficientFunction * ddcf = DDcfDtestDtrial(l1nr, k1nr))
                   {
 //                    cout << "use ddcf_dtest_dtrial (NO SIMD)" << endl;
                     // TODO: optimize for element-wise constant case?
                     // ddcf is test-major, proxyvalues is (ip, trial, test)
                     size_t dim1 = proxy1->Dimension(), dim2 = proxy2->Dimension();
                     FlatMatrix<SCAL> mproxyvalues(mir.Size(), dim1*dim2, lh);
-                    ddcf_dtest_dtrial(l1nr, k1nr)->Evaluate(mir, mproxyvalues);
+                    ddcf->Evaluate(mir, mproxyvalues);
                     for (size_t k = 0; k < dim1; k++)
                       for (size_t l = 0; l < dim2; l++)
                         proxyvalues(STAR,k,l) = mproxyvalues.Col(l*dim1+k);
@@ -2298,13 +2315,13 @@ namespace ngfem
                         HeapReset hr(lh);
                         FlatMatrix<SIMD<SCAL>> proxyvalues(dim_proxy1*dim_proxy2, mir.Size(), lh);
                 
-                        if (ddcf_dtest_dtrial.Height() > l1 && ddcf_dtest_dtrial(l1, k1))
+                        if (CoefficientFunction * ddcf = DDcfDtestDtrial(l1, k1))
                           {
                             // symbolic Jacobian, index l*dim1+k
                             FlatMatrix<SIMD<SCAL>> dd(dim_proxy2*dim_proxy1, mir.Size(), lh);
                             ud.trialfunction = nullptr;
                             ud.testfunction = nullptr;
-                            ddcf_dtest_dtrial(l1, k1) -> Evaluate (mir, dd);
+                            ddcf -> Evaluate (mir, dd);
                             for (size_t k = 0; k < dim_proxy1; k++)
                               for (size_t l = 0; l < dim_proxy2; l++)
                                 for (size_t i = 0; i < mir.Size(); i++)
@@ -2642,13 +2659,13 @@ namespace ngfem
     auto proxy1 = trial_proxies[k1];
     auto proxy2 = test_proxies[l1];
     size_t dim1 = proxy1->Dimension(), dim2 = proxy2->Dimension();
-    if (ddcf_dtest_dtrial.Height() > l1 && ddcf_dtest_dtrial(l1, k1))
+    if (CoefficientFunction * ddcf = DDcfDtestDtrial(l1, k1))
       {
         // symbolic Jacobian, index l*dim1+k
         FlatMatrix<SIMD<double>> dd(dim2*dim1, mir.Size(), lh);
         ud.trialfunction = nullptr;
         ud.testfunction = nullptr;
-        ddcf_dtest_dtrial(l1, k1) -> Evaluate (mir, dd);
+        ddcf -> Evaluate (mir, dd);
         for (size_t k = 0; k < dim1; k++)
           for (size_t l = 0; l < dim2; l++)
             proxyvalues.Row(k*dim2+l) = dd.Row(l*dim1+k);
@@ -4113,34 +4130,20 @@ namespace ngfem
         }
     */
 
+    // the derivatives by the trial functions, ddcf_dtest_dtrial, are built on first use (DDcfDtestDtrial)
     if (symbolic_integrator_uses_diff)
-      {
-        for (auto i : Range(test_proxies))
-          {
-            try
-              {
-                CoefficientFunction::T_DJC cache;
-                dcf_dtest[i] = cf->DiffJacobi(test_proxies[i], cache);
-              }
-            catch (const Exception& e)
-              {
-                cout << IM(5) << "dcf_dtest has thrown exception " << e.What() << endl;
-              }
-            for (auto j : Range(trial_proxies))
-              {
-                if (dcf_dtest[i])
-                  try
-                    {
-                      CoefficientFunction::T_DJC cache2;
-                      ddcf_dtest_dtrial(i, j) = dcf_dtest[i]->DiffJacobi(trial_proxies[j], cache2);
-                    }
-                  catch (const Exception& e)
-                    {
-                      cout << IM(5) << "ddcf_dtest_dtrial has thrown exception " << e.What() << endl;
-                    }
-              }
-          }
-      }
+      for (auto i : Range(test_proxies))
+        {
+          try
+            {
+              CoefficientFunction::T_DJC cache;
+              dcf_dtest[i] = cf->DiffJacobi(test_proxies[i], cache);
+            }
+          catch (const Exception& e)
+            {
+              cout << IM(5) << "dcf_dtest has thrown exception " << e.What() << endl;
+            }
+        }
 
     
 
@@ -4149,6 +4152,15 @@ namespace ngfem
     cout << IM(6) << "num trial_proxies " << trial_proxies.Size() << endl;
     cout << IM(6) << "cumulated test_proxy dims  " << test_cum << endl;
     cout << IM(6) << "cumulated trial_proxy dims " << trial_cum << endl;
+  }
+
+  CoefficientFunction * SymbolicFacetBilinearFormIntegrator ::
+  DDcfDtestDtrial (size_t l1, size_t k1) const
+  {
+    std::call_once (ddcf_dtest_dtrial_built,
+                    [this] () { BuildDDcfDtestDtrial (dcf_dtest, trial_proxies, ddcf_dtest_dtrial); });
+    if (l1 >= ddcf_dtest_dtrial.Height() || k1 >= ddcf_dtest_dtrial.Width()) return nullptr;
+    return ddcf_dtest_dtrial(l1, k1).get();
   }
 
   void SymbolicFacetBilinearFormIntegrator::
@@ -4272,11 +4284,11 @@ namespace ngfem
           {
             // RegionTimer reg(teval);
 
-            if (ddcf_dtest_dtrial(l1, k1))
+            if (CoefficientFunction * ddcf = DDcfDtestDtrial(l1, k1))
               {
                 FlatMatrix<TSCAL> mproxyvalues(mir1.Size(), proxy1->Dimension() * proxy2->Dimension(),
                                                proxyvalues.Data());
-                ddcf_dtest_dtrial(l1, k1)->Evaluate(mir1, mproxyvalues);
+                ddcf->Evaluate(mir1, mproxyvalues);
               }
 
             else
