@@ -5432,7 +5432,8 @@ namespace ngfem
 
     
     dcf.SetSize(trial_proxies.Size());
-    ddcf.SetSize(sqr(trial_proxies.Size()));    
+    ddcf.SetSize(sqr(trial_proxies.Size()));
+    // the Hessian blocks ddcf are built on first use (DDcf)
     if (symbolic_integrator_uses_diff)
       {
         try
@@ -5440,7 +5441,7 @@ namespace ngfem
             cout << IM(5) << "cf = " << *cf << endl;
             for (int i = 0; i < trial_proxies.Size(); i++)
               {
-                CoefficientFunction::T_DJC cache;                
+                CoefficientFunction::T_DJC cache;
                 // scalar energy: gradient by reverse mode
                 auto diffi = (cf->Dimension() == 1)
                   ? cf->VJP(trial_proxies[i], make_shared<ConstantCoefficientFunction>(1), cache)
@@ -5448,31 +5449,52 @@ namespace ngfem
                 dcf[i] = diffi;
                 cout << IM(5) << "diffi = " << *diffi << endl;
               }
-
-            // Hessian blocks, only k1 >= l1 are used; forward mode w.r.t. the smaller proxy
-            // derivatives of compiled cfs are compiled the same way
-            int np = trial_proxies.Size();
-            for (int i = 0; i < np; i++)
-              for (int j = 0; j <= i; j++)
-                {
-                  if (!nonzeros_proxies(i,j) || !dcf[i] || !dcf[j]) continue;
-                  int ni = trial_proxies[i]->Dimension(), nj = trial_proxies[j]->Dimension();
-                  CoefficientFunction::T_DJC cache;
-                  if (nj > ni)
-                    ddcf[i*np+j] = dcf[j]->DiffJacobi(trial_proxies[i], cache) -> Reshape(nj, ni) -> Transpose() -> Reshape(ni*nj);
-                  else
-                    ddcf[i*np+j] = dcf[i]->DiffJacobi(trial_proxies[j], cache);
-                  cout << IM(5) << "ddcf = " << *ddcf[i*np+j] << endl;
-                }
+            build_ddcf = true;
           }
         catch (const Exception& e)
           {
             cout << IM(5) << "dcf_dtest has thrown exception " << e.What() << endl;
           }
       }
-    
+
     cout << IM(6) << "nonzero: " << cnt << "/" << sqr(nonzeros.Height()) << endl;
     cout << IM(6) << "nonzero-proxies: " << endl << nonzeros_proxies << endl;
+  }
+
+  CoefficientFunction * SymbolicEnergy :: DDcf (size_t i, size_t j) const
+  {
+    // The constructor used to build these; Apply only needs dcf, and Compile(realcompile=True) compiles every
+    // derivative to C++. Built once for all blocks; the first call may come from inside the parallel assembly.
+    std::call_once
+      (ddcf_built, [this] ()
+       {
+         if (!build_ddcf) return;
+         try
+           {
+             // Hessian blocks, only i >= j are used; forward mode w.r.t. the smaller proxy
+             // derivatives of compiled cfs are compiled the same way
+             int np = trial_proxies.Size();
+             for (int i = 0; i < np; i++)
+               for (int j = 0; j <= i; j++)
+                 {
+                   if (!nonzeros_proxies(i,j) || !dcf[i] || !dcf[j]) continue;
+                   int ni = trial_proxies[i]->Dimension(), nj = trial_proxies[j]->Dimension();
+                   CoefficientFunction::T_DJC cache;
+                   if (nj > ni)
+                     ddcf[i*np+j] = dcf[j]->DiffJacobi(trial_proxies[i], cache) -> Reshape(nj, ni) -> Transpose() -> Reshape(ni*nj);
+                   else
+                     ddcf[i*np+j] = dcf[i]->DiffJacobi(trial_proxies[j], cache);
+                   cout << IM(5) << "ddcf = " << *ddcf[i*np+j] << endl;
+                 }
+           }
+         catch (const Exception& e)
+           {
+             cout << IM(5) << "ddcf has thrown exception " << e.What() << endl;
+           }
+       });
+    size_t np = trial_proxies.Size();
+    if (i >= np || j >= np) return nullptr;
+    return ddcf[i*np+j].get();
   }
 
 
@@ -5850,11 +5872,11 @@ namespace ngfem
                   {
                   RegionTimer reg(tdmat);
 
-                  if (ddcf[k1*trial_proxies.Size()+l1])
+                  if (CoefficientFunction * hess = DDcf(k1, l1))
                     {
                       ud.trialfunction = nullptr;
                       ud.testfunction = nullptr;
-                      ddcf[k1*trial_proxies.Size()+l1]->Evaluate(mir, proxyvalues2);
+                      hess->Evaluate(mir, proxyvalues2);
                     }
                   else if (dcf[k1])
                     {

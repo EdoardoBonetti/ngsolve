@@ -1,4 +1,4 @@
-"""Lazy trial Jacobian of the symbolic bilinear-form integrators.
+"""Lazy trial Jacobian of the symbolic bilinear-form integrators and lazy Hessian of the symbolic energy.
 
 With ngsglobals.symbolic_integrator_uses_diff (set by ngsolve/utils.py), SymbolicBFI and SymbolicFacetBFI
 differentiate the integrand by the test functions in the constructor (dcf_dtest, used by Apply), and by the test and
@@ -6,12 +6,15 @@ trial functions (ddcf_dtest_dtrial, used by element matrices and linearizations)
 compiled with Compile(realcompile=True) every derivative is another C++ compile, and the trial Jacobian of a
 many-component integrand is by far the largest one (N = 24 below: about 2 s for the integrand or dcf_dtest, 80 s for
 the Jacobian, clang on an M1). A matrix-free form that is only applied must not compile it.
+SymbolicEnergy (Variation(E * dx)) does the same with its gradient blocks dcf (constructor, used by Apply) and its
+Hessian blocks ddcf (first linearization).
 
-Correct: building a nonassemble form compiles dcf_dtest only (one compile per integrator) and Apply compiles nothing;
-the Jacobian is compiled when a linearization or an element matrix first needs it. Apply, AssembleLinearization and
-Assemble give the same results (to rounding) as with symbolic_integrator_uses_diff off.
+Correct: building a nonassemble form compiles dcf_dtest only (one compile per integrator), or the gradient only (one
+compile per trial proxy of the energy), and Apply compiles nothing; the Jacobian or Hessian is compiled when a
+linearization or an element matrix first needs it. Apply, Energy, AssembleLinearization and Assemble give the same
+results (to rounding) as with symbolic_integrator_uses_diff off.
 
-Run: python3 -m pytest tests/pytest/test_lazy_trial_jacobian.py   (about 45 s, mostly C++ compiles)
+Run: python3 -m pytest tests/pytest/test_lazy_trial_jacobian.py   (about a minute, mostly C++ compiles)
 """
 
 import os
@@ -132,3 +135,64 @@ def test_linearization_and_assembly_build_jacobian_on_first_use(compile_count, u
     assert compile_count() > n_built  # the Jacobians are compiled now
     assert rel_diff(a.mat.AsVector(), a_ref.mat.AsVector()) < 1e-12
     assert rel_diff(m.mat.AsVector(), m_ref.mat.AsVector()) < 1e-12
+
+
+def energy_setup(N):
+    """H1**N (order 2) on a coarse mesh, a realcompiled energy density with two trial proxies, and a smooth state.
+
+    E(u) = sum_i u_i^4 / 4 + u_i u_{i+1}^2 / 2 + (1 + u_i^2) (d_x u_i)^2 / 2 + (d_y u_i)^2 / 2: the proxies u and
+    Grad(u) interact, so the Hessian has the blocks (u, u), (Grad u, u) and (Grad u, Grad u)."""
+    mesh = Mesh(unit_square.GenerateMesh(maxh=0.3))
+    fes = H1(mesh, order=2) ** N
+    u = fes.TrialFunction()
+    gu = Grad(u)
+    E = sum(u[i] ** 4 / 4 + u[i] * u[(i + 1) % N] ** 2 / 2 + (1 + u[i] ** 2) * gu[i, 0] ** 2 / 2 + gu[i, 1] ** 2 / 2
+            for i in range(N))
+    state = GridFunction(fes)
+    state.Set(CF(tuple(0.5 * sin((i + 1) * x) * cos(y + i) for i in range(N))))
+    return fes, E.Compile(realcompile=True, wait=True), state.vec
+
+
+def energy_form(fes, E, nonassemble=False):
+    a = BilinearForm(fes, nonassemble=nonassemble)
+    a += Variation(E * dx)
+    return a
+
+
+def test_energy_apply_compiles_no_hessian(compile_count, uses_diff):
+    fes, E, x = energy_setup(8)
+    n0 = compile_count()  # the energy itself
+
+    uses_diff(False)
+    a_ref = energy_form(fes, E, nonassemble=True)
+    y_ref = x.CreateVector()
+    a_ref.Apply(x, y_ref)
+    assert compile_count() == n0
+
+    uses_diff(True)
+    a = energy_form(fes, E, nonassemble=True)
+    # the gradient only, one compile per trial proxy (u, Grad u). A Hessian built in the constructor would add one
+    # compile per interacting pair of proxies, 3 here.
+    n_built = compile_count()
+    assert n_built - n0 <= 2
+    y = x.CreateVector()
+    a.Apply(x, y)
+    assert a.Energy(x) == pytest.approx(a_ref.Energy(x), rel=1e-12)
+    assert compile_count() == n_built  # Apply uses the gradient, no Hessian
+    assert rel_diff(y, y_ref) < 1e-12
+
+
+def test_energy_linearization_builds_hessian_on_first_use(compile_count, uses_diff):
+    fes, E, x = energy_setup(3)
+
+    uses_diff(False)
+    a_ref = energy_form(fes, E)
+    a_ref.AssembleLinearization(x)
+
+    uses_diff(True)
+    a = energy_form(fes, E)
+    n_built = compile_count()
+    with TaskManager():  # the first use, and so the build of the Hessian, happens inside the parallel assembly
+        a.AssembleLinearization(x)
+    assert compile_count() > n_built  # the Hessian is compiled now
+    assert rel_diff(a.mat.AsVector(), a_ref.mat.AsVector()) < 1e-12

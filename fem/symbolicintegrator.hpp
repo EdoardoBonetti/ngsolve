@@ -868,7 +868,14 @@ public:
     Array<int> trial_cum;     // cumulated dimension of proxies
     Matrix<bool> nonzeros;    // do components interact ? 
     Matrix<bool> nonzeros_proxies; // do proxies interact ?
-    Array<shared_ptr<CoefficientFunction>> dcf, ddcf;
+    Array<shared_ptr<CoefficientFunction>> dcf;  // gradient blocks d cf / d trial_i (Apply, linearizations)
+    // Hessian blocks d^2 cf / d trial_i d trial_j, i >= j, index i*np+j: built on first use, read them through DDcf
+    mutable Array<shared_ptr<CoefficientFunction>> ddcf;
+    mutable std::once_flag ddcf_built;
+    bool build_ddcf = false;  // symbolic_integrator_uses_diff was set and every dcf[i] was built without exception
+    // d^2 cf / d trial_i d trial_j (i >= j), or nullptr. Builds all of them on the first call (thread-safe): Apply
+    // needs only dcf, and for a Compile(realcompile=True) energy every derivative is a C++ compile.
+    NGS_DLL_HEADER CoefficientFunction * DDcf (size_t i, size_t j) const;
 
     void EnergyGradient (int i, const SIMD_BaseMappedIntegrationRule & mir, ProxyUserData & ud,
                          FlatMatrix<SIMD<double>> grad, LocalHeap & lh) const;
